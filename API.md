@@ -1,4 +1,4 @@
-# Swipe2Plan API v1
+# Outing API v1
 
 The human UI and agents use the same HTTP JSON API. Recommendations are stateless: send the current taste, constraints and feedback on each request. No Claude/Anthropic key, chatbot conversation, or agent-specific SDK is needed.
 

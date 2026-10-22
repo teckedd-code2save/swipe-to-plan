@@ -1,8 +1,8 @@
-# Swipe2Plan
+# Outing
 
-A swipe-led Accra discovery app for people, with the same structured API available to agents. Swipe artists and vibes, then get real Qloo places whenever you are ready. This is a standalone Serendepify experiment; it is not connected to RentAWeekend.
+Outing is the working display name of this swipe-led Accra discovery app for people, with the same structured API available to agents. Swipe artists and vibes, then get real Qloo places whenever you are ready. This is a standalone Serendepify experiment; it is not connected to RentAWeekend.
 
-The compact orange-and-teal interface preserves the original Swipe2Plan design. Drag right to like, left to skip, or use the buttons / arrow keys. Undo with the curved arrow or Z. **See my picks now** works before all 20 cards, including with no likes. Intent and area stay compact; price and group planning are under More options. Result evidence is behind Why this pick.
+The compact orange-and-teal interface preserves the original Swipe2Plan swipe design. The directory, repository and API identifiers remain `swipe-to-plan`. The UI pairs a Georgia display face with system sans-serif body text, using fonts already available on the device; no external font service is required. Drag right to like, left to skip, or use the buttons / arrow keys. Undo with the curved arrow or Z. **See my picks now** works before all 20 cards, including with no likes. Intent and area stay compact; price and group planning are under More options. Result evidence is behind Why this pick.
 
 ## What works
 

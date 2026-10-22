@@ -43,7 +43,7 @@ export default function SwipeDeck({ deck, history, onDecide, onUndo, onDone, don
         onPointerMove={(e) => { if (pointer.current?.id === e.pointerId) setOffset({ x: e.clientX - pointer.current.x, y: e.clientY - pointer.current.y }); }}
         onPointerUp={release} onPointerCancel={cancel} onLostPointerCapture={() => { if (pointer.current) cancel(); }}>
         <div className="card-orbit" aria-hidden="true"/>
-        <div className="card-topline"><span className="card-glyph" aria-hidden="true">{card.emoji}</span><span>{card.kind === 'artist' ? 'ARTIST' : 'VIBE'}</span></div>
+        <div className="card-topline"><span className="card-glyph" aria-hidden="true">{card.emoji}</span><span>{card.kind === 'artist' ? 'Artist' : 'Vibe'}</span></div>
         {offset.x > 28 && <span className="swipe-stamp love-stamp">LOVE IT</span>}{offset.x < -28 && <span className="swipe-stamp skip-stamp">PASS</span>}
         <div className="taste-card-copy"><span className="card-kind">{card.kind === 'artist' ? 'Artist' : 'Setting'}</span><h2>{card.label}</h2><p>{card.sub}</p></div>
       </article> : <div className="deck-complete"><span className="complete-heart"><DeckIcon name="heart" size={42}/></span><h2>You've got taste.</h2><p>{likes} favorites. Let's find your places.</p><button className="primary" disabled={disabled} onClick={onDone}>{doneLabel}<DeckIcon name="arrow" size={18}/></button></div>}
