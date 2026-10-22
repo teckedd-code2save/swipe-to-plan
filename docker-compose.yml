@@ -1,0 +1,12 @@
+# Local Postgres for development:  docker compose up -d
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: stp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a password for this disposable local database}
+      POSTGRES_DB: stp
+    ports: ["127.0.0.1:5434:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+volumes:
+  pgdata:

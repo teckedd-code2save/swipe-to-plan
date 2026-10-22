@@ -1,0 +1,30 @@
+# Dependencies and generated output
+node_modules/
+dist/
+coverage/
+.vite/
+# Credentials and machine-local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+.npmrc
+# Local/private runtime artifacts
+*.log
+*.db
+*.db-*
+*.sqlite*
+*.sql
+*.dump
+*.bak
+*.tgz
+*.zip
+.DS_Store
+logs/
+data/
+backups/
+artifacts/
+screenshots/
