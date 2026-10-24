@@ -54,8 +54,26 @@ test('post-plan suggestions prioritize real timing issues, missing tastes, retri
 });
 
 
-test('Autopilot keeps an open activity choice empty instead of inventing coffee',async()=>{
+test('Autopilot delegates an open choice without inventing a coffee preference',async()=>{
   const result=await invoke({changes:{}},{context:parseBrief({people:[profile('Alex')]}),message:'Plan something for me'});
   assert.equal(result.status,'autopilot');
-  assert.deepEqual(result.request.activities,[]);
+  assert.deepEqual(result.request.activities,['activity']);
+});
+
+
+test('Autopilot chooses from the combined circle tastes without requiring manual activities',async()=>{
+  const base=parseBrief({party:{adults:1},people:[{...profile('Alex'),vibes:['v-nature']}]});
+  const result=await invoke({changes:{},circleId:'foodies'},{context:base,circles:[{id:'foodies',name:'Foodies',people:[{...profile('Sam'),vibes:['v-italian']}]}]});
+  assert.deepEqual(result.request.activities,['activity','dinner']);
+  assert.equal(result.request.budget,base.budget);
+  assert.deepEqual(result.request.people[0].vibes,['v-nature']);
+  const solo=await invoke({changes:{activities:['dinner']}},{context:base});
+  assert.deepEqual(solo.request.activities,['dinner']);
+});
+test('automatic activity choices respect children, short windows and latest taste edits',async()=>{
+  const base=parseBrief({party:{adults:1,children:1},people:[{...profile('Alex'),vibes:['v-bar','v-nature','v-italian']}],startTime:'14:00',endTime:'15:00'});
+  const short=await invoke({changes:{}},{context:base});
+  assert.deepEqual(short.request.activities,['activity']);
+  const edited=await invoke({changes:{},tasteUpdates:[{id:'Alex',vibes:['v-cafe']}]},{context:base});
+  assert.deepEqual(edited.request.activities,['coffee']);
 });

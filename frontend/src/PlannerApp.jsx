@@ -383,17 +383,12 @@ export default function PlannerApp() {
     append('assistant',enabled?'Autopilot is on. Tell me what you have in mind and who’s coming. I’ll use your tastes to shape the plan and check the details; you can steer me anytime.':'Autopilot is off. Your tastes and draft are still here; we’ll shape the next steps together.');
     setPlanOpen(false);
   }
-  async function continueAutopilot(request,allowEmpty=false){
+  async function continueAutopilot(request){
     if(!autopilotRef.current||!autopilotPending.current)return;
     if(!owner)throw Error('Only the organizer can use Autopilot for this day.');
     const pendingRun=autopilotPending.current;
     replaceBrief(request);
     if(needsTiming(request)){pendingRun.stage='timing';setAutopilotPhase('timing');presentTool('timing');return;}
-    if(!request.people.some(p=>p.artists.length||p.vibes.length)&&!allowEmpty){
-      pendingRun.stage='tastes';setAutopilotPhase('tastes');setTasteId(request.people[0].id);
-      presentTool('tastes','I don’t have any favorites for this group yet. Add a few foods, activities or artists, then I’ll plan from there.');return;
-    }
-    if(!request.activities.length){pendingRun.stage='activities';setAutopilotPhase('');presentTool('review','What would you enjoy? Choose the moments below, then I’ll take it from there.');return;}
     pendingRun.stage='planning';setAutopilotPhase('planning');toolRef.current=null;setTool(null);showWhenReady.current=true;
     planningPaused.current=false;setDraftChanged(false);localVersion.current++;
     clearTimeout(autoTimer.current);autoTimer.current=null;planner.current.invalidate();setError('');
