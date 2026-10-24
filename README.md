@@ -105,7 +105,7 @@ For a clearly labelled synthetic developer experience, run `cd backend && npm ru
 
 ## Submission readiness
 
-The repository includes an [MIT license](LICENSE). The hackathon still requires a publicly accessible live application, a public repository and the project description. This increment does not publish or deploy either. Before submission, evaluate relevance across representative group tastes and areas, and deploy with an appropriate proxy, secret configuration and rate limits. Current rate limits and caches are per-process.
+The [public repository](https://github.com/teckedd-code2save/swipe-to-plan) includes an [MIT license](LICENSE). Production packaging, isolated durable storage, health-checked releases and rollback are documented in [DEPLOYMENT.md](docs/DEPLOYMENT.md). GitHub Actions builds an immutable container on updates to `main`. Current rate limits and caches are per-process. Evaluate relevance across representative group tastes and areas before final submission.
 
 ## Stack and artwork
 

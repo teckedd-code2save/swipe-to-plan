@@ -64,6 +64,19 @@ test("rate limit has structured HTTP 429 response", async (t) => {
   assert.equal(response.status, 429); assert.equal(response.body.code, "rate_limited");
 });
 
+test('one trusted proxy keeps separate visitor rate limits and ignores spoofed earlier hops', async t => {
+  const call = await serve(t, { rateLimit: true, trustProxy: 1 });
+  for (let i = 0; i < 30; i++) assert.equal((await call('/api/recommend', {}, 'POST', {'X-Forwarded-For': `198.51.100.${i}, 203.0.113.1`})).status, 200);
+  assert.equal((await call('/api/recommend', {}, 'POST', {'X-Forwarded-For': '198.51.100.99, 203.0.113.1'})).status, 429);
+  assert.equal((await call('/api/recommend', {}, 'POST', {'X-Forwarded-For': '203.0.113.2'})).status, 200);
+});
+
+test('forwarded headers cannot bypass rate limits without a configured proxy', async t => {
+  const call = await serve(t, { rateLimit: true, trustProxy: false });
+  for (let i = 0; i < 30; i++) assert.equal((await call('/api/recommend', {}, 'POST', {'X-Forwarded-For': `203.0.113.${i}`})).status, 200);
+  assert.equal((await call('/api/recommend', {}, 'POST', {'X-Forwarded-For': '203.0.113.200'})).status, 429);
+});
+
 test("room creation and membership remain compatible with the existing schema", async (t) => {
   let stored, memberData;
   const prisma = {

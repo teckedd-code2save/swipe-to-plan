@@ -1,0 +1,54 @@
+name: Deploy Unstressed
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: unstressed-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm run setup && npm run lint && npm test && npm run build
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish immutable image
+        run: |
+          docker build --pull -t "ghcr.io/teckedd-code2save/unstressed:$GITHUB_SHA" .
+          docker push "ghcr.io/teckedd-code2save/unstressed:$GITHUB_SHA"
+      - name: Configure SSH with the pinned host key
+        env:
+          DEPLOY_KEY: ${{ secrets.VPS_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/unstressed
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/unstressed ~/.ssh/known_hosts
+      - name: Transfer image and release
+        env:
+          DEPLOY_HOST: ${{ secrets.VPS_HOST }}
+          DEPLOY_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          remote="$DEPLOY_USER@$DEPLOY_HOST"
+          docker save "ghcr.io/teckedd-code2save/unstressed:$GITHUB_SHA" | gzip -1 | ssh -i ~/.ssh/unstressed "$remote" 'gunzip | docker load'
+          scp -i ~/.ssh/unstressed deploy/compose.yml deploy/release.sh "$remote:/opt/unstressed/"
+          ssh -i ~/.ssh/unstressed "$remote" "bash /opt/unstressed/release.sh ghcr.io/teckedd-code2save/unstressed:$GITHUB_SHA"
+      - name: Check public service
+        run: curl --retry 5 --retry-delay 5 --retry-all-errors --fail --max-time 20 https://unstressed.serendepify.com/api/health
+      - name: Remove runner SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/unstressed
