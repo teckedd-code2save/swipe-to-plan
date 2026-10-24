@@ -15,7 +15,7 @@ This is the `swipe-to-plan` Serendepify experiment. Swiping now feeds the main i
 - A **taste map** connects people → their preferences → selected stops. Selecting a node highlights its paths and exposes source evidence. Solid paths mean a provider contribution or matched tag; dotted paths mean a search input with no individual contribution evidence. Unresolved artists do not acquire recommendation paths.
 - Keep a place, swap another, undo the revision, adjust spending envelopes, or rebuild from edited details. No filters are silently relaxed to fill missing stops.
 - Budget breakdown, directions link and a personal before-you-go checklist. Save up to eight days on this device, copy a complete itinerary, print it, or download whole-group and personal HTML daybooks and calendar files.
-- Optional freeform planning through a configurable OpenAI-compatible model. Gemini 3.1 Flash-Lite is the default; Anthropic variables are neither required nor read.
+- Optional freeform planning through a configurable OpenAI-compatible model. Gemini 3.5 Flash-Lite is the default; Anthropic variables are neither required nor read.
 
 ## Run locally
 

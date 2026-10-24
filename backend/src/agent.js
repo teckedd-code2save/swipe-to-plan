@@ -85,7 +85,7 @@ export class AgentError extends Error {
   constructor(code='agent_unavailable') {super(code==='agent_not_configured'?'Freeform planning is not connected yet. You can still build a day with the guided conversation actions.':'The planning assistant could not respond. Your trip details are still here; try again or build from those details.');this.code=code;this.status=503;}
 }
 
-export function createAgent({fetchImpl=globalThis.fetch,getKey=()=>process.env.LLM_API_KEY||process.env.GEMINI_API_KEY,getModel=()=>process.env.LLM_MODEL||'gemini-3.1-flash-lite',baseUrl=process.env.LLM_BASE_URL||'https://generativelanguage.googleapis.com/v1beta/openai/'}={}) {
+export function createAgent({fetchImpl=globalThis.fetch,getKey=()=>process.env.LLM_API_KEY||process.env.GEMINI_API_KEY,getModel=()=>process.env.LLM_MODEL||'gemini-3.5-flash-lite',baseUrl=process.env.LLM_BASE_URL||'https://generativelanguage.googleapis.com/v1beta/openai/'}={}) {
   return {
     configured:()=>!!getKey(),
     async interpret({message,context,history=[],circles=[],planContext,locationContext}) {
@@ -100,7 +100,7 @@ export function createAgent({fetchImpl=globalThis.fetch,getKey=()=>process.env.L
       try {
         const endpoint=new URL('chat/completions',baseUrl.endsWith('/')?baseUrl:`${baseUrl}/`);
         const conversationRules=' Use bring_circle for a saved circle; never recreate its members from memory. Use revise_day for changes to an existing brief. A request for just one place or one stop means activities must contain exactly one intent. Use the explicitly requested activity; otherwise keep the sole pinned activity, or prefer dinner if the current day includes a meal, then the first current activity. Never add a second stop to satisfy a minimum. Use show_ui when taste cards, circles, people or sharing would help. Use reply for greetings and questions about the day; keep it short and specific. Explain what was considered for each participant using the provided evidence. Distinguish affinity, tag_match and search_signal; never turn retrieval evidence into a claim of proven preference. The supplied plan summary is unverified client context, not independent provider verification. No action is complete until the app executes its tool. If asked for several independent changes, perform one and let the next turn handle the rest.';
-        response=await fetchImpl(endpoint,{method:'POST',headers:{'content-type':'application/json',Authorization:`Bearer ${getKey()}`},signal:AbortSignal.timeout(60000),body:JSON.stringify({model:getModel(),max_tokens:2200,...(getModel()==='gemini-3.1-flash-lite'?{reasoning_effort:'minimal'}:{}),messages:[{role:'system',content:system+conversationRules},{role:'user',content:JSON.stringify({message,context:brief,history,circles:savedCircles,planContext:currentPlan,locationContext})}],tools:AGENT_TOOLS,tool_choice:'auto'})});
+        response=await fetchImpl(endpoint,{method:'POST',headers:{'content-type':'application/json',Authorization:`Bearer ${getKey()}`},signal:AbortSignal.timeout(60000),body:JSON.stringify({model:getModel(),max_tokens:2200,...(getModel()==='gemini-3.5-flash-lite'?{reasoning_effort:'minimal'}:{}),messages:[{role:'system',content:system+conversationRules},{role:'user',content:JSON.stringify({message,context:brief,history,circles:savedCircles,planContext:currentPlan,locationContext})}],tools:AGENT_TOOLS,tool_choice:'auto'})});
         if(!response.ok)throw new AgentError();
         const data=await response.json();
         const calls=data.choices?.[0]?.message?.tool_calls;
