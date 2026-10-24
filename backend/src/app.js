@@ -79,17 +79,28 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   app.post("/api/recommend", limit(30), route(async (req, res) => res.json(await discovery.recommend(parseRequest(req.body)))));
   app.post("/api/outings", limit(30), route(async (req, res) => res.json(await buildOuting(discovery, parseOutingRequest(req.body)))));
   app.get("/api/agent/tools", (_req,res) => res.json({tools:withActionMessages([...AGENT_TOOLS,AUTOPILOT_TOOL]),modes:['guided','autopilot'],transport:{plan_day:{method:'POST',path:'/api/itineraries'}},capabilities:'/api/schema'}));
-  app.post("/api/itineraries", limit(20), route(async(req,res)=>res.json(await buildItinerary(discovery,parseItinerary(req.body)))));
+  app.post("/api/itineraries", limit(20), route(async(req,res)=>{
+    const target=await accounts.planTarget(req);
+    res.json(await accounts.keepPlan(target,await buildItinerary(discovery,parseItinerary(req.body))));
+  }));
   app.post("/api/agent", limit(10), route(async(req,res)=>{
     strictFields(req.body,['message','context','history','circles','contacts','planContext','locationContext','mode']);
     if(!agent)throw new AgentError('agent_not_configured');
+    const target=await accounts.planTarget(req);
     const interpretation=await agent.interpret({...req.body,...await accounts.planningPeople(req)});
     if(['needs_input','action','show_ui','reply','autopilot'].includes(interpretation.status))return res.json(interpretation);
     const plan=await buildItinerary(discovery,interpretation.request);
     const user=await accounts.identity(req);if(visitorId(req))await metrics.record('plan_created',{userId:user?.id,visitor:visitorId(req)}).catch(()=>{});
-    res.json({...plan,...(interpretation.assistantMessage?{assistantMessage:interpretation.assistantMessage}:{}),agent:{model:interpretation.model,action:'plan_day'}});
+    res.json({...await accounts.keepPlan(target,plan),...(interpretation.assistantMessage?{assistantMessage:interpretation.assistantMessage}:{}),agent:{model:interpretation.model,action:'plan_day'}});
   }));
   const credential = req => (req.get('authorization') || '').replace(/^Bearer /, '');
+  app.post('/api/account/plans/from-day/:id',limit(30),route(async(req,res)=>{
+    const target=await accounts.planTarget(req,{shared:true});if(!target)return res.status(401).json({error:'Sign in to keep this day in your account.'});
+    const day=await days.get(req.params.id,credential(req));
+    if(day.access.role==='guest')return res.status(403).json({error:'Join this day before saving it to your account.'});
+    if(!day.plan||day.planRevision!==day.revision)return res.status(409).json({error:'The shared day is still updating.'});
+    res.json(await accounts.keepPlan({...target,id:day.id,revision:day.planRevision,sourceDayId:day.id},day.plan));
+  }));
   app.post('/api/days', limit(10), route(async (req,res) => res.status(201).json(await days.create(req.body))));
   app.get('/api/days/:id', limit(120), route(async (req,res) => res.json(await days.get(req.params.id, credential(req)))));
   app.post('/api/days/:id/members', limit(20), route(async (req,res) => res.status(201).json(await days.add(req.params.id, credential(req), req.body))));

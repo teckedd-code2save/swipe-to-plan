@@ -39,9 +39,58 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
   const requireUser=(data,session)=>{const user=resolve(data,session);if(!user)throw fail('Sign in to keep your tastes and circles.',401);return user;};
   const circleView=(data,circle,user)=>({id:circle.id,name:circle.name,owner:circle.ownerId===user.id,people:circle.members.map(m=>m.userId?data.users[m.userId].profile:m.profile),accountIds:circle.members.flatMap(m=>m.userId?[m.userId]:[]),...(circle.ownerId===user.id?{inviteToken:circle.inviteToken}:{})});
   const myCircles=(data,user)=>Object.values(data.circles).filter(c=>c.members.some(m=>m.userId===user.id)).map(c=>circleView(data,c,user));
-  function returnPath(raw){if(raw==='/'||raw===undefined)return '/';if(typeof raw==='string'&&/^\/#\/(?:day|circle)\/[a-zA-Z0-9_-]{1,64}\?(?:key|invite)=[a-zA-Z0-9_-]{20,64}$/.test(raw))return raw;throw new InputError('Return to the planner after signing in.');}
+  function returnPath(raw){if(raw==='/'||raw===undefined)return '/';if(typeof raw==='string'&&(/^\/#\/(?:day|circle)\/[a-zA-Z0-9_-]{1,64}\?(?:key|invite)=[a-zA-Z0-9_-]{20,64}$/.test(raw)||/^\/#\/plan\/[a-zA-Z0-9_-]{1,64}$/.test(raw)))return raw;throw new InputError('Return to the planner after signing in.');}
+  const planSummary=entry=>({id:entry.id,revision:entry.revision,savedAt:entry.savedAt,title:entry.plan.request.title,date:entry.plan.request.date,area:entry.plan.request.area,budget:entry.plan.request.budget,currency:entry.plan.request.currency});
+  const savedPlan=(user,id)=>{if(!Object.hasOwn(user.savedPlans||{},id))throw fail('This saved day is not in your account.',404);return user.savedPlans[id];};
   return {
     enabled,origin,redirectUri,
+    // Only server-generated plans enter this store; clients cannot upload venue/evidence snapshots.
+    async planTarget(req,{shared=false}={}){
+      const user=await this.identity(req);if(!user)return null;
+      checkOrigin(req);
+      const id=req.get('x-unstressed-plan-id')||randomUUID(),revision=Number(req.get('x-unstressed-plan-revision')||1);
+      if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)||!Number.isSafeInteger(revision)||revision<1)throw new InputError('Please reopen the saved day before editing it.');
+      const session=cookie(req,sessionName);
+      // Reworking an archived shared-day snapshot starts a private copy. Live
+      // participant updates must never overwrite that independent revision.
+      if(!shared&&await store.read(data=>!!resolve(data,session)?.savedPlans?.[id]?.sourceDayId))return {session,id:randomUUID(),revision:1};
+      return {session,id,revision};
+    },
+    async keepPlan(target,plan){
+      if(!target)return plan;
+      try{
+        const saved=await store.transact(data=>{
+          const user=requireUser(data,target.session),entries=user.savedPlans??={},previous=entries[target.id];
+          if(previous&&target.revision===previous.revision&&JSON.stringify(plan)===JSON.stringify(previous.plan))return planSummary(previous);
+          if(previous&&target.revision<=previous.revision)throw fail('A newer version is already saved. Reopen it from Saved days.',409);
+          if(!previous&&Object.keys(entries).length>=100)throw fail('Your account holds 100 days. Remove an old saved day to make room.',409);
+          const entry={id:target.id,revision:target.revision,savedAt:new Date(now()).toISOString(),plan:structuredClone(plan),previous:previous?{plan:previous.plan,revision:previous.revision}:null,...(target.sourceDayId?{sourceDayId:target.sourceDayId}:{})};
+          delete entry.plan.savedPlan;delete entry.plan.saveError;
+          entries[entry.id]=entry;user.savedPlans=entries;return planSummary(entry);
+        });
+        return {...plan,savedPlan:saved};
+      }catch(e){return {...plan,saveError:e.status?e.message:'Your day is ready, but account saving failed. Keep a copy on this device before leaving.'};}
+    },
+    async listPlans(session){return store.read(data=>Object.values(requireUser(data,session).savedPlans||{}).sort((a,b)=>b.savedAt.localeCompare(a.savedAt)).map(planSummary));},
+    async getPlan(session,id){return store.read(data=>{const entry=savedPlan(requireUser(data,session),id);return {...entry.plan,savedPlan:planSummary(entry)};});},
+    async editSavedPlan(session,id,body){
+      fields(body,['revision','pins','restoreRevision']);
+      return store.transact(data=>{
+        const user=requireUser(data,session);let entry=savedPlan(user,id);
+        if(body.revision!==entry.revision)throw fail('This day changed elsewhere. Reopen it from Saved days before editing.',409);
+        if(entry.sourceDayId){if(Object.keys(user.savedPlans).length>=100)throw fail('Remove an old saved day to make room for this private copy.',409);entry=structuredClone(entry);entry.id=randomUUID();delete entry.sourceDayId;user.savedPlans[entry.id]=entry;}
+        if(body.restoreRevision!==undefined){
+          if(!entry.previous||body.restoreRevision!==entry.previous.revision||body.pins!==undefined)throw fail('That earlier version is no longer available.',409);
+          const current={plan:entry.plan,revision:entry.revision};entry.plan=entry.previous.plan;entry.previous=current;
+        }else{
+          const request=parseItinerary({...entry.plan.request,pins:body.pins});
+          if(Object.entries(request.pins).some(([intent,id])=>!entry.plan.stops.some(s=>s.intent===intent&&s.item?.id===id)))throw new InputError('Only keep places already in this day.');
+          entry.plan={...entry.plan,request};
+        }
+        entry.revision++;entry.savedAt=new Date(now()).toISOString();return {...entry.plan,savedPlan:planSummary(entry)};
+      });
+    },
+    async removePlan(session,id){await store.transact(data=>{const user=requireUser(data,session);savedPlan(user,id);delete user.savedPlans[id];});},
     async current(session){return store.read(data=>{const user=resolve(data,session);return {configured:enabled,user:user?{...safeUser(user),admin:isAdmin(user)}:null,circles:user?myCircles(data,user):[]};});},
     async identity(req){return store.read(data=>{const user=resolve(data,cookie(req,sessionName));return user?{id:user.id,admin:isAdmin(user)}:null;});},
     async adminUsers(req){return store.read(data=>{const user=requireUser(data,cookie(req,sessionName));if(!isAdmin(user))throw fail('This dashboard is private.');return Object.values(data.users).map(u=>({id:u.id,name:u.profile.name,email:u.email,createdAt:u.createdAt,lastSignedInAt:u.lastSignedInAt||null,circles:Object.values(data.circles).filter(c=>c.members.some(m=>m.userId===u.id)).length,hasTastes:!!(u.profile.artists.length||u.profile.vibes.length)}));});},
@@ -100,6 +149,10 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       const session=req=>cookie(req,sessionName);
       const mutation=(fn)=>route(async(req,res)=>{checkOrigin(req);await fn(req,res);});
       app.get('/api/account',route(async(req,res)=>res.json(await this.current(session(req)))));
+      app.get('/api/account/plans',route(async(req,res)=>res.json({plans:await this.listPlans(session(req))})));
+      app.get('/api/account/plans/:id',route(async(req,res)=>res.json(await this.getPlan(session(req),req.params.id))));
+      app.patch('/api/account/plans/:id',limit(45),mutation(async(req,res)=>res.json(await this.editSavedPlan(session(req),req.params.id,req.body))));
+      app.delete('/api/account/plans/:id',limit(20),mutation(async(req,res)=>{await this.removePlan(session(req),req.params.id);res.json({ok:true});}));
       app.post('/api/auth/google/start',limit(10),mutation(async(req,res)=>{const result=await this.start(req.body);res.cookie(bindingName,result.binding,{...settings,maxAge:600000});res.json({url:result.url});}));
       app.get('/api/auth/google/callback',limit(20),route(async(req,res)=>{
         res.set({'Referrer-Policy':'no-referrer','Cache-Control':'no-store'});

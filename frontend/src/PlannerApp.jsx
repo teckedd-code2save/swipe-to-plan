@@ -77,6 +77,8 @@ export default function PlannerApp() {
   const [tab, setTab] = useState('itinerary');
   const [selection, setSelection] = useState(null);
   const [saved, setSaved] = useState(readSaved);
+  const [savedLoading,setSavedLoading]=useState(false);
+  const savedIdentity=useRef({id:identity(),revision:0});
   const [showSaved, setShowSaved] = useState(false);
   const [notice, setNotice] = useState('');
   const [confirmations, setConfirmations] = useState({});
@@ -99,6 +101,42 @@ export default function PlannerApp() {
   const groupUpdating=pending||busy||shared.day?.status==='updating';
   const nextSteps=nextPlanSteps(plan,placeChecks);
   const planner=useRef(null);
+  function savingHeaders(){if(!accountRef.current.user)return {};const target=savedIdentity.current;return {'x-unstressed-plan-id':target.id,'x-unstressed-plan-revision':String(++target.revision)};}
+  function rememberSaved(result){
+    if(!accountRef.current.user)return;
+    if(result.saveError){setNotice(result.saveError);return;}
+    const entry=result.savedPlan;if(!entry)return;
+    savedIdentity.current={id:entry.id,revision:Math.max(savedIdentity.current.id===entry.id?savedIdentity.current.revision:0,entry.revision)};
+    setSaved(items=>[{...entry,cloud:true},...items.filter(item=>!item.cloud||item.id!==entry.id)]);
+    if(!sharedRef.current.linked)history.replaceState(null,'',`${location.pathname}${location.search}#/plan/${entry.id}`);
+  }
+  async function loadSaved(){
+    const userId=accountRef.current.user?.id;if(!userId){setSaved(readSaved());return;}
+    setSavedLoading(true);
+    try{const result=await api.savedPlans();if(accountRef.current.user?.id===userId)setSaved([...result.plans.map(entry=>({...entry,cloud:true})),...readSaved(userId)]);}
+    catch(e){if(accountRef.current.user?.id===userId)setError(`Saved days couldn’t load: ${e.message}`);}
+    finally{if(accountRef.current.user?.id===userId)setSavedLoading(false);}
+  }
+  function openSavedResult(result){
+    resetDay();locationConfirmed.current=true;planningPaused.current=false;planningZone.current=result.timeZone||null;
+    planRef.current=result;setPlan(result);replaceBrief(result.request);rememberSaved(result);
+    const circle=accountRef.current.circles.find(c=>c.people.length>1&&c.people.length===result.request.people.length&&c.people.every(p=>result.request.people.some(member=>member.id===p.id)));
+    if(circle)activeCircle.current={id:circle.id,people:circle.people};
+    resultReceipt(result,'Your saved day is ready, with its original area and timing.');setShowSaved(false);setPlanOpen(true);
+  }
+  async function openSaved(entry){
+    const epoch=dayEpoch.current,version=localVersion.current,userId=accountRef.current.user?.id;setSavedLoading(true);
+    try{const result=entry.cloud?await api.savedPlan(entry.id):entry.plan;if(dayEpoch.current===epoch&&version===localVersion.current&&accountRef.current.user?.id===userId)openSavedResult(result);}
+    catch(e){setError(e.message);}finally{setSavedLoading(false);}
+  }
+  async function deleteSaved(entry){
+    try{
+      if(entry.cloud)await api.deleteSavedPlan(entry.id);
+      else localStorage.setItem(savedKey(accountRef.current.user?.id),JSON.stringify(saved.filter(s=>!s.cloud&&s.id!==entry.id)));
+      setSaved(items=>items.filter(s=>s.id!==entry.id||!!s.cloud!==!!entry.cloud));
+      if(entry.cloud&&planRef.current?.savedPlan?.id===entry.id){savedIdentity.current={id:identity(),revision:0};const {savedPlan,...current}=planRef.current;planRef.current=current;setPlan(current);if(!sharedRef.current.linked)history.replaceState(null,'','/#/');}
+    }catch(e){setError(`Couldn’t remove this saved day: ${e.message}`);}
+  }
   useEffect(()=>{if(autopilotPhase==='checking'&&['ready','error','idle'].includes(placeChecks.status))setAutopilotPhase('');},[autopilotPhase,placeChecks.status]);
   function keepPeople(people){if(accountRef.current.user)return;try{setContacts(saveContacts(people));}catch{/* Saving the optional local address book must not stop planning. */}}
   function replaceBrief(value){const next=withPeopleIds(value);briefRef.current=next;setBrief(next);return next;}
@@ -147,6 +185,7 @@ export default function PlannerApp() {
     else {resultReceipt(planRef.current,'Your favorites are part of this day.');setPlanOpen(true);}
   }
   function showPlan(result,description){
+    rememberSaved(result);
     planningPaused.current=false;setDraftChanged(false);setRevisionFailed(false);const old=planRef.current;setPrevious(old);planRef.current=result;setPlan(result);
     setConfirmations({});setSelection(null);setSelectedPlace(null);
     keepPeople(result.request.people);
@@ -154,7 +193,7 @@ export default function PlannerApp() {
     if(fromAutopilot){autopilotPending.current=null;setAutopilotPhase('checking');}
     if(!toolRef.current){resultReceipt(result,fromAutopilot?`Here’s the day for ${result.request.people.map(p=>p.name==='You'?'you':p.name).join(', ')}. ${result.request.people.some(p=>p.artists.length||p.vibes.length)?result.request.people.length===1?'I’ve used your tastes':'I’ve used the group’s tastes':'I’ve started with your area and activities'} within the ${formatMoney(result.request.budget,result.request.currency)} allowance. I’m checking the reported hours next.`:old?(result.request.party.adults+result.request.party.children===1?'I’ve updated your day.':'I’ve updated the day for everyone.'):'Here’s your day.');if(showWhenReady.current||!old){setPlanOpen(true);showWhenReady.current=false;}}
   }
-  useEffect(()=>{planner.current=createLatestPlanner({run:api.itinerary,onStart:()=>setBusy(true),onIdle:()=>{setBusy(false);if(!autoTimer.current)setPending(false);},onError:e=>{setError(e.message);setRevisionFailed(true);setAutopilotPhase('');autopilotPending.current=null;},onResult:result=>{showPlan(result);replaceBrief(result.request);}});return()=>{clearTimeout(autoTimer.current);autoTimer.current=null;clearTimeout(profileTimer.current);planner.current.dispose();};},[]);
+  useEffect(()=>{planner.current=createLatestPlanner({run:request=>api.itinerary(request,savingHeaders()),onStart:()=>setBusy(true),onIdle:()=>{setBusy(false);if(!autoTimer.current)setPending(false);},onError:e=>{setError(e.message);setRevisionFailed(true);setAutopilotPhase('');autopilotPending.current=null;},onResult:result=>{showPlan(result);replaceBrief(result.request);}});return()=>{clearTimeout(autoTimer.current);autoTimer.current=null;clearTimeout(profileTimer.current);planner.current.dispose();};},[]);
   useEffect(()=>{api.deck().then(setDeck).catch(e=>setError(e.message));},[]);
   useEffect(()=>{if(location.hash.startsWith('#/discover'))setTasteId(briefRef.current.people[0].id);},[]);
   useEffect(()=>{
@@ -171,6 +210,14 @@ export default function PlannerApp() {
     else if(day.plan&&!planRef.current)showPlan(day.plan);
     if(day.planError){setError(day.planError);setRevisionFailed(true);setAutopilotPhase('');autopilotPending.current=null;}
   },[shared.day]);
+  useEffect(()=>{
+    const day=shared.day,access=shared.credential;if(!account.user||!day?.plan||day.planRevision!==day.revision||day.access.role==='guest'||!access)return;
+    let cancelled=false;const epoch=dayEpoch.current;
+    api.saveSharedPlan(day.id,access.token,{'x-unstressed-plan-id':day.id,'x-unstressed-plan-revision':String(day.planRevision)}).then(result=>{
+      if(cancelled||dayEpoch.current!==epoch)return;rememberSaved(result);planRef.current=result;setPlan(result);
+    }).catch(()=>{if(!cancelled)setNotice('This shared day could not be copied to your account. Keep its private link or save a copy on this device.');});
+    return()=>{cancelled=true;};
+  },[account.user?.id,shared.day?.id,shared.day?.planRevision,shared.day?.revision,shared.day?.access.role]);
   function schedule(request,reason){
     replaceBrief(request);if(!sharedRef.current.linked&&(planningPaused.current||!planRef.current||!locationConfirmed.current)){if(planRef.current)setDraftChanged(true);return;}setPending(true);setError('');setRevisionFailed(false);
     clearTimeout(autoTimer.current);autoTimer.current=null;planner.current.invalidate();
@@ -242,6 +289,7 @@ export default function PlannerApp() {
     setTasteId(null);
   }
   function resetDay(){
+    savedIdentity.current={id:identity(),revision:0};setSavedLoading(false);
     invitedCircles.current.clear();setPeopleQuery('');setTab('itinerary');
     autopilotPending.current=null;setAutopilotPhase('');
     activeCircle.current=null;planningZone.current=null;planningPaused.current=true;setDraftChanged(false);locationConfirmed.current=false;locationDraft.current=null;setLocationPrompt({});setRevisionFailed(false);
@@ -269,6 +317,7 @@ export default function PlannerApp() {
     if(prior!==id){
       accountIdentity.current=id;setSaved(readSaved(id));
       if(prior!==undefined&&prior!==null)resetDay();
+      if(id){loadSaved();const match=location.hash.match(/^#\/plan\/([a-zA-Z0-9_-]{1,64})$/);if(match)openSaved({id:match[1],cloud:true});}
     }
     if(!restored.current){
       restored.current=true;
@@ -319,7 +368,7 @@ export default function PlannerApp() {
   async function signIn(){
     if(groupUpdating)throw Error('Let the current day update finish, then sign in.');
     sessionStorage.setItem('outing.signin-draft',JSON.stringify({brief:briefRef.current,plan:planRef.current,chat,message,locationConfirmed:locationConfirmed.current,planningPaused:planningPaused.current,draftChanged,resumeAction:accountAction,userId:account.user?.id||null,at:Date.now()}));
-    const result=await api.signIn(location.hash.startsWith('#/day/')||location.hash.startsWith('#/circle/')?`/${location.hash}`:'/');location.assign(result.url);
+    const result=await api.signIn(/^#\/(day|circle|plan)\//.test(location.hash)?`/${location.hash}`:'/');location.assign(result.url);
   }
   async function copyCircleInvite(circle){invitedCircles.current.set(circle.id,[...circle.accountIds]);await navigator.clipboard.writeText(`${location.origin}/#/circle/${circle.id}?invite=${circle.inviteToken}`);setNotice('Circle invite copied. Everyone joins with their own account.');}
   const activeBrief = brief;
@@ -381,7 +430,7 @@ export default function PlannerApp() {
     append('user',sent.trim());setMessage('');
     const history=conversationHistory(chat);
     try{
-      const result=await api.agent({message:sent.trim(),mode:autopilotRef.current&&owner?'autopilot':'guided',contacts:autopilotRef.current&&owner?[...new Map(contacts.map(p=>[p.id,{id:p.id,...personInput(p)}])).values()].slice(0,30):[],context:briefRef.current,locationContext:{confirmed:locationConfirmed.current||shared.linked,preferredLabel:preferredRef.current?.label,timeZone:planningZone.current||planRef.current?.timeZone||Intl.DateTimeFormat().resolvedOptions().timeZone},history,circles:circles.map(c=>({id:c.id,name:c.name,people:circlePeople(c,contacts)})),planContext:planRef.current?{stops:planRef.current.stops.map(s=>({id:s.id,intent:s.intent,name:s.item?.name||null,connections:s.connections.map(e=>({personId:e.personId,kind:e.kind,label:e.label,preference:planRef.current.tasteMap.nodes.find(n=>n.id===e.from)?.label}))})),warnings:planRef.current.warnings}:undefined});
+      const result=await api.agent({message:sent.trim(),mode:autopilotRef.current&&owner?'autopilot':'guided',contacts:autopilotRef.current&&owner?[...new Map(contacts.map(p=>[p.id,{id:p.id,...personInput(p)}])).values()].slice(0,30):[],context:briefRef.current,locationContext:{confirmed:locationConfirmed.current||shared.linked,preferredLabel:preferredRef.current?.label,timeZone:planningZone.current||planRef.current?.timeZone||Intl.DateTimeFormat().resolvedOptions().timeZone},history,circles:circles.map(c=>({id:c.id,name:c.name,people:circlePeople(c,contacts)})),planContext:planRef.current?{stops:planRef.current.stops.map(s=>({id:s.id,intent:s.intent,name:s.item?.name||null,connections:s.connections.map(e=>({personId:e.personId,kind:e.kind,label:e.label,preference:planRef.current.tasteMap.nodes.find(n=>n.id===e.from)?.label}))})),warnings:planRef.current.warnings}:undefined},savingHeaders());
       setAutopilotPhase('');
       if(version!==localVersion.current){append('assistant','The day changed while I was thinking. Please send that again so I can use the latest details.');return;}
       if(result.status==='autopilot'){
@@ -410,20 +459,32 @@ export default function PlannerApp() {
     }catch(e){setError(e.message);setRevisionFailed(true);setMessage(sent);setAutopilotPhase('');autopilotPending.current=null;}
     finally{working.current=false;setBusy(false);}
   }
-  function pin(intent, id) {
+  async function pin(intent, id) {
     const pins = { ...plan.request.pins };
     if (pins[intent]) delete pins[intent]; else pins[intent] = id;
     const request={...briefRef.current,pins};
-    if(shared.linked){build(request,'Kept places updated.');}else{replaceBrief(request);const updated={...plan,request};planRef.current=updated;setPlan(updated);}
+    if(shared.linked){build(request,'Kept places updated.');}else{
+      let updated={...plan,request};
+      if(account.user&&plan.savedPlan){try{updated=await api.editSavedPlan(plan.savedPlan.id,{revision:plan.savedPlan.revision,pins});rememberSaved(updated);}catch(e){setError(e.message);return;}}
+      replaceBrief(updated.request);planRef.current=updated;setPlan(updated);
+    }
   }
   function swap(stop) {
     const pins = rememberStops(plan); delete pins[stop.intent];
     build({ ...plan.request, pins, excludeIds: [...new Set([...plan.request.excludeIds, stop.item.id])] }, 'I’ve looked for another stop and kept the other places in your day. You can undo this revision.');
   }
+  async function undo(){
+    let result=previous;
+    if(account.user&&plan.savedPlan&&previous.savedPlan?.id===plan.savedPlan.id){
+      try{result=await api.editSavedPlan(plan.savedPlan.id,{revision:plan.savedPlan.revision,restoreRevision:previous.savedPlan.revision});rememberSaved(result);}catch(e){setError(e.message);return;}
+    }
+    planRef.current=result;setPlan(result);replaceBrief(result.request);setPrevious(null);append('assistant','Your previous day is restored.');
+  }
   function save() {
+    if(account.user&&plan.savedPlan&&!plan.saveError){setNotice('Saved automatically to your account. Find it anytime in Saved days.');return;}
     const entry = { id: crypto.randomUUID(), savedAt: new Date().toISOString(), plan:{...plan,request:withPeopleIds(plan.request)} };
-    const next = [entry, ...saved.filter(s => JSON.stringify(s.plan) !== JSON.stringify(plan))].slice(0, 8);
-    try { localStorage.setItem(savedKey(account.user?.id), JSON.stringify(next)); setSaved(next); setNotice('Day saved on this device.');track('plan_saved'); } catch { setNotice('Your browser couldn’t save this day. Try copying it instead.'); }
+    const next = [entry, ...saved.filter(s => !s.cloud&&JSON.stringify(s.plan) !== JSON.stringify(plan))].slice(0, 8);
+    try { localStorage.setItem(savedKey(account.user?.id), JSON.stringify(next)); setSaved([...saved.filter(s=>s.cloud),...next]); setNotice('Day saved on this device.');track('plan_saved'); } catch { setNotice('Your browser couldn’t save this day. Try copying it instead.'); }
   }
   async function copy() { try { await navigator.clipboard.writeText(planText(plan)); setNotice('Your itinerary and taste connections are copied.'); } catch { setNotice('Copy isn’t available here. Use Print to keep a copy.'); } }
   const trace = id => { setSelection(id); setTab('taste');setPlanOpen(true); };
@@ -435,8 +496,8 @@ export default function PlannerApp() {
     if(tool?.kind==='people')return <PeopleAction key={tool.id} accountUser={account.user} circles={account.circles} connections={connections} onInvite={prepareCircleInvite} initialQuery={peopleQuery} people={brief.people} contacts={contacts} owner={owner} memberId={shared.day?.access.memberId} onTaste={openTaste} onAdd={addPerson} onRemove={removePerson} onShare={()=>presentTool('share')} onDone={()=>finishTool()}/>;
     if(tool?.kind==='share')return <ShareDay updating={groupUpdating} accountUser={account.user} onAccountRequired={action=>{setAccountAction(action);setAccountOpen(true);}} embedded plan={plan} brief={brief} shared={shared} onEnsure={ensureShared} onClose={finishTool}/>;return null;
   }
-  return <><ChatStudio planCircleName={plan&&activeCircle.current?.people.every(p=>plan.request.people.some(member=>member.id===p.id))?circles.find(c=>c.id===activeCircle.current?.id)?.name:undefined} circleName={circles.find(c=>c.id===activeCircle.current?.id)?.name} autopilot={autopilot&&owner} autopilotPhase={autopilotPhase} onAutopilot={toggleAutopilot} nextSteps={!draftChanged&&!revisionFailed?nextSteps:null} onNextAction={nextAction} draftChanged={draftChanged} accountButton={<AccountButton user={account.user} onClick={()=>setAccountOpen(true)}/>} brief={brief} plan={plan} chat={chat} tool={tool} renderTool={renderTool} message={message} onMessage={setMessage} onSend={sendMessage} busy={groupUpdating} configured={health?.agentConfigured} owner={owner} guest={guest} connecting={shared.connecting} revisionFailed={revisionFailed} error={error||shared.error||account.error} onDismissError={()=>{setError('');shared.clearError();account.clearError();}} onNew={resetDay} onSaved={()=>setShowSaved(true)} onTool={chooseTool} onOpenPlan={()=>setPlanOpen(true)} planOpen={planOpen} onClosePlan={()=>setPlanOpen(false)} planView={tab} onPlanView={setTab} notice={notice} joinContent={<div className="cs-join"><h1>Come along.</h1><p>{brief.people.map(p=>p.name).join(', ')} are putting a day together.</p><form className="cs-inline-form" onSubmit={e=>{e.preventDefault();join();}}><input aria-label="Your name" required maxLength={24} value={joinName} onChange={e=>setJoinName(e.target.value)} placeholder="Your name"/><button disabled={joinBusy}>Join the day <Icon name="arrow" size={15}/></button></form><small>Your name and tastes are visible to this group.</small></div>}>
-    {plan&&<>{tab==='itinerary'&&<>{plan.timingNotes?.map(note=><p className="cs-timing-note" key={note}><Icon name="clock" size={16}/>{note}</p>)}<PlaceCheckNotice checks={placeChecks} onOpen={()=>setTab('checklist')}/><div className="cs-day-actions">{owner&&<button onClick={openDetails} disabled={groupUpdating}><Icon name="edit" size={13}/>Details</button>}<button onClick={save}><Icon name="bookmark" size={13}/>Save</button><button onClick={copy}><Icon name="copy" size={13}/>Copy</button>{previous&&!shared.linked&&<button disabled={groupUpdating} onClick={()=>{planRef.current=previous;setPlan(previous);replaceBrief(previous.request);setPrevious(null);append('assistant','Your previous day is restored.');}}><Icon name="undo" size={13}/>Undo</button>}</div>{plan.stops.filter(stop=>stop.item).map(stop=><Stop key={`${stop.id}-${stop.item?.id}`} stop={stop} plan={plan} busy={groupUpdating||!owner} onPin={pin} onSwap={swap} onTrace={trace} onBudget={()=>setTab('budget')} onDetails={stop=>(track('place_opened'),setSelectedPlace(stop.item.entityId))}/>)}<p className="cs-day-note">Suggested times and spending allowances. Confirm hours, prices and travel before you go.</p><details className="cs-plan-notes"><summary>Notes & sources</summary>{plan.provenance.locality&&<p>Qloo matched: {plan.provenance.locality.label}.</p>}{plan.timeZone&&<p>Suggested times are local to {plan.timeZone}.</p>}{plan.warnings.map(w=><p key={w}>{w}</p>)}<p>Places from {plan.provenance.provider}. Retrieved {plan.provenance.retrievedAt}.</p></details></>}
+  return <><ChatStudio planCircleName={plan&&activeCircle.current?.people.every(p=>plan.request.people.some(member=>member.id===p.id))?circles.find(c=>c.id===activeCircle.current?.id)?.name:undefined} circleName={circles.find(c=>c.id===activeCircle.current?.id)?.name} autopilot={autopilot&&owner} autopilotPhase={autopilotPhase} onAutopilot={toggleAutopilot} nextSteps={!draftChanged&&!revisionFailed?nextSteps:null} onNextAction={nextAction} draftChanged={draftChanged} accountButton={<AccountButton user={account.user} onClick={()=>setAccountOpen(true)}/>} brief={brief} plan={plan} chat={chat} tool={tool} renderTool={renderTool} message={message} onMessage={setMessage} onSend={sendMessage} busy={groupUpdating} configured={health?.agentConfigured} owner={owner} guest={guest} connecting={shared.connecting} revisionFailed={revisionFailed} error={error||shared.error||account.error} onDismissError={()=>{setError('');shared.clearError();account.clearError();}} onNew={resetDay} onSaved={()=>{setShowSaved(true);loadSaved();}} onTool={chooseTool} onOpenPlan={()=>setPlanOpen(true)} planOpen={planOpen} onClosePlan={()=>setPlanOpen(false)} planView={tab} onPlanView={setTab} notice={notice} joinContent={<div className="cs-join"><h1>Come along.</h1><p>{brief.people.map(p=>p.name).join(', ')} are putting a day together.</p><form className="cs-inline-form" onSubmit={e=>{e.preventDefault();join();}}><input aria-label="Your name" required maxLength={24} value={joinName} onChange={e=>setJoinName(e.target.value)} placeholder="Your name"/><button disabled={joinBusy}>Join the day <Icon name="arrow" size={15}/></button></form><small>Your name and tastes are visible to this group.</small></div>}>
+    {plan&&<>{tab==='itinerary'&&<>{plan.timingNotes?.map(note=><p className="cs-timing-note" key={note}><Icon name="clock" size={16}/>{note}</p>)}<PlaceCheckNotice checks={placeChecks} onOpen={()=>setTab('checklist')}/>{plan.saveError&&<p role="alert" className="cs-timing-note">{plan.saveError}</p>}<div className="cs-day-actions">{owner&&<button onClick={openDetails} disabled={groupUpdating}><Icon name="edit" size={13}/>Details</button>}<button onClick={save} title={account.user&&plan.savedPlan?"Saved automatically to your account":"Save a copy on this device"}><Icon name="bookmark" size={13}/>{account.user&&plan.savedPlan&&!plan.saveError?'Saved to account':'Save on device'}</button><button onClick={copy}><Icon name="copy" size={13}/>Copy</button>{previous&&!shared.linked&&<button disabled={groupUpdating} onClick={undo}><Icon name="undo" size={13}/>Undo</button>}</div>{plan.stops.filter(stop=>stop.item).map(stop=><Stop key={`${stop.id}-${stop.item?.id}`} stop={stop} plan={plan} busy={groupUpdating||!owner} onPin={pin} onSwap={swap} onTrace={trace} onBudget={()=>setTab('budget')} onDetails={stop=>(track('place_opened'),setSelectedPlace(stop.item.entityId))}/>)}<p className="cs-day-note">Suggested times and spending allowances. Confirm hours, prices and travel before you go.</p><details className="cs-plan-notes"><summary>Notes & sources</summary>{plan.provenance.locality&&<p>Qloo matched: {plan.provenance.locality.label}.</p>}{plan.timeZone&&<p>Suggested times are local to {plan.timeZone}.</p>}{plan.warnings.map(w=><p key={w}>{w}</p>)}<p>Places from {plan.provenance.provider}. Retrieved {plan.provenance.retrievedAt}.</p></details></>}
     {tab==='taste'&&<TasteMap key={selection||'all'} plan={plan} initialSelection={selection} onEdit={()=>{setPlanOpen(false);openTaste();}}/>}{tab==='budget'&&<Budget plan={plan} onEdit={id=>{setPlanOpen(false);openTaste(id);}}/>} {tab==='checklist'&&<BeforeGoing plan={plan} checks={placeChecks} done={confirmations} setDone={setConfirmations} onDetails={stop=>(track('place_opened'),setSelectedPlace(stop.item.entityId))}/>}
     {shared.day?.status==='error'&&<button className="pl-button" onClick={()=>shared.retry().catch(e=>setError(e.message))}>Retry the update</button>}</>}
   </ChatStudio>
@@ -446,6 +507,6 @@ export default function PlannerApp() {
   {usageOpen&&<UsageDashboard onClose={()=>setUsageOpen(false)}/>}
   {circleInvite&&<CircleInvite account={account} onSignIn={signIn} onClose={()=>{setCircleInvite(false);history.replaceState(null,'',location.pathname);}} onJoined={circle=>{setCircleInvite(false);history.replaceState(null,'',location.pathname);applyCircle(circle).catch(e=>setError(e.message));}}/>}
   {editor&&owner&&<TripEditor draftOnly={planningPaused.current||!plan} onLocation={draft=>{setEditor(false);askLocation(draft);}} brief={activeBrief} groupManaged hasPlan={!!plan} onClose={()=>setEditor(false)} onSubmit={async request=>{if(planningPaused.current||!planRef.current){replaceBrief(request);setDraftChanged(!!planRef.current);setEditor(false);presentTool('review','Those details are saved. I’ll search when you’re ready.');return;}if(await build(request,undefined,editorRevision.current))setEditor(false);else{editorRevision.current=sharedRef.current.day?.revision;throw Error('The update could not be saved. Your edits are still here; review the group and retry.');}}}/>}
-  {showSaved&&<dialog className="pl-dialog pl-saved-dialog" ref={savedDialog} onCancel={()=>setShowSaved(false)} aria-labelledby="saved-title"><div className="pl-dialog-heading"><h2 id="saved-title">Saved days</h2><button className="pl-icon-button" onClick={()=>setShowSaved(false)} aria-label="Close saved days"><Icon name="close"/></button></div><div className="pl-dialog-body">{saved.length?saved.map(entry=><div className="pl-saved-item" key={entry.id}><button onClick={()=>{resetDay();locationConfirmed.current=true;planningPaused.current=false;planRef.current=entry.plan;setPlan(entry.plan);replaceBrief(entry.plan.request);resultReceipt(entry.plan,'Your saved day is ready.');setShowSaved(false);setPlanOpen(true);}}><strong>{entry.plan.request.title}</strong><small>{dateLabel(entry.plan.request.date)} · {formatMoney(entry.plan.request.budget,entry.plan.request.currency)}</small></button><button className="pl-icon-button" aria-label={`Delete ${entry.plan.request.title}`} onClick={()=>{const next=saved.filter(s=>s.id!==entry.id);try{localStorage.setItem(savedKey(account.user?.id),JSON.stringify(next));setSaved(next);}catch{setNotice('Couldn’t update saved days.');}}}><Icon name="trash" size={16}/></button></div>):<p>No saved days yet. Save one from your day panel.</p>}</div></dialog>}
+  {showSaved&&<dialog className="pl-dialog pl-saved-dialog" ref={savedDialog} onCancel={()=>setShowSaved(false)} aria-labelledby="saved-title"><div className="pl-dialog-heading"><h2 id="saved-title">Saved days</h2><button className="pl-icon-button" onClick={()=>setShowSaved(false)} aria-label="Close saved days"><Icon name="close"/></button></div><div className="pl-dialog-body"><p>{account.user?'Your days save automatically to your account. Each keeps its own area, people and timing.':'Days you save here are kept on this device. Sign in to save new plans automatically to your account.'}</p>{savedLoading&&<p role="status">Loading your saved days…</p>}{saved.map(entry=>{const r=entry.cloud?entry:entry.plan.request;return <div className="pl-saved-item" key={`${entry.cloud?'account':'device'}-${entry.id}`}><button disabled={savedLoading} onClick={()=>openSaved(entry)}><strong>{r.title}</strong><small>{dateLabel(r.date)} · {r.area} · {formatMoney(r.budget,r.currency)}{!entry.cloud?' · This device':''}</small></button><button className="pl-icon-button" disabled={savedLoading} aria-label={`Delete ${r.title}`} onClick={()=>deleteSaved(entry)}><Icon name="trash" size={16}/></button></div>;})}{!savedLoading&&!saved.length&&<p>{account.user?'Your next day will appear here automatically.':'No saved days yet. Save one from your day panel.'}</p>}</div></dialog>}
   </>;
 }

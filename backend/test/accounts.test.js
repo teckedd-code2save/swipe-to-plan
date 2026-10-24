@@ -131,3 +131,106 @@ test('planning people are private accepted connections; names, emails and unclai
   await f.accounts.removeCircle(b.session,circle.id);assert.equal((await f.accounts.planningPeople(request)).contacts.length,1);
   assert.deepEqual(await f.accounts.planningPeople({headers:{}}),{peopleMode:'guest'});
 });
+
+// Exercise the real planner and durable account library, not client-authored snapshots.
+async function generatedPlan(overrides={}){
+  const {createDemoProvider}=await import('../src/demo-provider.js');
+  const {createDiscovery}=await import('../src/plan.js');
+  const {buildItinerary,parseItinerary}=await import('../src/itinerary.js');
+  return buildItinerary(createDiscovery({provider:createDemoProvider()}),parseItinerary({date:'2099-01-01',area:'Osu',activities:['coffee'],...overrides}));
+}
+const libraryId='3f7c289c-549e-49c1-97d6-c287226cd7da';
+
+test('account plans survive restart with their own area, tastes, currency and timing; default area is independent',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'unstressed-library-')),file=join(dir,'accounts.json');
+  try{
+    const f=fixture({store:createAccountStore({file})}),a=await f.login('Alex'),b=await f.login('Sam');
+    const plan=await generatedPlan({budget:500,people:[{id:'alex',name:'Alex',artists:['Sade'],vibes:['v-cafe']}]});
+    const result=await f.accounts.keepPlan({session:a.session,id:libraryId,revision:1},plan);
+    assert.equal(result.savedPlan.id,libraryId);assert.equal(result.saveError,undefined);
+    assert.equal((await f.accounts.current(a.session)).user.planningLocation,null);
+    const restarted=fixture({store:createAccountStore({file})});
+    const saved=await restarted.accounts.getPlan(a.session,libraryId);
+    assert.deepEqual(saved.request,plan.request);assert.deepEqual(saved.stops,plan.stops);assert.deepEqual(saved.tasteMap,plan.tasteMap);
+    assert.equal(saved.savedPlan.revision,1);assert.equal((await restarted.accounts.current(a.session)).user.planningLocation,null);
+    const summaries=await restarted.accounts.listPlans(a.session);assert.equal(summaries.length,1);assert.equal(summaries[0].area,'Osu');assert.equal(summaries[0].plan,undefined);
+    await assert.rejects(restarted.accounts.getPlan(b.session,libraryId),e=>e.status===404);
+    await assert.rejects(restarted.accounts.getPlan(a.session,'__proto__'),e=>e.status===404);
+    await assert.rejects(restarted.accounts.removePlan(b.session,libraryId),e=>e.status===404);
+    await assert.rejects(restarted.accounts.listPlans(null),e=>e.status===401);
+    await restarted.accounts.updatePlanningLocation(a.session,{locationId:'london'},async()=>({id:'london',name:'London',label:'London, UK',currency:'GBP'}));
+    assert.equal((await restarted.accounts.getPlan(a.session,libraryId)).request.area,'Osu');
+    await restarted.accounts.removePlan(a.session,libraryId);assert.deepEqual(await restarted.accounts.listPlans(a.session),[]);
+    assert.equal((await restarted.accounts.current(a.session)).user.planningLocation.id,'london');
+    assert.ok(!(await readFile(file,'utf8')).includes(a.session));
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('reworking a day updates one account entry; late results cannot overwrite it, pins and undo preserve evidence',async()=>{
+  const f=fixture(),a=await f.login('Alex'),target={session:a.session,id:libraryId,revision:1};
+  const first=await generatedPlan();await f.accounts.keepPlan(target,first);
+  const second=await generatedPlan({budget:1200});await f.accounts.keepPlan({...target,revision:3},second);
+  const late=await f.accounts.keepPlan({...target,revision:2},first);assert.match(late.saveError,/newer version/);
+  assert.equal((await f.accounts.listPlans(a.session)).length,1);assert.equal((await f.accounts.getPlan(a.session,libraryId)).request.budget,1200);
+  const stop=second.stops.find(s=>s.item);
+  const pinned=await f.accounts.editSavedPlan(a.session,libraryId,{revision:3,pins:{[stop.intent]:stop.item.id}});
+  assert.equal(pinned.savedPlan.revision,4);assert.deepEqual(pinned.stops,second.stops);
+  await assert.rejects(f.accounts.editSavedPlan(a.session,libraryId,{revision:4,pins:{coffee:'fabricated'}}),e=>e.status===400);
+  await assert.rejects(f.accounts.editSavedPlan(a.session,libraryId,{revision:3,pins:{}}),e=>e.status===409);
+  const undone=await f.accounts.editSavedPlan(a.session,libraryId,{revision:4,restoreRevision:1});
+  assert.deepEqual(undone.stops,first.stops);assert.equal(undone.request.budget,first.request.budget);assert.equal(undone.savedPlan.revision,5);
+});
+
+test('saving failure leaves the generated plan available without claiming it was saved',async()=>{
+  const realStore=createAccountStore();let broken=false;
+  const f=fixture({store:{read:fn=>realStore.read(fn),transact:fn=>broken?Promise.reject(Error('private disk failure')):realStore.transact(fn)}}),a=await f.login('Alex');
+  const plan=await generatedPlan();broken=true;
+  const result=await f.accounts.keepPlan({session:a.session,id:libraryId,revision:1},plan);
+  assert.deepEqual(result.stops,plan.stops);assert.match(result.saveError,/account saving failed/);assert.doesNotMatch(result.saveError,/private disk failure/);assert.equal(result.savedPlan,undefined);
+});
+
+test('HTTP planning autosaves only signed-in results; guests, account privacy and origin checks remain intact',async t=>{
+  const {createDemoProvider}=await import('../src/demo-provider.js');
+  const f=fixture(),a=await f.login('Alex'),b=await f.login('Sam');
+  const app=createApp({provider:createDemoProvider(),accounts:f.accounts,rateLimit:false}),server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));t.after(()=>server.close());
+  const base=`http://127.0.0.1:${server.address().port}`,headers={'content-type':'application/json',origin:'http://localhost:5173',cookie:`outing-session=${a.session}`,'x-unstressed-plan-id':libraryId,'x-unstressed-plan-revision':'1'};
+  const brief={date:'2099-01-01',area:'Osu',activities:['coffee']};
+  const response=await fetch(`${base}/api/itineraries`,{method:'POST',headers,body:JSON.stringify(brief)});assert.equal(response.status,200);const result=await response.json();assert.equal(result.savedPlan.id,libraryId);
+  const guest=await fetch(`${base}/api/itineraries`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(brief)});assert.equal((await guest.json()).savedPlan,undefined);
+  const own=await fetch(`${base}/api/account/plans/${libraryId}`,{headers});assert.equal((await own.json()).request.area,'Osu');
+  assert.equal((await fetch(`${base}/api/account/plans/${libraryId}`,{headers:{cookie:`outing-session=${b.session}`}})).status,404);
+  assert.equal((await fetch(`${base}/api/account/plans`)).status,401);
+  assert.equal((await fetch(`${base}/api/itineraries`,{method:'POST',headers:{...headers,origin:'https://evil.test'},body:JSON.stringify(brief)})).status,403);
+  assert.equal((await fetch(`${base}/api/account/plans/${libraryId}`,{method:'DELETE',headers:{...headers,origin:'https://evil.test'},body:'{}'})).status,403);
+  assert.equal((await fetch(`${base}/api/account/plans/${libraryId}`,{method:'PATCH',headers,body:JSON.stringify({revision:1,plan:{fabricated:true}})})).status,400);
+  assert.equal((await f.accounts.current(a.session)).user.planningLocation,null);
+});
+
+test('an agent-generated day is autosaved but conversational replies do not create saved days',async t=>{
+  const {createDemoProvider}=await import('../src/demo-provider.js');const {parseItinerary}=await import('../src/itinerary.js');
+  const f=fixture(),a=await f.login('Alex');let reply=true;
+  const agent={interpret:async()=>reply?{status:'reply',text:'Where would you like to go?'}:{request:parseItinerary({date:'2099-01-01',area:'Osu',activities:['coffee']})}};
+  const server=createApp({provider:createDemoProvider(),accounts:f.accounts,agent,rateLimit:false}).listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));t.after(()=>server.close());
+  const headers={'content-type':'application/json',origin:'http://localhost:5173',cookie:`outing-session=${a.session}`};
+  const request=()=>fetch(`http://127.0.0.1:${server.address().port}/api/agent`,{method:'POST',headers,body:JSON.stringify({message:'Plan a coffee'})});
+  await request();assert.equal((await f.accounts.listPlans(a.session)).length,0);
+  reply=false;const response=await request();assert.equal(response.status,200);assert.ok((await response.json()).savedPlan.id);assert.equal((await f.accounts.listPlans(a.session)).length,1);
+});
+
+test('shared-day account copies require participant access, are idempotent, and contain no invitation credentials',async t=>{
+  const {createDemoProvider}=await import('../src/demo-provider.js');const {createDiscovery}=await import('../src/plan.js');const {createDays,createDayStore}=await import('../src/days.js');
+  const provider=createDemoProvider(),dayStore=createDayStore(),days=createDays({discovery:createDiscovery({provider}),store:dayStore});
+  const day=await days.create({request:{date:'2099-01-01',area:'Osu',activities:['coffee']}});await days.settled(day.id);
+  const f=fixture(),a=await f.login('Alex'),server=createApp({provider,accounts:f.accounts,dayStore,rateLimit:false}).listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));t.after(()=>server.close());
+  const headers={'content-type':'application/json',origin:'http://localhost:5173',cookie:`outing-session=${a.session}`,'x-unstressed-plan-id':day.id,'x-unstressed-plan-revision':String(day.revision)};
+  const copy=token=>fetch(`http://127.0.0.1:${server.address().port}/api/account/plans/from-day/${day.id}`,{method:'POST',headers:{...headers,authorization:`Bearer ${token}`},body:'{}'});
+  assert.equal((await copy('bad-key')).status,403);assert.equal((await copy(day.inviteToken)).status,403);
+  const response=await copy(day.token);assert.equal(response.status,200);const result=await response.json();assert.equal(result.savedPlan.id,day.id);
+  assert.ok(!JSON.stringify(result).includes(day.token));assert.ok(!JSON.stringify(result).includes(day.inviteToken));
+  assert.equal((await (await copy(day.token)).json()).saveError,undefined);
+  assert.equal((await f.accounts.listPlans(a.session)).length,1);
+  const stop=result.stops.find(s=>s.item),edited=await f.accounts.editSavedPlan(a.session,day.id,{revision:day.revision,pins:{[stop.intent]:stop.item.id}});
+  assert.notEqual(edited.savedPlan.id,day.id);assert.deepEqual((await f.accounts.getPlan(a.session,day.id)).request.pins,{});
+  const req={headers:{cookie:`outing-session=${a.session}`},get:name=>({...headers,'x-unstressed-plan-id':day.id,'x-unstressed-plan-revision':'9'})[name],is:()=>true};
+  assert.notEqual((await f.accounts.planTarget(req)).id,day.id);
+});

@@ -36,7 +36,9 @@ Register `https://unstressed.serendepify.com/api/auth/google/callback` on the Go
 
 `/opt/unstressed/data` is mounted at `/data`, owned by UID/GID 1000 with mode 700. Accounts, circles and shared days survive container replacement. This release starts with fresh production data; local development accounts and invitations are not uploaded. One API process is required for the file stores. Add a transactional database before horizontal scaling.
 
-Before a release that changes the file format, take a protected backup of this directory on the server. Image rollback does not undo data edits. The current release does not change the storage format. No automated off-host backup is configured yet.
+The release script takes a protected archive of this directory in `/opt/unstressed/backups` before replacing the live container. Archives and their directory are private to the deployment user. Image rollback does not undo data edits. No automated off-host backup is configured yet; monitor available disk and manage backup retention.
+
+Signed-in generated plans are stored under each account's optional `savedPlans` collection in `accounts.json`. Older accounts load unchanged. Each entry keeps the current server-generated plan and one previous version for undo, with monotonic revisions to reject late overwrites. The account library holds up to 100 days and never evicts days silently. A plan's area is independent of the account's default planning area. Shared days can be copied by authenticated participants without storing their private access credentials in the account library. Only summaries are listed; individual snapshots require the owning account session. Saving errors leave the result visible and offer an explicit device copy.
 
 ## Operations
 

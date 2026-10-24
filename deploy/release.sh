@@ -28,6 +28,11 @@ healthy() {
 }
 healthy 13001 || { echo 'Candidate failed its health check; live service untouched.'; exit 1; }
 docker rm -f "$candidate" >/dev/null
+# Protect durable accounts/days before an additive storage change reaches live data.
+umask 077
+mkdir -p backups
+chmod 700 backups
+tar -czf "backups/pre-${image##*:}-$(date -u +%Y%m%dT%H%M%SZ).tar.gz" data
 if UNSTRESSED_IMAGE="$image" docker compose -f compose.yml up -d --no-build --pull never && healthy 13000; then
   [[ -z "$previous" || "$previous" == "$image" ]] || printf '%s\n' "$previous" > previous-image.txt
   printf '%s\n' "$image" > current-image.txt
