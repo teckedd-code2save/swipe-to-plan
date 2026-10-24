@@ -48,3 +48,11 @@ bash /opt/unstressed/release.sh "$(cat /opt/unstressed/previous-image.txt)"
 ```
 
 The health endpoint confirms the app is running and configured; it does not independently verify Qloo or the model. After release, also test location search, a real plan, chat, sharing and Google sign-in through the public origin. Avoid copying logs that contain personal planning content into public issues.
+
+## Private usage dashboard
+
+Set `ADMIN_EMAILS` to a comma-separated allowlist of verified Google sign-in addresses; there is no default administrator. The account menu exposes **Usage & people** only to an allowed account, and `/api/admin/usage` independently checks the authenticated session on every request. Never put admin emails or account data into client configuration.
+
+Set `USAGE_DATA_FILE=/data/usage.json` in production. It uses the same single-process atomic-file model as accounts. Back it up with the other durable files. It stores up to 90 days / 50,000 first-party usage events, with no conversation text, taste values, IP addresses, venue IDs or private links. Account identity comes from the server session, not client-supplied user IDs. The dashboard distinguishes all-time accounts from feature usage collected since instrumentation began. A calendar open is not a confirmed saved event.
+
+The timing release adds optional `timing` metadata to planning briefs; older saved/shared plans remain readable and retain their existing dates and fixed start times. Newly started studio plans ask for missing date/time choices. Before release, back up accounts and days on the server; rollback restores the prior image while retaining durable files.

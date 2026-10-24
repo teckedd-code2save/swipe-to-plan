@@ -12,7 +12,7 @@ const response=localities=>({query:{localities:{filter:localities}},results:{ent
 test('global locality filtering supplies boundary evidence and destination time zone without adding Ghana',async()=>{
   let sent;
   const client=createQlooClient({getKey:()=> 'test',fetchImpl:async url=>{sent=url;return {ok:true,json:async()=>response([london])};}});
-  const plan=await buildItinerary(createDiscovery({provider:client}),parseItinerary({area:'London, United Kingdom',activities:['dinner'],budget:25,currency:'GBP'}));
+  const plan=await buildItinerary(createDiscovery({provider:client}),parseItinerary({date:'2099-10-24',area:'London, United Kingdom',activities:['dinner'],budget:25,currency:'GBP'}));
   assert.equal(sent.searchParams.get('filter.location.query'),'London, United Kingdom');assert.equal(sent.searchParams.get('filter.location.radius'),'0');
   assert.equal(plan.status,'complete');assert.equal(plan.timeZone,'Europe/London');assert.equal(plan.provenance.locality.id,'london');
   assert.equal(plan.stops[0].item.reasons.find(r=>r.code==='location_match').evidence[0].method,'qloo_locality_filter');
@@ -64,7 +64,7 @@ test('selected locality ID, local currency and custom currency reach planning wi
   const urls=[];
   const client=createQlooClient({getKey:()=> 'test',fetchImpl:async url=>{urls.push(url);return {ok:true,json:async()=>url.pathname==='/entities'?{results:[locationEntity]}:response([])};}});
   const discovery=createDiscovery({provider:client});
-  const request=parseItinerary({area:'Old area label',locationId:locationEntity.entity_id,currency:'GHS',currencyMode:'local',budget:100,activities:['dinner']});
+  const request=parseItinerary({date:'2099-10-24',area:'Old area label',locationId:locationEntity.entity_id,currency:'GHS',currencyMode:'local',budget:100,activities:['dinner']});
   const plan=await buildItinerary(discovery,request);assert.equal(plan.request.area,locationEntity.disambiguation);assert.equal(plan.budget.currency,'GBP');assert.equal(plan.budget.total,100);assert.equal(plan.status,'complete');
   const insights=urls.find(u=>u.pathname==='/v2/insights');assert.equal(insights.searchParams.get('filter.location'),locationEntity.entity_id);assert.equal(insights.searchParams.has('filter.location.query'),false);
   const custom=await buildItinerary(discovery,{...request,currency:'USD',currencyMode:'custom'});assert.equal(custom.budget.currency,'USD');assert.equal(urls.length,2,'budget-only changes reuse locality results');

@@ -28,14 +28,14 @@ export function checkHours(hours, date, start, end, isClosed = false) {
   const day = new Date(`${date}T12:00:00Z`).getUTCDay();
   const intervals = hours?.[DAYS[day]], previous = hours?.[DAYS[(day + 6) % 7]];
   const base = {day: DAYS[day], intervals: intervals ?? null, sourceField:'properties.hours', date, start, end};
-  if (isClosed) return {...base, status:'reported_closed', summary:'Qloo marks this place as closed. Choose another stop or confirm directly.'};
+  if (isClosed) return {...base, status:'reported_closed', summary:'This place is reported closed. Choose another stop or confirm directly.'};
   const ranges = [...(intervals || []).map(row => [clock(row.opens), clock(row.closes) + (row.overnight ? 1440 : 0)]), ...(previous || []).filter(row => row.overnight).map(row => [clock(row.opens) - 1440, clock(row.closes)])].sort((a,b) => a[0]-b[0]);
   const merged = [];
   for (const range of ranges) { const last = merged.at(-1); if(last && range[0] <= last[1]) last[1] = Math.max(last[1],range[1]); else merged.push([...range]); }
   const fits = merged.some(([from,to]) => clock(start) >= from && clock(end) <= to);
-  if (fits) return {...base,status:'fits_reported_hours',summary:`Your ${start}–${end} stop fits Qloo’s reported weekly hours.`};
+  if (fits) return {...base,status:'fits_reported_hours',summary:`Your ${start}–${end} stop fits reported weekly hours.`};
   if (!intervals || clock(start) < 720 && !previous) return {...base,status:'unknown',summary:'There aren’t enough reported hours to check this stop.'};
-  return {...base,status:'outside_reported_hours',summary:`Your ${start}–${end} stop falls outside Qloo’s reported weekly hours.`};
+  return {...base,status:'outside_reported_hours',summary:`Your ${start}–${end} stop falls outside reported weekly hours.`};
 }
 export function parsePlaceCheck(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(k => !['date','stops'].includes(k))) throw new InputError('Provide a date and up to three stops.');

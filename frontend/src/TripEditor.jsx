@@ -18,7 +18,7 @@ export default function TripEditor({ brief, onClose, onSubmit, hasPlan, groupMan
       if (trigger?.isConnected) trigger.focus({ preventScroll: true });
     };
   }, []);
-  const update = (key, value) => setDraft(d => ({ ...d, [key]: value }));
+  const update = (key, value) => setDraft(d => ({ ...d, [key]: value, ...(['date','startTime','endTime'].includes(key)?{timing:{dateConfirmed:true,timeConfirmed:true,mode:'fixed',...d.timing,...(key==='date'?{dateConfirmed:true}:{timeConfirmed:true,mode:'fixed'})}}:{}) }));
   const person = (index, key, value) => setDraft(d => ({ ...d, people: d.people.map((p, i) => i === index ? { ...p, [key]: value } : p) }));
   async function submit(event) {
     event.preventDefault();
@@ -36,10 +36,10 @@ export default function TripEditor({ brief, onClose, onSubmit, hasPlan, groupMan
         <label className="pl-field">Give your day a name<input required maxLength={80} value={draft.title} onChange={e => update('title', e.target.value)}/></label>
         <div className="pl-field-grid">
           <label className="pl-field">City or neighborhood<input readOnly={!!onLocation} required={!onLocation} minLength={2} maxLength={160} aria-label="City or neighborhood" placeholder="e.g. Shibuya, Tokyo, Japan" value={draft.area} onChange={e => update('area', e.target.value)}/>{onLocation&&<button type="button" className="pl-text-button" onClick={()=>onLocation(draft)}>Change planning area</button>}</label>
-          <label className="pl-field">When<input required type="date" value={draft.date} onChange={e => update('date', e.target.value)}/></label>
+          <label className="pl-field">When<input required type="date" value={draft.timing?.dateConfirmed!==false?draft.date:''} onChange={e => update('date', e.target.value)}/></label>
           <label className="pl-field">Adults<input required type="number" min="1" max="8" value={draft.party.adults} onChange={e => update('party', { ...draft.party, adults: Number(e.target.value) })}/></label>
           <label className="pl-field">Children<input required type="number" min="0" max="6" value={draft.party.children} onChange={e => { const children = Number(e.target.value); setDraft(d => ({ ...d, party: { ...d.party, children }, activities: children ? d.activities.filter(a => a !== 'drinks') : d.activities })); }}/></label>
-          <label className="pl-field">Start time<input required type="time" value={draft.startTime} onChange={e => update('startTime', e.target.value)}/></label>
+          <label className="pl-field">{draft.timing?.mode==='flexible'?'Earliest start':'Start time'}<input required type="time" value={draft.startTime} onChange={e => update('startTime', e.target.value)}/></label>
           <label className="pl-field">Back by<input required type="time" value={draft.endTime} onChange={e => update('endTime', e.target.value)}/></label>
           <label className="pl-field">Whole group budget<input required type="number" min="1" max="10000000" value={draft.budget} onChange={e => update('budget', Number(e.target.value))}/></label>
           <label className="pl-field">Currency<select value={draft.currency||'GHS'} onChange={e=>setDraft(d=>({...d,currency:e.target.value,currencyMode:'custom'}))}>{CURRENCIES.map(c=><option key={c}>{c}</option>)}</select></label><label className="pl-field">Pace<select value={draft.pace} onChange={e => update('pace', e.target.value)}><option value="easy">Easy does it · 30 min buffers</option><option value="balanced">A little fuller · 20 min buffers</option></select></label>

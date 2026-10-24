@@ -11,14 +11,18 @@ import { buildItinerary, parseItinerary } from "./itinerary.js";
 import { createDays } from "./days.js";
 import { AGENT_TOOLS, AUTOPILOT_TOOL, AgentError } from "./agent.js";
 import { createAccounts } from './accounts.js';
+import {createMetrics,CLIENT_EVENTS,visitorId} from './metrics.js';
 import { createPlaceGuide } from './place-guide.js';
 
-export function createApp({ provider, prisma = null, agent = null, dayStore, accounts=createAccounts(), rateLimit = true, trustProxy = process.env.TRUST_PROXY === '1' ? 1 : false, now = Date.now } = {}) {
+export function createApp({ provider, prisma = null, agent = null, dayStore, metrics, accounts=createAccounts(), rateLimit = true, trustProxy = process.env.TRUST_PROXY === '1' ? 1 : false, now = Date.now } = {}) {
+  metrics??=createMetrics({now});
   const app = express();
   // Production is reachable only through the one host-level Caddy proxy.
   app.set('trust proxy', trustProxy);
   const discovery = createDiscovery({ provider, now });
   const places = createPlaceGuide({provider,now});
+  discovery.placeDetails=provider.getPlace?places.details:null;
+  discovery.now=now;
   const days = createDays({ discovery, store: dayStore, now });
   app.disable("x-powered-by");
   app.use(express.json({ limit: "50kb" }));
@@ -33,6 +37,12 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, acc
     hits.set(key, [...recent, now()]); next();
   };
   const route = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
+  app.use('/api',(req,res,next)=>{
+    const routes=[['POST',/^\/itineraries$/,'plan_created'],['POST',/^\/agent$/,'agent_request'],['POST',/^\/days$/,'day_shared'],['POST',/^\/account\/circles$/,'circle_created'],['POST',/^\/account\/circles\/[^/]+\/join$/,'circle_joined'],['PATCH',/^\/days\/[^/]+$/,'day_updated'],['POST',/^\/days\/[^/]+\/autopilot$/,'day_updated']];
+    const event=routes.find(([method,path])=>req.method===method&&path.test(req.path))?.[2];
+    if(event&&visitorId(req)){const identity=accounts.identity(req);res.on('finish',()=>{identity.then(user=>metrics.record(res.statusCode<400?event:'request_failed',{userId:user?.id,visitor:visitorId(req)})).catch(()=>{});});}
+    next();
+  });
   accounts.mount(app,{route,limit,resolveLocation:provider.getLocation});
   const db = (_req, res, next) => prisma ? next() : res.status(503).json({ code: "rooms_unavailable", error: "Group rooms need a configured database. Solo discovery is available." });
   const strictFields = (body, allowed) => {
@@ -40,6 +50,13 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, acc
   };
   const findRoom = async (code) => prisma.room.findUnique({ where: { code: String(code).toUpperCase() }, include: { members: { orderBy: { createdAt: "asc" } } } });
 
+  app.post('/api/usage',limit(90),route(async(req,res)=>{
+    if(req.get('origin')!==accounts.origin||!req.is('application/json'))return res.status(403).json({error:'Use the app to record usage.'});
+    strictFields(req.body,['event']);if(!CLIENT_EVENTS.includes(req.body.event))throw new InputError('Unknown usage event.');
+    const visitor=visitorId(req);if(!visitor)throw new InputError('A session is required.');
+    const user=await accounts.identity(req);await metrics.record(req.body.event,{userId:user?.id,visitor});res.json({ok:true});
+  }));
+  app.get('/api/admin/usage',limit(30),route(async(req,res)=>{const users=await accounts.adminUsers(req);res.json(await metrics.report(users,Number(req.query.days||7)));}));
   app.get("/api/health", (_req, res) => res.json({ ok: true, provider: provider.name, roomsConfigured: !!prisma, agentConfigured: !!agent?.configured() }));
   app.get("/api/schema", (_req, res) => res.json(API_SCHEMA));
   app.get('/api/locations',limit(60),route(async(req,res)=>{
@@ -61,6 +78,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, acc
     const interpretation=await agent.interpret({...req.body,...await accounts.planningPeople(req)});
     if(['needs_input','action','show_ui','reply','autopilot'].includes(interpretation.status))return res.json(interpretation);
     const plan=await buildItinerary(discovery,interpretation.request);
+    const user=await accounts.identity(req);if(visitorId(req))await metrics.record('plan_created',{userId:user?.id,visitor:visitorId(req)}).catch(()=>{});
     res.json({...plan,agent:{model:interpretation.model,action:'plan_day'}});
   }));
   const credential = req => (req.get('authorization') || '').replace(/^Bearer /, '');

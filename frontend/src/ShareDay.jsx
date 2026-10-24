@@ -1,3 +1,4 @@
+import {track} from './usage.js';
 import {useEffect,useRef,useState} from 'react';
 import {Icon,PERSON_COLORS} from './PlannerIcons.jsx';
 import {dayLink} from './useSharedDay.js';
@@ -14,13 +15,13 @@ export default function ShareDay({plan,brief,shared,onEnsure,onClose,embedded=fa
     const link=dayLink(result.day.id,key);setManualLink({label:personId?'Personal invitation':'Group invitation',url:link});
     try{await navigator.clipboard.writeText(link);setCopied(personId||'all');}catch{setError('Copy is unavailable. Select and copy the invitation link below.');}
   }
-  function download(...args){try{downloadDay(...args);setError('');}catch(e){setError(e.message);}}
+  function download(...args){try{downloadDay(...args);track(args[2]?'calendar_downloaded':'daybook_downloaded');setError('');}catch(e){setError(e.message);}}
   const owner=!shared.day||shared.day.access.role==='owner';
   const people=shared.day?.request.people||brief.people;
   const exportPlan=shared.day&&shared.day.planRevision===shared.day.revision?shared.day?.plan:plan;
   function openCalendar(){
     if(!accountUser){onAccountRequired('calendar');return;}
-    try{window.open(googleCalendarLink(exportPlan),'_blank','noopener,noreferrer');setError('');}catch(e){setError(e.message);}
+    try{window.open(googleCalendarLink(exportPlan),'_blank','noopener,noreferrer');track('calendar_opened');setError('');}catch(e){setError(e.message);}
   }
   const current=shared.day?.access.memberId;
   const Container=embedded?'section':'dialog';

@@ -2,7 +2,7 @@ import {locationId as parseLocationId} from './locations.js';
 import { parseArea, InputError, parseRequest } from './contract.js';
 import { byId,matchesTasteTag } from './deck.js';
 import { mergeGroup } from './plan.js';
-import { selectStops } from './outing.js';
+import { schedulePlaces } from './scheduling.js';
 
 export const ACTIVITIES = ['coffee', 'activity', 'dinner', 'drinks'];
 const DEFAULT_MINUTES = { coffee: 45, activity: 90, dinner: 75, drinks: 60 };
@@ -20,13 +20,15 @@ const minutes = (time) => Number(time.slice(0,2)) * 60 + Number(time.slice(3));
 const time = (value) => `${String(Math.floor(value / 60)).padStart(2,'0')}:${String(value % 60).padStart(2,'0')}`;
 
 export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
-  object(body, ['title','area','locationId','currencyMode','date','party','people','budget','currency','startTime','endTime','pace','activities','pins','excludeIds','maxPriceLevel'], 'planning field');
+  object(body, ['title','area','locationId','currencyMode','timing','date','party','people','budget','currency','startTime','endTime','pace','activities','pins','excludeIds','maxPriceLevel'], 'planning field');
   const area = allowMissingLocation&&body.area===''?'':parseArea(body.area);
   const locationId=body.locationId?parseLocationId(body.locationId):undefined;
   const currencyMode=body.currencyMode??(body.currency?'custom':'local');
   if(!['local','custom'].includes(currencyMode))throw new InputError('Choose local currency or a custom currency.');
   const date = body.date === undefined ? new Date().toISOString().slice(0,10) : body.date;
   if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date)) || new Date(date).toISOString().slice(0,10) !== date) throw new InputError('Choose a valid date.');
+  const timing=object(body.timing??{dateConfirmed:true,timeConfirmed:true,mode:'fixed'},['dateConfirmed','timeConfirmed','mode'],'timing');
+  if(typeof timing.dateConfirmed!=='boolean'||typeof timing.timeConfirmed!=='boolean'||!['fixed','flexible'].includes(timing.mode))throw new InputError('Choose a date and whether your start time is flexible.');
   const party = object(body.party ?? {}, ['adults','children'], 'party');
   const adults = integer(party.adults ?? 2,1,8,'Adults'), children = integer(party.children ?? 0,0,6,'Children');
   const people = body.people ?? [{ name: 'You', artists: [], vibes: [] }];
@@ -60,7 +62,7 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
   Object.values(pins).forEach((id) => text(id,160,'a kept place ID'));
   if (new Set(Object.values(pins)).size !== Object.values(pins).length) throw new InputError('Keep a different place for each stop.');
   const constraints = parseRequest({ constraints: { excludeIds: body.excludeIds ?? [], ...(body.maxPriceLevel !== undefined ? { maxPriceLevel: body.maxPriceLevel } : {}) } }).constraints;
-  const request = { title: text(body.title ?? (activities.length===1 ? 'One place, well chosen' : children ? 'A day for the whole family' : adults > 2 ? 'Good company. A good day.' : 'A little day, beautifully spent'),80,'a title'), area,...(locationId?{locationId}:{}),currencyMode, date, party:{ adults, children }, people:profiles, budget, currency, startTime, endTime, pace, activities, pins:{...pins}, excludeIds:constraints.excludeIds, ...(body.maxPriceLevel !== undefined ? { maxPriceLevel:body.maxPriceLevel } : {}) };
+  const request = { title: text(body.title ?? (activities.length===1 ? 'One place, well chosen' : children ? 'A day for the whole family' : adults > 2 ? 'Good company. A good day.' : 'A little day, beautifully spent'),80,'a title'), area,...(locationId?{locationId}:{}),currencyMode, timing:{...timing}, date, party:{ adults, children }, people:profiles, budget, currency, startTime, endTime, pace, activities, pins:{...pins}, excludeIds:constraints.excludeIds, ...(body.maxPriceLevel !== undefined ? { maxPriceLevel:body.maxPriceLevel } : {}) };
   makeSchedule(request); // Fail an impossible time window before any provider calls.
   return request;
 }
@@ -124,7 +126,7 @@ function buildTasteMap(request, members, stops) {
         const tagReason = preference.kind==='vibe' && item.reasons.find((reason) => reason.code==='vibe_match' && reason.evidence.some((e) => matchesTasteTag(byId[preference.vibeId],e.value)));
         if (preference.kind==='artist' && !preference.entityId || preference.kind==='vibe' && !tagReason) return;
         const evidence = affinity ? [{field:affinity.sourceField,entityId:affinity.entityId,value:affinity.contribution}] : tagReason ? tagReason.evidence.filter((e) => matchesTasteTag(byId[preference.vibeId],e.value)) : [{field:'signal.interests.entities',value:preference.entityId}];
-        edges.push({id:`match-${preference.id}-${stopIndex}`,from:preference.id,to:`stop-${stopIndex}`,personId,kind:affinity?'affinity':tagReason?'tag_match':'search_signal',source:affinity?'qloo_explainability':tagReason?'qloo_tags':'qloo_request',label:affinity?'Qloo reports this artist’s contribution':tagReason?'Place tags match this preference':'Used in the search; individual contribution unavailable',evidence,...(affinity?{contribution:affinity.contribution}:{})});
+        edges.push({id:`match-${preference.id}-${stopIndex}`,from:preference.id,to:`stop-${stopIndex}`,personId,kind:affinity?'affinity':tagReason?'tag_match':'search_signal',source:affinity?'qloo_explainability':tagReason?'qloo_tags':'qloo_request',label:affinity?'Reported connection to this artist':tagReason?'Place tags match this preference':'Used in the search; individual contribution unavailable',evidence,...(affinity?{contribution:affinity.contribution}:{})});
       });
     }
   });
@@ -133,6 +135,7 @@ function buildTasteMap(request, members, stops) {
 }
 
 export async function buildItinerary(discovery, request) {
+  if(!request.timing.dateConfirmed||!request.timing.timeConfirmed)throw new InputError('Choose when you want to go before planning.');
   if(request.locationId){
     if(!discovery.location)throw new InputError('Location search is unavailable on this server.');
     const location=await discovery.location(request.locationId);
@@ -153,8 +156,10 @@ export async function buildItinerary(discovery, request) {
   const ranked = request.activities.map((intent,index) => fetched.length === 1 ? fetched[0].results[index].ranked : mergeGroup(fetched.map(({results,index:i}) => ({...results[index],id:request.people[i].id || `person-${i}`,name:request.people[i].name})),50).items);
   const reserved = new Set(Object.values(request.pins));
   const pools = ranked.map((items,index) => request.pins[request.activities[index]] ? items.filter((item) => item.id===request.pins[request.activities[index]]) : items.filter((item) => !reserved.has(item.id)).slice(0,8));
-  const selected = selectStops(pools);
-  const stops = schedule.map((slot,index) => ({...slot,id:`stop-${index}`,label:LABELS[slot.intent],item:selected[index],status:selected[index]?'matched':'unfilled',alternatives:ranked[index].filter((item) => !selected.some((chosen) => chosen?.id===item.id)).slice(0,2),...(selected[index]?{}:{reason:request.pins[slot.intent]?'kept_place_unavailable':pools[index].length?'no_distinct_place':'no_eligible_places'})}));
+  const timeZone=members[0][0].provenance.locality?.timeZone||(['Accra','Osu','East Legon','Cantonments','Labone','Airport Residential'].includes(request.area)?'Africa/Accra':null);
+  const fitted=await schedulePlaces(pools,schedule,request,{details:discovery.placeDetails,timeZone,now:discovery.now?.()});
+  const selected=fitted.stops.map(s=>s.item);
+  const stops = fitted.stops.map((slot,index) => ({...slot,id:`stop-${index}`,label:LABELS[slot.intent],item:selected[index],status:selected[index]?'matched':'unfilled',alternatives:ranked[index].filter((item) => !selected.some((chosen) => chosen?.id===item.id)).slice(0,2),...(selected[index]?{}:{reason:slot.reason|| (request.pins[slot.intent]?'kept_place_unavailable':pools[index].length?'no_distinct_place':'no_eligible_places')})}));
   const filled = stops.filter((stop) => stop.item);
   const tasteMap = buildTasteMap(request,members,stops);
   stops.forEach((stop) => {stop.connections=tasteMap.edges.filter((edge) => edge.to===stop.id);});
@@ -168,10 +173,10 @@ export async function buildItinerary(discovery, request) {
     budget:allocateBudget(request,filled.map((stop)=>stop.intent)),
     people:request.people.map((person,index)=>({id:person.id || `person-${index}`,name:person.name,taste:members[index][0].taste})),
     provenance:{provider,retrievedAt:members[0][0].provenance.retrievedAt,...(members[0][0].provenance.locality?{locality:members[0][0].provenance.locality}:{})},
-    timeZone:members[0][0].provenance.locality?.timeZone||(['Accra','Osu','East Legon','Cantonments','Labone','Airport Residential'].includes(request.area)?'Africa/Accra':null),
+    timeZone,timingNotes:fitted.notes,
     links:{directions:provider!=='demo'&&filled.length>=1?directions.href:null},
-    checks:[{label:'Distinct stops',status:'passed'},{label:'Time window',status:'passed'},{label:'Budget allocated',status:'passed'},{label:'Opening hours',status:'unverified'},{label:'Travel time',status:'unverified'},...(request.party.children?[{label:'Child suitability',status:'unverified'}]:[])],
+    checks:[{label:'Distinct stops',status:'passed'},{label:'Time window',status:'passed'},{label:'Budget allocated',status:'passed'},{label:'Opening hours',status:filled.length&&filled.every(s=>s.hours?.status==='fits_reported_hours')?'checked':'unverified'},{label:'Travel time',status:'unverified'},...(request.party.children?[{label:'Child suitability',status:'unverified'}]:[])],
     activity:[{label:'Preferences resolved',detail:`${members.reduce((sum,r)=>sum+r[0].taste.resolved.length,0)} artist signals across ${members.length} taste profile${members.length===1?'':'s'}`},{label:'Qloo places considered',detail:`${members.reduce((sum,r)=>sum+r[0].fetched,0)} candidate appearances before activity and area checks`},{label:'A day assembled',detail:`${filled.length} of ${stops.length} stops filled; no filters widened`},{label:'Budget and time checked',detail:'Spending allowances and suggested time slots calculated'}],
-    warnings:[...(provider==='demo'?['Sample plan with synthetic places.']:[]),...(unresolved.length?[`Unresolved artists: ${unresolved.map((entry)=>`${entry.requested} (${entry.person})`).join(', ')}.`]:[]),...(filled.length<stops.length?['Some stops could not be filled without changing your preferences.']:[]),'Suggested times do not verify opening hours. Travel buffers are not route estimates.','Budget figures are allowances, not venue quotes. Confirm prices and availability before going.',...(request.party.children?['Check child suitability directly with the venues.']:[])],
+    warnings:[...fitted.notes,...(provider==='demo'?['Sample plan with synthetic places.']:[]),...(unresolved.length?[`Unresolved artists: ${unresolved.map((entry)=>`${entry.requested} (${entry.person})`).join(', ')}.`]:[]),...(filled.length<stops.length?['Some stops could not be filled without changing your preferences.']:[]),'Suggested times do not verify opening hours. Travel buffers are not route estimates.','Budget figures are allowances, not venue quotes. Confirm prices and availability before going.',...(request.party.children?['Check child suitability directly with the venues.']:[])],
   };
 }

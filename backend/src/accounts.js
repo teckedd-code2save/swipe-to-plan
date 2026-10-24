@@ -24,9 +24,10 @@ export function createAccountStore({file=null,now=Date.now}={}){
   };
 }
 
-export function createAccounts({store=createAccountStore(),now=Date.now,origin=process.env.APP_ORIGIN||'http://127.0.0.1:5173',clientId=process.env.GOOGLE_OAUTH_CLIENT_ID,clientSecret=process.env.GOOGLE_OAUTH_CLIENT_SECRET,oauthFactory}={}){
+export function createAccounts({store=createAccountStore(),now=Date.now,origin=process.env.APP_ORIGIN||'http://127.0.0.1:5173',clientId=process.env.GOOGLE_OAUTH_CLIENT_ID,clientSecret=process.env.GOOGLE_OAUTH_CLIENT_SECRET,adminEmails=(process.env.ADMIN_EMAILS||'').split(',').map(e=>e.trim().toLowerCase()).filter(Boolean),oauthFactory}={}){
   origin=new URL(origin).origin;
   const secure=origin.startsWith('https://');
+  const isAdmin=user=>!!user&&adminEmails.includes(user.email.toLowerCase());
   const enabled=!!(clientId&&clientSecret&&(secure||process.env.NODE_ENV!=='production'));
   const redirectUri=`${origin}/api/auth/google/callback`;
   const oauth=()=>oauthFactory?oauthFactory():new OAuth2Client({clientId,clientSecret,redirectUri,transporterOptions:{timeout:15000,retry:false}});
@@ -41,7 +42,9 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
   function returnPath(raw){if(raw==='/'||raw===undefined)return '/';if(typeof raw==='string'&&/^\/#\/(?:day|circle)\/[a-zA-Z0-9_-]{1,64}\?(?:key|invite)=[a-zA-Z0-9_-]{20,64}$/.test(raw))return raw;throw new InputError('Return to the planner after signing in.');}
   return {
     enabled,origin,redirectUri,
-    async current(session){return store.read(data=>{const user=resolve(data,session);return {configured:enabled,user:user?safeUser(user):null,circles:user?myCircles(data,user):[]};});},
+    async current(session){return store.read(data=>{const user=resolve(data,session);return {configured:enabled,user:user?{...safeUser(user),admin:isAdmin(user)}:null,circles:user?myCircles(data,user):[]};});},
+    async identity(req){return store.read(data=>{const user=resolve(data,cookie(req,sessionName));return user?{id:user.id,admin:isAdmin(user)}:null;});},
+    async adminUsers(req){return store.read(data=>{const user=requireUser(data,cookie(req,sessionName));if(!isAdmin(user))throw fail('This dashboard is private.');return Object.values(data.users).map(u=>({id:u.id,name:u.profile.name,email:u.email,createdAt:u.createdAt,lastSignedInAt:u.lastSignedInAt||null,circles:Object.values(data.circles).filter(c=>c.members.some(m=>m.userId===u.id)).length,hasTastes:!!(u.profile.artists.length||u.profile.vibes.length)}));});},
     async planningPeople(req){
       const current=await this.current(cookie(req,sessionName));
       if(!current.user)return {peopleMode:'guest'};
@@ -60,6 +63,8 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       await store.transact(data=>{
         let user=Object.values(data.users).find(u=>u.googleSubject===identity.sub);
         if(!user){const id=randomUUID();user={id,googleSubject:identity.sub,email:identity.email||'',profile:{id,name:(identity.name?.trim()||'You').slice(0,24),artists:[],vibes:[]},createdAt:new Date(now()).toISOString()};data.users[id]=user;}
+        user.email=identity.email||user.email;
+        user.lastSignedInAt=new Date(now()).toISOString();
         // Stable Google subject is the identity. Never merge accounts by email.
         delete data.sessions[hash(previousSession)];
         data.sessions[hash(session)]={userId:user.id,expiresAt:now()+30*86400000};
@@ -67,12 +72,12 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       return {session,returnTo:flow.returnTo};
     },
     async logout(session){await store.transact(data=>{delete data.sessions[hash(session)];});},
-    async updateProfile(session,body){fields(body,['name','artists','vibes','spending']);return store.transact(data=>{const user=requireUser(data,session);user.profile=profile(body,user.id);return safeUser(user);});},
+    async updateProfile(session,body){fields(body,['name','artists','vibes','spending']);return store.transact(data=>{const user=requireUser(data,session);user.profile=profile(body,user.id);return {...safeUser(user),admin:isAdmin(user)};});},
     async updatePlanningLocation(session,body,resolveLocation){
       fields(body,['locationId']);await store.read(data=>requireUser(data,session));
       if(body.locationId!==null&&!resolveLocation)throw new InputError('Location search is unavailable.');
       const selected=body.locationId===null?null:await resolveLocation(body.locationId);
-      return store.transact(data=>{const user=requireUser(data,session);user.planningLocation=selected;return safeUser(user);});
+      return store.transact(data=>{const user=requireUser(data,session);user.planningLocation=selected;return {...safeUser(user),admin:isAdmin(user)};});
     },
     async createCircle(session,body){
       fields(body,['name','people']);if(typeof body.name!=='string'||!body.name.trim()||body.name.length>40)throw new InputError('Name your circle in up to 40 characters.');

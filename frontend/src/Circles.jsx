@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {Icon,PERSON_COLORS} from './PlannerIcons.jsx';
 import {circlePeople} from './circles.js';
 
-export function CircleFaces({people}){return <span className="gs-circle-faces">{people.slice(0,4).map((p,i)=><i key={p.id} style={{background:PERSON_COLORS[i%PERSON_COLORS.length]}} title={p.name}>{p.name.slice(0,1).toUpperCase()}</i>)}{people.length>4&&<i>+{people.length-4}</i>}</span>;}
+export function CircleFaces({people,limit=4}){return <span className="gs-circle-faces">{people.slice(0,limit).map((p,i)=><i key={p.id} style={{background:PERSON_COLORS[i%PERSON_COLORS.length]}} title={p.name}>{p.name.slice(0,1).toUpperCase()}</i>)}{people.length>limit&&<i>+{people.length-limit}</i>}</span>;}
 export default function Circles({circles,contacts,people,onSave,onRemove,onApply,onClose,owner=true}){
   const dialog=useRef(null),[name,setName]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState('');
   useEffect(()=>{dialog.current.showModal();},[]);

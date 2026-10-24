@@ -35,6 +35,6 @@ export default function LocationAction({brief,preferred,query:initialQuery='',sc
       </>}
     </form>
     {error&&<p className="cs-inline-error" role="alert">{error}</p>}
-    <div className="cs-location-foot"><small>Qloo location search · no place search yet</small>{preferred&&<button disabled={busy} onClick={async()=>{setBusy(true);try{await onForget();setScope('plan');}catch(e){setError(e.message);}finally{setBusy(false);}}}>Forget saved area</button>}</div>
+    <div className="cs-location-foot"><small>Area search · no place search yet</small>{preferred&&<button disabled={busy} onClick={async()=>{setBusy(true);try{await onForget();setScope('plan');}catch(e){setError(e.message);}finally{setBusy(false);}}}>Forget saved area</button>}</div>
   </section>;
 }

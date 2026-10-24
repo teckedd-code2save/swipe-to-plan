@@ -1,5 +1,6 @@
+import {usageSession} from './usage.js';
 async function json(url, options = {}) {
-  const response = await fetch(url, { headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(25000), ...options });
+  const response = await fetch(url, {signal:AbortSignal.timeout(25000),...options,headers:{"content-type":"application/json",...(!navigator.globalPrivacyControl?{"x-unstressed-session":usageSession()}:{}),...options.headers}});
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw Object.assign(new Error(body.error || `Request failed (${response.status}).`), {status:response.status,code:body.code});
   return body;
@@ -10,6 +11,7 @@ export const api = {
   locations:(q,signal)=>json(`/api/locations?q=${encodeURIComponent(q)}`,{signal}),
   location:id=>json(`/api/locations/${encodeURIComponent(id)}`),
   planningLocation:id=>json('/api/account/planning-location',{method:'PATCH',body:JSON.stringify({locationId:id})}),
+  usage:days=>json(`/api/admin/usage?days=${days}`),
   account:()=>json('/api/account'),
   signIn:returnTo=>json('/api/auth/google/start',post({returnTo})),
   signOut:()=>json('/api/auth/logout',post({})),

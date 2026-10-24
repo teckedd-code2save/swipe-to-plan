@@ -1,4 +1,5 @@
 import {Icon,ACTIVITY_NAMES,dateLabel} from './PlannerIcons.jsx';
+import {needsTiming,timingLabel} from './timing.js';
 import {formatMoney} from './money.js';
 import {CircleFaces} from './Circles.jsx';
 
@@ -11,8 +12,9 @@ export default function PlanReview({brief,deck,hasPlan,confirmed,busy,onPlan,onT
     <button className="cs-review-row" onClick={()=>onTool('people')}><CircleFaces people={brief.people}/><span><strong>{brief.people.map(p=>p.name).join(', ')}</strong><small>{brief.party.adults+brief.party.children} going · add people or bring a circle</small></span><Icon name="arrowUpRight" size={14}/></button>
     <button className={`cs-review-row ${!favorites?'needs-tastes':''}`} onClick={()=>onTool('tastes')}><Icon name="music" size={19}/><span><strong>{favorites?`${favorites} ${favorites===1?'favorite':'favorites'} in the mix`:'What would make this your kind of day?'}</strong><small>{favorites?labels.slice(0,3).join(' · '):'Add food, activities, music and mood'}</small></span><Icon name="plus" size={15}/></button>
     <button className="cs-review-row" onClick={()=>onTool('location')}><Icon name="pin" size={19}/><span><strong>{confirmed?brief.area:'Choose a planning area'}</strong><small>{confirmed?'Area confirmed · change anytime':'I’ll find real places around your chosen area'}</small></span><Icon name="arrowUpRight" size={14}/></button>
-    <button className="cs-review-row" onClick={onDetails}><Icon name="calendar" size={19}/><span><strong>{brief.activities.map(a=>ACTIVITY_NAMES[a]).join(' + ')}</strong><small>{dateLabel(brief.date)} · {brief.startTime}–{brief.endTime} · {formatMoney(brief.budget,brief.currency)} group allowance</small></span><span className="cs-review-edit">Edit</span></button>
+    <button className="cs-review-row" onClick={()=>onTool('timing')}><Icon name="calendar" size={19}/><span><strong>{brief.activities.map(a=>ACTIVITY_NAMES[a]).join(' + ')}</strong><small>{brief.timing?.dateConfirmed!==false?dateLabel(brief.date):'Choose a day'} · {timingLabel(brief)}</small></span><span className="cs-review-edit">Edit</span></button>
+    <button className="cs-review-row" onClick={onDetails}><Icon name="wallet" size={19}/><span><strong>{formatMoney(brief.budget,brief.currency)} group allowance</strong><small>Activities, budget and other details</small></span><span className="cs-review-edit">Edit</span></button>
     <p className="cs-review-note">{favorites?'I’ll use everyone’s tastes to find the places.':'You can add tastes first, or ask me to start with the area and activities.'}</p>
-    <button className="cs-review-plan" disabled={busy} onClick={onPlan}>{!confirmed?'Choose an area':hasPlan?'Update my plan':'Plan it'}<Icon name="arrow" size={16}/></button>
+    <button className="cs-review-plan" disabled={busy} onClick={onPlan}>{!confirmed?'Choose an area':needsTiming(brief)?'Choose when to go':hasPlan?'Update my plan':'Plan it'}<Icon name="arrow" size={16}/></button>
   </section>;
 }
