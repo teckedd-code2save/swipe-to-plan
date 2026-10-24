@@ -1,5 +1,5 @@
 // Only the live entrypoint loads dotenv. Tests inject fetch/key and never read credentials.
-import {locationId as parseLocationId,locationOption,approximatePoint} from './locations.js';
+import {locationId as parseLocationId,locationOption,nearbyRequest,areaDistanceKm} from './locations.js';
 import {byId,matchesTasteTag} from './deck.js';
 import {find as findTimeZones} from 'geo-tz';
 const accraAreas=['Osu','East Legon','Cantonments','Labone','Airport Residential'];
@@ -69,13 +69,19 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
   return {
     name: "qloo",
     getLocation,
-    async nearbyLocations(point){
-      const {latitude,longitude}=approximatePoint(point);
+    async nearbyLocations(point,radiusKm=20){
+      ({point,radiusKm}=nearbyRequest({...point,radiusKm}));
+      const {latitude,longitude}=point;
       // Search uses lat,lon (not the WKT lon,lat order of Insights).
       // No coordinate-keyed cache: only public locality entities are retained.
-      const value=(await call('/search',{types:'urn:entity:locality','filter.location':`${latitude},${longitude}`,'filter.radius':10,sort_by:'distance',take:8})).map(locationOption).filter(Boolean);
-      for(const option of value){if(locationCache.size>=512)locationCache.delete(locationCache.keys().next().value);locationCache.set(option.id,{value:option,at:now()});}
-      return value;
+      const rows=(await call('/search',{types:'urn:entity:locality','filter.location':`${latitude},${longitude}`,'filter.radius':radiusKm/1.609344,sort_by:'distance',take:20})).map(entity=>({option:locationOption(entity),distanceKm:areaDistanceKm(point,entity.location)})).filter(row=>row.option&&!['country','continent'].includes(row.option.kind.toLowerCase()));
+      // A named town is a more useful choice than an entire region. Keep broad
+      // areas available, labelled as such, after the nearby towns/neighborhoods.
+      const broad=kind=>['state','region','county','province'].includes(kind.toLowerCase());
+      rows.sort((a,b)=>Number(broad(a.option.kind))-Number(broad(b.option.kind))||(a.distanceKm??Infinity)-(b.distanceKm??Infinity));
+      for(const {option} of rows){if(locationCache.size>=512)locationCache.delete(locationCache.keys().next().value);locationCache.set(option.id,{value:option,at:now()});}
+      // Distance belongs only to this response. Never cache it with an area.
+      return rows.slice(0,12).map(({option,distanceKm})=>({...option,...(distanceKm===null?{}:{distanceKm}),broadArea:broad(option.kind)}));
     },
     async getPlace(id) {
       id = parseLocationId(id);

@@ -1,5 +1,5 @@
 import {withActionMessages} from './agent-conversation.js';
-import {approximatePoint} from './locations.js';
+import {nearbyRequest} from './locations.js';
 import express from "express";
 import fs from "node:fs";
 import path from "node:path";
@@ -68,9 +68,9 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   }));
   // POST keeps even approximate coordinates out of URLs and access logs.
   app.post('/api/locations/nearby',limit(15),route(async(req,res)=>{
-    const point=approximatePoint(req.body);
+    const {point,radiusKm}=nearbyRequest(req.body);
     if(!provider.nearbyLocations)throw new InputError('Nearby area search is unavailable. You can still search by name.');
-    res.json({locations:await provider.nearbyLocations(point),source:'qloo'});
+    res.json({locations:await provider.nearbyLocations(point,radiusKm),source:'qloo'});
   }));
   app.get('/api/locations/:id',limit(60),route(async(req,res)=>{if(!provider.getLocation)throw new InputError('Location search is unavailable on this server.');res.json(await provider.getLocation(req.params.id));}));
   app.get("/api/deck", (_req, res) => res.json(publicDeck()));

@@ -11,6 +11,21 @@ export function approximatePoint(value){
   return {latitude:Math.round(latitude*100)/100,longitude:Math.round(longitude*100)/100};
 }
 
+export function nearbyRequest(value){
+  if(!value||typeof value!=='object'||Array.isArray(value))throw new InputError('Provide a location to find nearby areas.');
+  const {radiusKm=20,...point}=value;
+  if(![20,50,100].includes(radiusKm))throw new InputError('Choose a search distance of 20, 50 or 100 km.');
+  return {point:approximatePoint(point),radiusKm};
+}
+
+export function areaDistanceKm(point,location){
+  const lat=location?.lat,lon=location?.lon??location?.lng;
+  if(!Number.isFinite(lat)||Math.abs(lat)>90||!Number.isFinite(lon)||Math.abs(lon)>180)return null;
+  const rad=v=>v*Math.PI/180;
+  const a=Math.sin(rad(lat-point.latitude)/2)**2+Math.cos(rad(point.latitude))*Math.cos(rad(lat))*Math.sin(rad(lon-point.longitude)/2)**2;
+  return Math.round(6371*2*Math.asin(Math.sqrt(Math.min(1,a))));
+}
+
 export function locationId(value){
   if(typeof value!=='string'||! /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value))throw new InputError('Choose a location from the search results.');
   return value.toUpperCase();

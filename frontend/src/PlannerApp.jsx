@@ -15,6 +15,8 @@ import './place-guide.css';
 import ShareDay from './ShareDay.jsx';
 import {Budget,BeforeGoing,Stop} from './PlanDetails.jsx';
 import ChatStudio from './ChatStudio.jsx';
+import LocationWelcome from './LocationWelcome.jsx';
+import {LOCATION_WELCOME_KEY,showLocationWelcome} from './location-arrival.js';
 import {nextPlanSteps} from './plan-assistance.js';
 import {connectedPeople,newlyJoinedPeople} from './connections.js';
 import {TasteAction,CirclesAction,PeopleAction,LocationAction} from './ChatActions.jsx';
@@ -43,6 +45,8 @@ function planText(plan) {
 
 export default function PlannerApp() {
   const account=useAccount();
+  const [locationWelcomeDismissed,setLocationWelcomeDismissed]=useState(()=>{try{return sessionStorage.getItem(LOCATION_WELCOME_KEY)==='seen';}catch{return false;}});
+  function dismissLocationWelcome(){setLocationWelcomeDismissed(true);try{sessionStorage.setItem(LOCATION_WELCOME_KEY,'seen');}catch{/* Optional session memory. */}}
   const accountRef=useRef(account);accountRef.current=account;
   const [usageOpen,setUsageOpen]=useState(false);
   useEffect(()=>{track('visit');},[]);
@@ -354,7 +358,8 @@ export default function PlannerApp() {
       append('user','Check the hours and menus for our day.');
       append('assistant',nextSteps.note+' Open any place for its available menu links, contact details and an enquiry draft.');
       setTab('checklist');setPlanOpen(true);
-    }else if(action.id==='tastes')openTaste(owner?action.personId:undefined);
+    }else if(action.id==='location')askLocation();
+    else if(action.id==='tastes')openTaste(owner?action.personId:undefined);
     else presentTool(action.id);
   }
 
@@ -435,6 +440,7 @@ export default function PlannerApp() {
     {tab==='taste'&&<TasteMap key={selection||'all'} plan={plan} initialSelection={selection} onEdit={()=>{setPlanOpen(false);openTaste();}}/>}{tab==='budget'&&<Budget plan={plan} onEdit={id=>{setPlanOpen(false);openTaste(id);}}/>} {tab==='checklist'&&<BeforeGoing plan={plan} checks={placeChecks} done={confirmations} setDone={setConfirmations} onDetails={stop=>(track('place_opened'),setSelectedPlace(stop.item.entityId))}/>}
     {shared.day?.status==='error'&&<button className="pl-button" onClick={()=>shared.retry().catch(e=>setError(e.message))}>Retry the update</button>}</>}
   </ChatStudio>
+  {showLocationWelcome({ready:account.ready,dismissed:locationWelcomeDismissed,area:brief.area,preferred,plan,chatLength:chat.length,tool,message,hash:location.hash,search:location.search})&&!accountOpen&&!showSaved&&<LocationWelcome onSkip={dismissLocationWelcome} onNearby={()=>{dismissLocationWelcome();chooseTool('nearby');}} onChoose={()=>{dismissLocationWelcome();chooseTool('location');}}/>}
   {selectedStop&&<PlaceDetails key={selectedPlace} stop={selectedStop} plan={plan} checks={placeChecks} onClose={()=>setSelectedPlace(null)} onSwap={()=>{setSelectedPlace(null);swap(selectedStop);}} canSwap={owner&&!groupUpdating&&!plan.request.pins[selectedStop.intent]}/> }
   {accountOpen&&<AccountPanel resumeAction={accountAction} account={account} onClose={()=>{setAccountOpen(false);setAccountAction(null);}} onSignIn={signIn} onTastes={()=>{setAccountOpen(false);presentTool('profile');}} onCircles={()=>{setAccountOpen(false);presentTool('circles');}} onLocation={()=>{setAccountOpen(false);askLocation();}} onUsage={()=>{setAccountOpen(false);setUsageOpen(true);}} onSignOut={async()=>{await account.signOut();setAccountOpen(false);}}/>}
   {usageOpen&&<UsageDashboard onClose={()=>setUsageOpen(false)}/>}

@@ -48,4 +48,6 @@ test('post-plan suggestions prioritize real timing issues, missing tastes, retri
   assert.match(nextPlanSteps(plan,{status:'error'}).actions[0].label,/Retry/);
   const missing={...plan,request:{...context,people:[profile('Sam')]}};assert.equal(nextPlanSteps(missing,fits).actions[1].personId,'Sam');
   assert.equal(nextPlanSteps({...plan,stops:[{item:null}]},{}).actions[0].id,'review');
+  const sparse=nextPlanSteps({...plan,stops:[{item:null,reason:'no_eligible_places'}]},{});
+  assert.match(sparse.note,/don’t cover yet/);assert.equal(sparse.actions[1].id,'location');
 });
