@@ -11,12 +11,14 @@ import { buildItinerary, parseItinerary } from "./itinerary.js";
 import { createDays } from "./days.js";
 import { AGENT_TOOLS, AgentError } from "./agent.js";
 import { createAccounts } from './accounts.js';
+import { createPlaceGuide } from './place-guide.js';
 
 export function createApp({ provider, prisma = null, agent = null, dayStore, accounts=createAccounts(), rateLimit = true, trustProxy = process.env.TRUST_PROXY === '1' ? 1 : false, now = Date.now } = {}) {
   const app = express();
   // Production is reachable only through the one host-level Caddy proxy.
   app.set('trust proxy', trustProxy);
   const discovery = createDiscovery({ provider, now });
+  const places = createPlaceGuide({provider,now});
   const days = createDays({ discovery, store: dayStore, now });
   app.disable("x-powered-by");
   app.use(express.json({ limit: "50kb" }));
@@ -47,6 +49,8 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, acc
   }));
   app.get('/api/locations/:id',limit(60),route(async(req,res)=>{if(!provider.getLocation)throw new InputError('Location search is unavailable on this server.');res.json(await provider.getLocation(req.params.id));}));
   app.get("/api/deck", (_req, res) => res.json(publicDeck()));
+  app.get('/api/places/:id',limit(30),route(async(req,res)=>res.json(await places.details(req.params.id))));
+  app.post('/api/place-checks',limit(15),route(async(req,res)=>res.json(await places.check(req.body))));
   app.post("/api/recommend", limit(30), route(async (req, res) => res.json(await discovery.recommend(parseRequest(req.body)))));
   app.post("/api/outings", limit(30), route(async (req, res) => res.json(await buildOuting(discovery, parseOutingRequest(req.body)))));
   app.get("/api/agent/tools", (_req,res) => res.json({tools:AGENT_TOOLS,transport:{plan_day:{method:'POST',path:'/api/itineraries'}},capabilities:'/api/schema'}));

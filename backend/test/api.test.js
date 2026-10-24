@@ -150,3 +150,14 @@ test('shared-day HTTP routes require scoped credentials and support circle and p
   assert.equal((await call(`${path}/members/sam`,{name:'Sam',artists:['Tems'],vibes:['v-cafe']},'PATCH',personal)).status,200);
   assert.equal((await call(path,{request:day.request,revision:1},'PATCH',auth)).status,409);
 });
+
+test('place details and checks validate IDs and do not require account data',async t=>{
+ const id='AB662328-C415-495E-B21E-390E20FC08F9';
+ const provider={...createDemoProvider(),getPlace:async entityId=>({entity_id:entityId,name:'Known venue',properties:{address:'London',hours:{sunday:[{closed:false,opens:'T11:00:00',closes:'T22:30:00'}]}}})};
+ const request=await serve(t,{provider});
+ const result=await request('/api/place-checks',{date:'2026-10-25',stops:[{entityId:id,start:'17:00',end:'18:00'}]});
+ assert.equal(result.status,200);assert.equal(result.body.stops[0].hours.status,'fits_reported_hours');
+ assert.equal((await request(`/api/places/${id}`)).status,200);
+ assert.equal((await request('/api/places/not-an-id')).status,400);
+ assert.equal((await request('/api/place-checks',{date:'2026-02-30',stops:[{entityId:id,start:'17:00',end:'18:00'}]})).status,400);
+});

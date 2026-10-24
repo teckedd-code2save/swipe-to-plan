@@ -5,6 +5,8 @@ import {Icon,ACTIVITY_NAMES,dateLabel,money} from './PlannerIcons.jsx';
 import TasteMap from './TasteMap.jsx';
 import TripEditor from './TripEditor.jsx';
 import PlanReview from './PlanReview.jsx';
+import {PlaceDetails,PlaceCheckNotice,usePlaceChecks} from './PlaceGuide.jsx';
+import './place-guide.css';
 import ShareDay from './ShareDay.jsx';
 import {Budget,BeforeGoing,Stop} from './PlanDetails.jsx';
 import ChatStudio from './ChatStudio.jsx';
@@ -59,6 +61,9 @@ export default function PlannerApp() {
   const [showSaved, setShowSaved] = useState(false);
   const [notice, setNotice] = useState('');
   const [confirmations, setConfirmations] = useState({});
+  const [selectedPlace,setSelectedPlace] = useState(null);
+  const placeChecks = usePlaceChecks(plan);
+  const selectedStop = plan?.stops.find(stop=>stop.item?.entityId===selectedPlace);
   const editorRevision=useRef(null);
   const [deck,setDeck]=useState([]),[tasteId,setTasteId]=useState(null);
   const [localContacts,setContacts]=useState(readContacts),[pending,setPending]=useState(false);
@@ -111,7 +116,7 @@ export default function PlannerApp() {
   }
   function showPlan(result,description){
     planningPaused.current=false;setDraftChanged(false);setRevisionFailed(false);const old=planRef.current;setPrevious(old);planRef.current=result;setPlan(result);
-    setConfirmations({});setSelection(null);
+    setConfirmations({});setSelection(null);setSelectedPlace(null);
     keepPeople(result.request.people);
     if(!toolRef.current){resultReceipt(result,old?'I’ve updated the day for everyone.':'Here’s your day.');if(showWhenReady.current||!old){setPlanOpen(true);showWhenReady.current=false;}}
   }
@@ -272,7 +277,7 @@ export default function PlannerApp() {
         if(result.panel==='tastes')openTaste(result.personId);
         else if(result.panel==='location')askLocation();
         else if(['circles','people','share'].includes(result.panel))presentTool(result.panel);
-        else {setTab(result.panel==='budget'?'budget':'itinerary');setPlanOpen(true);append('assistant',planRef.current?'Here’s the current day.':'Add a few tastes first, and I’ll put a day together.');}
+        else {setTab(result.panel==='budget'?'budget':result.panel==='checks'?'checklist':'itinerary');setPlanOpen(true);append('assistant',planRef.current?(result.panel==='checks'?'I’m comparing your times with reported hours and gathering the venue details. You’ll see what still needs confirming.':'Here’s the current day.'):'Add a few tastes first, and I’ll put a day together.');}
       }else if(result.status==='needs_input')append('assistant',result.question);
       else if(result.status==='reply')append('assistant',result.text);
       else {if(!owner)throw Error('Only the organizer can change the trip details.');showWhenReady.current=true;if(shared.linked)await shared.updateBrief(result.request,revision);else accept(result);}
@@ -305,10 +310,11 @@ export default function PlannerApp() {
     if(tool?.kind==='share')return <ShareDay embedded plan={plan} brief={brief} shared={shared} onEnsure={ensureShared} onClose={finishTool}/>;return null;
   }
   return <><ChatStudio draftChanged={draftChanged} accountButton={<AccountButton user={account.user} onClick={()=>setAccountOpen(true)}/>} brief={brief} plan={plan} chat={chat} tool={tool} renderTool={renderTool} message={message} onMessage={setMessage} onSend={sendMessage} busy={groupUpdating} configured={health?.agentConfigured} owner={owner} guest={guest} connecting={shared.connecting} revisionFailed={revisionFailed} error={error||shared.error||account.error} onDismissError={()=>{setError('');shared.clearError();account.clearError();}} onNew={resetDay} onSaved={()=>setShowSaved(true)} onTool={chooseTool} onOpenPlan={()=>setPlanOpen(true)} planOpen={planOpen} onClosePlan={()=>setPlanOpen(false)} planView={tab} onPlanView={setTab} notice={notice} joinContent={<div className="cs-join"><h1>Come along.</h1><p>{brief.people.map(p=>p.name).join(', ')} are putting a day together.</p><form className="cs-inline-form" onSubmit={e=>{e.preventDefault();join();}}><input aria-label="Your name" required maxLength={24} value={joinName} onChange={e=>setJoinName(e.target.value)} placeholder="Your name"/><button disabled={joinBusy}>Join the day <Icon name="arrow" size={15}/></button></form><small>Your name and tastes are visible to this group.</small></div>}>
-    {plan&&<>{tab==='itinerary'&&<><div className="cs-day-actions">{owner&&<button onClick={openDetails} disabled={groupUpdating}><Icon name="edit" size={13}/>Details</button>}<button onClick={save}><Icon name="bookmark" size={13}/>Save</button><button onClick={copy}><Icon name="copy" size={13}/>Copy</button>{previous&&!shared.linked&&<button disabled={groupUpdating} onClick={()=>{planRef.current=previous;setPlan(previous);replaceBrief(previous.request);setPrevious(null);append('assistant','Your previous day is restored.');}}><Icon name="undo" size={13}/>Undo</button>}</div>{plan.stops.map(stop=><Stop key={`${stop.id}-${stop.item?.id}`} stop={stop} plan={plan} busy={groupUpdating||!owner} onPin={pin} onSwap={swap} onTrace={trace} onBudget={()=>setTab('budget')}/>)}<p className="cs-day-note">Suggested times and spending allowances. Confirm hours, prices and travel before you go.</p><details className="cs-plan-notes"><summary>Notes & sources</summary>{plan.provenance.locality&&<p>Qloo matched: {plan.provenance.locality.label}.</p>}{plan.timeZone&&<p>Suggested times are local to {plan.timeZone}.</p>}{plan.warnings.map(w=><p key={w}>{w}</p>)}<p>Places from {plan.provenance.provider}. Retrieved {plan.provenance.retrievedAt}.</p></details></>}
-    {tab==='taste'&&<TasteMap key={selection||'all'} plan={plan} initialSelection={selection} onEdit={()=>{setPlanOpen(false);openTaste();}}/>}{tab==='budget'&&<Budget plan={plan} onEdit={id=>{setPlanOpen(false);openTaste(id);}}/>} {tab==='checklist'&&<BeforeGoing plan={plan} done={confirmations} setDone={setConfirmations}/>}
+    {plan&&<>{tab==='itinerary'&&<><PlaceCheckNotice checks={placeChecks} onOpen={()=>setTab('checklist')}/><div className="cs-day-actions">{owner&&<button onClick={openDetails} disabled={groupUpdating}><Icon name="edit" size={13}/>Details</button>}<button onClick={save}><Icon name="bookmark" size={13}/>Save</button><button onClick={copy}><Icon name="copy" size={13}/>Copy</button>{previous&&!shared.linked&&<button disabled={groupUpdating} onClick={()=>{planRef.current=previous;setPlan(previous);replaceBrief(previous.request);setPrevious(null);append('assistant','Your previous day is restored.');}}><Icon name="undo" size={13}/>Undo</button>}</div>{plan.stops.map(stop=><Stop key={`${stop.id}-${stop.item?.id}`} stop={stop} plan={plan} busy={groupUpdating||!owner} onPin={pin} onSwap={swap} onTrace={trace} onBudget={()=>setTab('budget')} onDetails={stop=>setSelectedPlace(stop.item.entityId)}/>)}<p className="cs-day-note">Suggested times and spending allowances. Confirm hours, prices and travel before you go.</p><details className="cs-plan-notes"><summary>Notes & sources</summary>{plan.provenance.locality&&<p>Qloo matched: {plan.provenance.locality.label}.</p>}{plan.timeZone&&<p>Suggested times are local to {plan.timeZone}.</p>}{plan.warnings.map(w=><p key={w}>{w}</p>)}<p>Places from {plan.provenance.provider}. Retrieved {plan.provenance.retrievedAt}.</p></details></>}
+    {tab==='taste'&&<TasteMap key={selection||'all'} plan={plan} initialSelection={selection} onEdit={()=>{setPlanOpen(false);openTaste();}}/>}{tab==='budget'&&<Budget plan={plan} onEdit={id=>{setPlanOpen(false);openTaste(id);}}/>} {tab==='checklist'&&<BeforeGoing plan={plan} checks={placeChecks} done={confirmations} setDone={setConfirmations} onDetails={stop=>setSelectedPlace(stop.item.entityId)}/>}
     {shared.day?.status==='error'&&<button className="pl-button" onClick={()=>shared.retry().catch(e=>setError(e.message))}>Retry the update</button>}</>}
   </ChatStudio>
+  {selectedStop&&<PlaceDetails key={selectedPlace} stop={selectedStop} plan={plan} checks={placeChecks} onClose={()=>setSelectedPlace(null)} onSwap={()=>{setSelectedPlace(null);swap(selectedStop);}} canSwap={owner&&!groupUpdating&&!plan.request.pins[selectedStop.intent]}/> }
   {accountOpen&&<AccountPanel account={account} onClose={()=>setAccountOpen(false)} onSignIn={signIn} onTastes={()=>{setAccountOpen(false);presentTool('profile');}} onCircles={()=>{setAccountOpen(false);presentTool('circles');}} onLocation={()=>{setAccountOpen(false);askLocation();}} onSignOut={async()=>{await account.signOut();setAccountOpen(false);}}/>}
   {circleInvite&&<CircleInvite account={account} onSignIn={signIn} onClose={()=>{setCircleInvite(false);history.replaceState(null,'',location.pathname);}} onJoined={circle=>{setCircleInvite(false);history.replaceState(null,'',location.pathname);applyCircle(circle).catch(e=>setError(e.message));}}/>}
   {editor&&owner&&<TripEditor draftOnly={planningPaused.current||!plan} onLocation={draft=>{setEditor(false);askLocation(draft);}} brief={activeBrief} groupManaged hasPlan={!!plan} onClose={()=>setEditor(false)} onSubmit={async request=>{if(planningPaused.current||!planRef.current){replaceBrief(request);setDraftChanged(!!planRef.current);setEditor(false);presentTool('review','Those details are saved. I’ll search when you’re ready.');return;}if(await build(request,undefined,editorRevision.current))setEditor(false);else{editorRevision.current=sharedRef.current.day?.revision;throw Error('The update could not be saved. Your edits are still here; review the group and retry.');}}}/>}

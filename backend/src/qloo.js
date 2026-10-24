@@ -69,6 +69,12 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
   return {
     name: "qloo",
     getLocation,
+    async getPlace(id) {
+      id = parseLocationId(id);
+      const place = (await call('/entities', {entity_ids:id})).find(e => e.entity_id?.toUpperCase() === id && (e.types || []).includes('urn:entity:place'));
+      if (!place) throw new ProviderError('provider_response_invalid');
+      return place;
+    },
     async searchLocations(query){
       const key=norm(query),cached=searchCache.get(key);if(cached&&now()-cached.at<3600000)return cached.value;
       const value=(await call('/search',{query,types:'urn:entity:locality',take:8})).map(locationOption).filter(Boolean);

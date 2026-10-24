@@ -130,3 +130,9 @@ test('replies receive bounded participant-to-preference evidence, with malformed
   for(const extra of invalid)await assert.rejects(agent.interpret({message:'Hi',context,...extra}),e=>e.status===400);
   assert.equal(calls,1);
 });
+
+test('a practical-details request opens checks without inventing verification or reworking the plan',async()=>{
+ const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('show_ui',{panel:'checks'})});
+ const result=await agent.interpret({message:'Check hours and menus for this day',context:parseItinerary()});
+ assert.deepEqual(result,{status:'show_ui',panel:'checks'});
+});

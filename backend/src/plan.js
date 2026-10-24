@@ -51,12 +51,12 @@ function locationEvidence(p, area, locality) {
   return hasCity && match ? { field: match[0], value: match[1], method: "provider_text_match" } : null;
 }
 
-function shape(p, source, retrievedAt) {
+export function shapePlace(p, source, retrievedAt) {
   const pr = p.properties ?? {};
   const lat = p.location?.lat;
   const lng = p.location?.lon ?? p.location?.lng;
   const coords = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
-  const gid = safeString(p.external?.google_place?.[0]?.place_id);
+  const gid = safeString(p.external?.google_place?.[0]?.place_id ?? pr.external?.google_place?.place_id);
   const map = new URL("https://www.google.com/maps/search/");
   map.searchParams.set("api", "1");
   map.searchParams.set("query", coords ? `${lat},${lng}` : `${p.name} ${pr.address ?? ""}`);
@@ -118,7 +118,7 @@ export function rankPlaces(places, request, { source = "qloo", retrievedAt = new
     const base = 1 - index / Math.max(places.length, 1);
     const boost = Math.min(0.15 * matched.length, 0.45);
     const penalty = dislikesNoise && noiseTags.length ? 0.25 : 0;
-    const item = shape(p, source, retrievedAt);
+    const item = shapePlace(p, source, retrievedAt);
     const intentText = request.intent === "any" ? "outing" : request.intent;
     item.reasons = [
       { code: "intent_match", text: `Provider tags match your ${intentText} request.`, evidence: intentTags.map((t) => ({ field: "tags", value: t.id })) },

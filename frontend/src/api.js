@@ -19,6 +19,7 @@ export const api = {
   circleInvite:(id,token)=>json(`/api/circle-invites/${encodeURIComponent(id)}`,{headers:{'x-circle-invite':token}}),
   joinCircle:(id,body)=>json(`/api/account/circles/${encodeURIComponent(id)}/join`,post(body)),
   circlePerson:(id,memberId,person)=>json(`/api/account/circles/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}`,{method:'PATCH',body:JSON.stringify(person)}),
+  placeChecks: (body,signal) => json('/api/place-checks',{...post(body),signal}),
   health: () => json("/api/health"), deck: () => json("/api/deck"),
   recommend: (body) => json("/api/recommend", {...post(body),signal:AbortSignal.timeout(45000)}),
   outing: (body) => json("/api/outings", {...post(body),signal:AbortSignal.timeout(45000)}),
