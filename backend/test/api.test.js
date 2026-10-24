@@ -4,7 +4,8 @@ import http from "node:http";
 import { once } from "node:events";
 import { createApp } from "../src/app.js";
 import { createDemoProvider } from "../src/demo-provider.js";
-import { parseItinerary } from "../src/itinerary.js";
+import { parseItinerary as parseBrief } from "../src/itinerary.js";
+const parseItinerary=(body={})=>parseBrief({activities:['coffee','dinner'],...body});
 async function serve(t, options = {}) {
   t.mock.method(globalThis, "fetch", () => { throw new Error("External requests forbidden"); });
   const server = createApp({ provider: createDemoProvider(), rateLimit: false, ...options }).listen(0, "127.0.0.1");
@@ -97,7 +98,7 @@ test('itinerary HTTP contract exposes evidence and supports external tool consum
   const tools = (await call('/api/agent/tools')).body;
   assert.equal(tools.tools[0].function.name,'plan_day');
   assert.equal(tools.transport.plan_day.path,'/api/itineraries');
-  const result = await call('/api/itineraries',{date:'2099-01-01',people:[{name:'Sam',artists:['Amaarae'],vibes:['v-cafe']}]});
+  const result = await call('/api/itineraries',{date:'2099-01-01',activities:['coffee','dinner'],people:[{name:'Sam',artists:['Amaarae'],vibes:['v-cafe']}]});
   assert.equal(result.status,200);
   assert.equal(result.body.status,'complete');
   assert.equal(result.body.provenance.provider,'demo');
@@ -139,7 +140,7 @@ test('chat cards, circle actions and replies pass through without searching for 
 
 test('shared-day HTTP routes require scoped credentials and support circle and personal changes',async t=>{
   const call=await serve(t);
-  const created=await call('/api/days',{request:{people:[{id:'alex',name:'Alex'}]}});
+  const created=await call('/api/days',{request:{activities:['coffee','dinner'],people:[{id:'alex',name:'Alex'}]}});
   assert.equal(created.status,201);
   const day=created.body,path=`/api/days/${day.id}`,auth={Authorization:`Bearer ${day.token}`};
   assert.equal((await call(path)).status,403);

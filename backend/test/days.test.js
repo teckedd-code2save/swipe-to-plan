@@ -8,7 +8,7 @@ import {createDiscovery} from '../src/plan.js';
 import {createDemoProvider} from '../src/demo-provider.js';
 const person=(id,name=id,vibes=[])=>({id,name,artists:[],vibes});
 const engine=()=>createDiscovery({provider:createDemoProvider()});
-const fixture=async(options={})=>{const days=createDays({discovery:engine(),...options});const day=await days.create({request:{people:[person('host','Alex')],party:{adults:1}}});await days.settled(day.id);return {days,day};};
+const fixture=async(options={})=>{const days=createDays({discovery:engine(),...options});const day=await days.create({request:{activities:['coffee','dinner'],people:[person('host','Alex')],party:{adults:1}}});await days.settled(day.id);return {days,day};};
 
 test('shared-day capabilities restrict every mutation and never disclose other edit tokens',async()=>{
   const {days,day}=await fixture();
@@ -71,7 +71,7 @@ test('preferences arriving during discovery discard the older result and rebuild
   const provider=createDemoProvider();const discover=provider.discover;
   provider.discover=async args=>{if(first){first=false;started();await gate;}return discover(args);};
   const days=createDays({discovery:createDiscovery({provider})});
-  const day=await days.create({request:{people:[person('host','Alex')],party:{adults:1}}});
+  const day=await days.create({request:{activities:['coffee','dinner'],people:[person('host','Alex')],party:{adults:1}}});
   await entered;
   const latest=await days.updatePerson(day.id,day.token,'host',{name:'Alex',artists:[],vibes:['v-cafe']});
   release();await days.settled(day.id);

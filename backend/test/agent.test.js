@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAgent, PLAN_TOOL } from '../src/agent.js';
-import { parseItinerary } from '../src/itinerary.js';
+import { parseItinerary as parseBrief } from '../src/itinerary.js';
+const parseItinerary=(body={})=>parseBrief({activities:['coffee','dinner'],...body});
 import {conversationHistory} from '../../frontend/src/conversation.js';
 
 const response = (name, args) => ({ ok: true, json: async () => ({ choices: [{ message: { tool_calls: [{ function: { name, arguments: JSON.stringify(args) } }] } }] }) });
@@ -176,7 +177,7 @@ test('just one place removes other stops and pins while keeping people, preferen
   const result=await agent.interpret({message:'we wanna visit just one place',context});
   assert.deepEqual(result.request.activities,['dinner']);assert.deepEqual(result.request.people,context.people);
   assert.equal(result.request.budget,context.budget);assert.deepEqual(result.request.excludeIds,context.excludeIds);assert.deepEqual(result.request.pins,{dinner:'qloo:meal'});
-  assert.equal(sent.tools.find(t=>t.function.name==='revise_day').function.parameters.properties.activities.minItems,1);
+  assert.equal(sent.tools.find(t=>t.function.name==='revise_day').function.parameters.properties.activities.minItems,0);
 });
 
 test('interactive chat tools validate panels and participant IDs',async()=>{
@@ -214,4 +215,20 @@ test('signed-in additions use connected identities or prepare an invite; guest n
   const unknown=await invoke('add_person',{name:'Maya',artists:[],vibes:[]});assert.deepEqual(unknown,{status:'action',action:'invite_person',name:'Maya'});
   await assert.rejects(invoke('add_saved_person',{personId:'unknown'}),e=>e.status===400);
   assert.equal((await invoke('add_person',{name:'Maya',artists:[],vibes:[]},'guest')).action,'add_person');
+});
+
+
+test('an open draft stays undecided through location, timing and circle changes',async()=>{
+  const draft={...parseBrief({people:[{id:'you',name:'You'}]}),area:''};
+  const run=(name,args,context=draft,extras={})=>createAgent({getKey:()=> 'test',fetchImpl:async()=>response(name,args)}).interpret({message:'Plan an outing',context,...extras});
+  const located=await run('set_location',{area:'Accra'});
+  assert.deepEqual(located.request.activities,[]);
+  const timed=await run('revise_day',{startTime:'14:00'},located.request);
+  assert.equal(timed.action,'choose_activities');
+  assert.deepEqual(timed.request.activities,[]);
+  const circle=await run('bring_circle',{circleId:'friends'},draft,{circles:[{id:'friends',name:'Friends',people:[{id:'sam',name:'Sam'}]}]});
+  assert.equal(circle.action,'bring_circle');
+  const meal=await run('revise_day',{activities:['dinner']},located.request);
+  assert.equal(meal.status,'ready');
+  assert.deepEqual(meal.request.activities,['dinner']);
 });

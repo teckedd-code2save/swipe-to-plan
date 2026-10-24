@@ -55,8 +55,9 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
   if (minutes(endTime) <= minutes(startTime)) throw new InputError('End time must be after start time on the same day.');
   const pace = body.pace ?? 'easy';
   if (!['easy','balanced'].includes(pace)) throw new InputError('Choose an easy or balanced pace.');
-  const activities = body.activities ?? (children ? ['coffee','activity','dinner'] : ['coffee','dinner']);
-  if (!Array.isArray(activities) || activities.length < 1 || activities.length > 3 || activities.some((item) => !ACTIVITIES.includes(item)) || new Set(activities).size !== activities.length) throw new InputError('Choose one to three different activities.');
+  // An unfinished brief has no activities until the person chooses them.
+  const activities = body.activities ?? [];
+  if (!Array.isArray(activities) || activities.length > 3 || activities.some((item) => !ACTIVITIES.includes(item)) || new Set(activities).size !== activities.length) throw new InputError('Choose one to three different activities.');
   if (children && activities.includes('drinks')) throw new InputError('Choose coffee, discovery or a meal for a family outing with children.');
   const pins = object(body.pins ?? {}, activities, 'kept stops');
   Object.values(pins).forEach((id) => text(id,160,'a kept place ID'));
@@ -135,6 +136,7 @@ function buildTasteMap(request, members, stops) {
 }
 
 export async function buildItinerary(discovery, request) {
+  if(!request.activities.length)throw new InputError('Choose what you’d like to do before finding places.');
   if(!request.timing.dateConfirmed||!request.timing.timeConfirmed)throw new InputError('Choose when you want to go before planning.');
   if(request.locationId){
     if(!discovery.location)throw new InputError('Location search is unavailable on this server.');

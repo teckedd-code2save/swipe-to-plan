@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createAgent} from '../src/agent.js';
-import {parseItinerary} from '../src/itinerary.js';
+import {parseItinerary as parseBrief} from '../src/itinerary.js';
+const parseItinerary=(body={})=>parseBrief({activities:['coffee','dinner'],...body});
 import {nextPlanSteps} from '../../frontend/src/plan-assistance.js';
 const profile=(id,artists=[])=>({id,name:id,artists,vibes:[]});
 const context=parseItinerary({area:'London, UK',party:{adults:1},people:[{...profile('Alex',['SZA']),spending:{style:'mindful',priority:'dinner'}}],budget:100,currency:'GBP',pins:{coffee:'qloo:keep'},excludeIds:['qloo:skip']});
@@ -50,4 +51,11 @@ test('post-plan suggestions prioritize real timing issues, missing tastes, retri
   assert.equal(nextPlanSteps({...plan,stops:[{item:null}]},{}).actions[0].id,'review');
   const sparse=nextPlanSteps({...plan,stops:[{item:null,reason:'no_eligible_places'}]},{});
   assert.match(sparse.note,/don’t cover yet/);assert.equal(sparse.actions[1].id,'location');
+});
+
+
+test('Autopilot keeps an open activity choice empty instead of inventing coffee',async()=>{
+  const result=await invoke({changes:{}},{context:parseBrief({people:[profile('Alex')]}),message:'Plan something for me'});
+  assert.equal(result.status,'autopilot');
+  assert.deepEqual(result.request.activities,[]);
 });

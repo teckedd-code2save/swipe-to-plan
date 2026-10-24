@@ -5,7 +5,7 @@ import { createDiscovery } from '../src/plan.js';
 import { selectStops, parseOutingRequest, buildOuting } from '../src/outing.js';
 
 // These fixtures test selection/evidence, not whether today's start is past.
-const parseItinerary=(body={})=>parseBrief({date:'2099-01-01',...body});
+const parseItinerary=(body={})=>parseBrief({date:'2099-01-01',activities:['coffee','dinner'],...body});
 const venue = (id, tags, contributions = []) => ({ entity_id: id, name: `Place ${id}`, tags: tags.map(tag => ({ id: `urn:tag:category:qloo:${tag}`, name: tag })), properties: { address: 'Osu, Accra, Ghana', price_level: 2 }, query: { explainability: { 'signal.interests.entities': contributions } } });
 function engine(places, resolveArtist = async name => name === 'Missing' ? { status: 'unresolved', reason: 'no_exact_artist_match' } : { status: 'resolved', entityId: name.toLowerCase(), name }) {
   return createDiscovery({ provider: { name: 'qloo', resolveArtist, discover: async () => structuredClone(places) } });
@@ -62,7 +62,7 @@ test('spending tastes change reserves and priorities without raising the group b
   for(const spending of [{style:'rich'},{priority:'flight'},{style:'mindful',actualPrice:20},null])assert.throws(()=>parseItinerary({people:[{name:'Sam',spending}]}),e=>e.status===400);
 });
 test('malformed locations, dates, ambiguous activities and invalid family briefs fail before search', () => {
-  for (const r of [{ area: '' }, { date: '2026-02-30' }, { budget: 0 }, { date: null }, { endTime: '25:00' }, { startTime: '22:00', endTime: '01:00' }, { activities: ['coffee', 'coffee'] }, { activities: [] }, { activities: ['coffee','activity','dinner','drinks'] }, { party: { children: 1 }, activities: ['dinner', 'drinks'] }, { pins: { coffee: 'a', dinner: 'a' } }, { accessible: true }, { people: [{ name: 'Sam', artists: ['a','b','c','d','e','f','g'] }] }, { party: { adults: 1 }, people: [{ name: 'a' }, { name: 'b' }] }]) assert.throws(() => parseItinerary(r), e => e.status === 400);
+  for (const r of [{ area: '' }, { date: '2026-02-30' }, { budget: 0 }, { date: null }, { endTime: '25:00' }, { startTime: '22:00', endTime: '01:00' }, { activities: ['coffee', 'coffee'] }, { activities: ['coffee','activity','dinner','drinks'] }, { party: { children: 1 }, activities: ['dinner', 'drinks'] }, { pins: { coffee: 'a', dinner: 'a' } }, { accessible: true }, { people: [{ name: 'Sam', artists: ['a','b','c','d','e','f','g'] }] }, { party: { adults: 1 }, people: [{ name: 'a' }, { name: 'b' }] }]) assert.throws(() => parseItinerary(r), e => e.status === 400);
 });
 test('itinerary uses Qloo contributions per person and per entity; inputs are not invented evidence', async () => {
   const cafe = venue('cafe', ['cafe'], [{ entity_id: 'amaarae', score: .72 }, { entity_id: 'unrelated', score: 1 }]);
@@ -120,7 +120,7 @@ test('family activity needs venue evidence and excludes nightlife without claimi
   const nightlife = venue('bad', ['cafe', 'nightclub']);
   const interestOnly = venue('fake-park', []); interestOnly.tags = [{id:'urn:tag:interests:qloo:park'}];
   const d = engine([nightlife, interestOnly, venue('cafe', ['cafe']), venue('park', ['park']), venue('meal', ['restaurant'])]);
-  const output = await buildItinerary(d, parseItinerary({ party: {children:1} }));
+  const output = await buildItinerary(d, parseItinerary({ party: {children:1},activities:['coffee','activity','dinner'] }));
   assert.equal(output.status, 'complete');
   assert.deepEqual(output.stops.map(s => s.item.entityId), ['cafe','park','meal']);
   assert.ok(output.checks.some(c => c.label === 'Child suitability' && c.status === 'unverified'));
@@ -139,4 +139,13 @@ test('legacy outings also preserve pinned stops and distinct assignments', async
   assert.equal(output.status,'complete');
   assert.deepEqual(output.stops.map(s=>s.item.id),['qloo:b','qloo:a']);
   assert.throws(()=>parseOutingRequest({stops:[{intent:'coffee'},{intent:'coffee'}]}),/once/);
+});
+
+
+test('undecided activities never invent coffee or query places', async () => {
+  for(const body of [{},{party:{children:1}},{activities:[]}]) {
+    const draft=parseBrief(body);
+    assert.deepEqual(draft.activities,[]);
+    await assert.rejects(buildItinerary({byIntents:()=>assert.fail('No discovery before an activity choice')},draft),/Choose what/);
+  }
 });
