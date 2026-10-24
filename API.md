@@ -80,7 +80,7 @@ The UI confirms area independently of budget, tastes and discovery. Selecting an
 
 The model must return exactly one recognized tool call. `plan_day` arguments pass the strict itinerary validator before Qloo retrieval and deterministic assembly. `ask_question` returns `{ "status": "needs_input", "question": "…" }` without searching. A successful plan includes `agent: { model, action: "plan_day" }`. `revise_day` overlays only the supplied trip fields, preserving all people and durable exclusions/pins. `show_ui` returns `{status:"show_ui",panel,personId?}` for `tastes`, `circles`, `people`, `share`, `location`, `budget` or `itinerary`. `reply` returns `{status:"reply",text}`. Neither response searches for places. The model cannot return a venue list. Exclusions persist across refinements; kept stops persist for retained activities. Release pins in the UI or change them explicitly through the structured tool.
 
-Configuration: `GEMINI_API_KEY` for the default `gemini-3.1-flash-lite`, or `LLM_API_KEY`/`LLM_BASE_URL`/`LLM_MODEL` for another compatible endpoint. Keys stay server-side. Anthropic-specific variables are not used. Missing credentials return `503 agent_not_configured`; malformed model output/provider failures return sanitized `503 agent_unavailable`. Unsupported tool arguments return 400.
+Configuration: `GEMINI_API_KEY` for the default `gemini-3.5-flash-lite`, or `LLM_API_KEY`/`LLM_BASE_URL`/`LLM_MODEL` for another compatible endpoint. Keys stay server-side. Anthropic-specific variables are not used. Missing credentials return `503 agent_not_configured`; malformed model output/provider failures return sanitized `503 agent_unavailable`. Unsupported tool arguments return 400.
 
 ## Compact legacy outing tool
 

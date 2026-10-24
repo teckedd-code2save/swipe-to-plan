@@ -9,7 +9,15 @@ export default function TripEditor({ brief, onClose, onSubmit, hasPlan, groupMan
   const [draft, setDraft] = useState(() => structuredClone(brief));
   const [artistText, setArtistText] = useState(() => brief.people.map(p => p.artists.join(', ')));
   const [error, setError] = useState(''),[saving,setSaving]=useState(false);
-  useEffect(() => { dialog.current.showModal(); }, []);
+  useEffect(() => {
+    const modal = dialog.current;
+    const trigger = document.activeElement;
+    modal.showModal();
+    return () => {
+      modal.close();
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    };
+  }, []);
   const update = (key, value) => setDraft(d => ({ ...d, [key]: value }));
   const person = (index, key, value) => setDraft(d => ({ ...d, people: d.people.map((p, i) => i === index ? { ...p, [key]: value } : p) }));
   async function submit(event) {
@@ -21,9 +29,9 @@ export default function TripEditor({ brief, onClose, onSubmit, hasPlan, groupMan
     setSaving(true);setError('');
     try{await onSubmit({ ...draft, people, pins: Object.fromEntries(Object.entries(draft.pins||{}).filter(([intent])=>draft.activities.includes(intent))) });}catch(e){setError(e.message);}finally{setSaving(false);}
   }
-  return <dialog className="pl-dialog" ref={dialog} onCancel={onClose} aria-labelledby="trip-editor-title">
+  return <dialog className="pl-dialog pl-trip-dialog" ref={dialog} onCancel={onClose} aria-labelledby="trip-editor-title">
     <form onSubmit={submit}>
-      <div className="pl-dialog-heading"><div><p className="pl-kicker">THE BRIEF</p><h2 id="trip-editor-title">Make it your kind of day.</h2></div><button type="button" className="pl-icon-button" aria-label="Close trip details" onClick={onClose}><Icon name="close"/></button></div>
+      <div className="pl-dialog-heading"><h2 id="trip-editor-title">Plan details</h2><button type="button" className="pl-dialog-close" aria-label="Close trip details" onClick={onClose}>Close<Icon name="close" size={18}/></button></div>
       <div className="pl-dialog-body">
         <label className="pl-field">Give your day a name<input required maxLength={80} value={draft.title} onChange={e => update('title', e.target.value)}/></label>
         <div className="pl-field-grid">
