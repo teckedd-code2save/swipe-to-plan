@@ -1,6 +1,6 @@
 # Unstressed
 
-Draft saved on Devpost, October 24, 2026. Final submission still needs a hosted demo and a public repository.
+Draft saved on Devpost, October 24, 2026. The [live demo](https://unstressed.serendepify.com) and [public MIT-licensed repository](https://github.com/teckedd-code2save/swipe-to-plan) are saved in both the public project links and required additional information. Devpost is at 4/5 steps; final rules acceptance and submission remain pending.
 
 Project started: **22 October 2026**, confirmed by GitHub repository creation (2026-10-22T20:43:49Z) and the earliest commit. This is a **new build for the Qloo Agentic Hackathon**, not an upgrade to an existing project.
 
@@ -42,4 +42,4 @@ Cultural grounding is most useful when people can inspect it. Showing the path f
 
 ## What’s next
 
-Complete external hosting and the public repository requirement, then test the full experience with more real circles. We also want better route and opening-hours data. Today, times and budgets are planning allowances: venue prices, availability, travel time and individual suitability still need confirmation. Unstressed does not make bookings.
+Test the full experience with more real circles and measure how well the shared plan serves different tastes. We also want better route and opening-hours data. Today, times and budgets are planning allowances: venue prices, availability, travel time and individual suitability still need confirmation. Unstressed does not make bookings.

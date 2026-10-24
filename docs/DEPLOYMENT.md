@@ -10,6 +10,8 @@ Pushes to `main` run syntax checks, all backend tests and the frontend build, th
 
 Cloudflare DNS is managed through Ground Control. The domain has a DNS-only A record pointing to the existing server; Caddy manages its certificate. The site configuration is `deploy/site.caddy`, installed as `/etc/caddy/sites/56-unstressed.caddy`.
 
+The initial release and model update passed the GitHub checks and public HTTPS smoke test. Production uses `gemini-3.5-flash-lite`; direct launch checks of the earlier default, `gemini-3.1-flash-lite`, returned timeouts and HTTP 503. The replacement was checked with actual planning and participant tools, not just a text greeting.
+
 ## Runtime configuration
 
 The only application secret file on the server is `/opt/unstressed/.env` (root-owned, mode 600). It holds the Qloo, model and Google OAuth credentials plus these deployment values:
