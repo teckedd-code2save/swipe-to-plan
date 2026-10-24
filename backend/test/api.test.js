@@ -97,7 +97,7 @@ test('itinerary HTTP contract exposes evidence and supports external tool consum
   const tools = (await call('/api/agent/tools')).body;
   assert.equal(tools.tools[0].function.name,'plan_day');
   assert.equal(tools.transport.plan_day.path,'/api/itineraries');
-  const result = await call('/api/itineraries',{people:[{name:'Sam',artists:['Amaarae'],vibes:['v-cafe']}]});
+  const result = await call('/api/itineraries',{date:'2099-01-01',people:[{name:'Sam',artists:['Amaarae'],vibes:['v-cafe']}]});
   assert.equal(result.status,200);
   assert.equal(result.body.status,'complete');
   assert.equal(result.body.provenance.provider,'demo');
@@ -109,7 +109,7 @@ test('itinerary HTTP contract exposes evidence and supports external tool consum
 });
 test('agent route executes the validated planning tool and returns clarifications without searching',async t=>{
   let query;
-  const agent={configured:()=>true,interpret:async input=>{query=input;return input.message==='clarify'?{status:'needs_input',question:'Which area?'}:{status:'ready',request:parseItinerary(),model:'test-model'};}};
+  const agent={configured:()=>true,interpret:async input=>{query=input;return input.message==='clarify'?{status:'needs_input',question:'Which area?'}:{status:'ready',request:parseItinerary(),model:'test-model',assistantMessage:'One outing, with room to catch up.'};}};
   const call=await serve(t,{agent});
   assert.equal((await call('/api/health')).body.agentConfigured,true);
   const clarified=await call('/api/agent',{message:'clarify',history:[]});
@@ -118,13 +118,15 @@ test('agent route executes the validated planning tool and returns clarification
   const planned=await call('/api/agent',{message:'plan'});
   assert.equal(planned.status,200);
   assert.equal(planned.body.agent.action,'plan_day');
+  assert.equal(planned.body.assistantMessage,'One outing, with room to catch up.');
+  assert.equal(planned.body.request.assistantMessage,undefined);
   assert.ok(planned.body.stops.length);
   assert.equal(query.message,'plan');
   assert.equal((await call('/api/agent',{message:'plan',venue:'invented'})).status,400);
 });
 
 test('chat cards, circle actions and replies pass through without searching for places',async t=>{
-  const results=[{status:'show_ui',panel:'circles'},{status:'action',action:'bring_circle',circleId:'sunday'},{status:'reply',text:'Your day considers both people.'}];
+  const results=[{status:'show_ui',panel:'circles',assistantMessage:'Bring the people you want to spend this break with.'},{status:'action',action:'bring_circle',circleId:'sunday'},{status:'reply',text:'Your day considers both people.'}];
   let received;
   const call=await serve(t,{provider:{name:'qloo',discover:()=>assert.fail('A chat action must not search for places')},agent:{configured:()=>true,interpret:async input=>{received=input;return results[Number(input.message)];}}});
   for(let i=0;i<results.length;i++){
@@ -171,4 +173,13 @@ test('Autopilot HTTP prepares a composed brief before discovery and shared execu
   const created=await call('/api/days',{request});
   const forbidden=await call(`/api/days/${created.body.id}/autopilot`,{request,revision:created.body.revision},'POST',{authorization:`Bearer ${created.body.inviteToken}`});
   assert.equal(forbidden.status,403);
+});
+
+test('nearby areas use a no-store POST and coarse coordinates without changing the plan',async t=>{
+  let received,calls=0;
+  const call=await serve(t,{provider:{...createDemoProvider(),nearbyLocations:async point=>{received=point;calls++;return [{id:'area',name:'Nearby neighborhood',currency:'GHS'}];}}});
+  const result=await call('/api/locations/nearby',{latitude:5.603715,longitude:-.186964});
+  assert.equal(result.status,200);assert.deepEqual(received,{latitude:5.6,longitude:-.19});assert.equal(result.headers['cache-control'],'no-store');
+  assert.deepEqual(result.body,{source:'qloo',locations:[{id:'area',name:'Nearby neighborhood',currency:'GHS'}]});
+  assert.equal((await call('/api/locations/nearby',{latitude:200,longitude:0})).status,400);assert.equal(calls,1);
 });

@@ -3,15 +3,16 @@ import { explainCandidate } from "./explain.js";
 import { ProviderError } from "./qloo.js";
 
 // Venue category evidence is required. Interest/decor tags cannot establish a venue type.
-const VENUE = /(?:^|_)(restaurant|cafe|coffee_shop|bar|pub|lounge|nightclub|night_club|bistro|eatery|pizzeria|steakhouse)(?:$|_)/;
+const VENUE = /(?:^|_)(restaurant|cafe|coffee_shop|coffeehouse|tea_house|tearoom|tea_room|espresso_bar|bar|pub|lounge|nightclub|night_club|bistro|eatery|pizzeria|steakhouse)(?:$|_)/;
 function intentEvidence(tags, intent) {
   if (intent === "activity") return tags.filter((t) => /^urn:tag:(category|genre):(place|qloo):/.test(t.id) && /(?:^|_)(museum|gallery|art_gallery|park|garden|zoo|aquarium|cultural_center|landmark|tourist_attraction|beach|market|marketplace|bookstore|bookshop|library|monument|memorial)(?:$|_)/.test(t.id.split(":").at(-1)));
   const categories = tags.filter((t) => /^urn:tag:(category|genre):(place|qloo):/.test(t.id) && VENUE.test(t.id.split(":").at(-1)));
   if (!categories.length) return [];
   if (intent === "any") return categories;
+  // Serving coffee alone does not make a fast-food restaurant a café.
+  if (intent === "coffee") return categories.filter(t=>/(?:^|_)(cafe|coffee_shop|coffeehouse|tea_house|tearoom|tea_room|espresso_bar)(?:$|_)/.test(t.id.split(":").at(-1)));
   const allowed = {
     dinner: /(?:restaurant|bistro|eatery|pizzeria|steakhouse|dinner|dining)/,
-    coffee: /(?:cafe|coffee|tea)/,
     drinks: /(?:bar|pub|lounge|nightclub|night_club|cocktail|beer|wine|alcohol)/,
   };
   return tags.filter((t) => /^urn:tag:(category|genre|offerings|beverage_offering|dining_options|culinary_style):(place|qloo):/.test(t.id) && allowed[intent].test(t.id.split(":").at(-1)));

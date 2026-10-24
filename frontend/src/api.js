@@ -9,6 +9,7 @@ const post = (body) => ({ method: "POST", body: JSON.stringify(body) });
 const dayRequest = (token, method='GET', body) => ({ method, headers: {'content-type':'application/json', authorization:`Bearer ${token}`}, ...(body === undefined ? {} : {body:JSON.stringify(body)}), signal:AbortSignal.timeout(45000) });
 export const api = {
   locations:(q,signal)=>json(`/api/locations?q=${encodeURIComponent(q)}`,{signal}),
+  nearbyLocations:(point,signal)=>json('/api/locations/nearby',{...post(point),signal}),
   location:id=>json(`/api/locations/${encodeURIComponent(id)}`),
   planningLocation:id=>json('/api/account/planning-location',{method:'PATCH',body:JSON.stringify({locationId:id})}),
   usage:days=>json(`/api/admin/usage?days=${days}`),

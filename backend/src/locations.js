@@ -3,6 +3,14 @@ import ct from 'countries-and-timezones';
 import {find as findTimeZones} from 'geo-tz';
 import {InputError} from './contract.js';
 
+// Neighborhood precision is enough to suggest an area. Never retain a device fix.
+export function approximatePoint(value){
+  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!['latitude','longitude'].includes(key)))throw new InputError('Provide a location to find nearby areas.');
+  const {latitude,longitude}=value;
+  if(!Number.isFinite(latitude)||Math.abs(latitude)>90||!Number.isFinite(longitude)||Math.abs(longitude)>180)throw new InputError('Provide valid location coordinates.');
+  return {latitude:Math.round(latitude*100)/100,longitude:Math.round(longitude*100)/100};
+}
+
 export function locationId(value){
   if(typeof value!=='string'||! /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value))throw new InputError('Choose a location from the search results.');
   return value.toUpperCase();

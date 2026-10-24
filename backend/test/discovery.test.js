@@ -171,7 +171,8 @@ test("residential or street interests cannot qualify as dining venues", () => {
   assert.equal(rankPlaces([residence], request({ intent: 'any' })).ranked.length, 0);
   const restaurant = venue('real', 'restaurant');
   restaurant.tags.push({ id: 'urn:tag:offerings:place:coffee', name: 'Coffee' });
-  assert.equal(rankPlaces([restaurant], request()).ranked.length, 1);
+  assert.equal(rankPlaces([restaurant], request({intent:'any'})).ranked.length, 1);
+  assert.equal(rankPlaces([restaurant], request()).ranked.length, 0);
 });
 test("auth and quota errors stop discovery rather than falling back", async () => {
   for (const status of [401,403,429]) {
@@ -190,4 +191,11 @@ test("administrative places and resorts are not ordinary outing recommendations"
   assert.equal(result.excluded.non_outing_venue, 1);
   assert.equal(result.excluded.hotel, 1);
   assert.ok(rankPlaces([places[1]], request({ intent: "any", constraints: { excludeHotels: false } })).ranked.length);
+});
+
+test('a coffee stop needs café category evidence rather than a drink offering or a substring in steakhouse',()=>{
+  const fastFood=venue('fast-food','fast_food_restaurant');fastFood.tags.push({id:'urn:tag:offerings:place:coffee'});
+  const result=rankPlaces([fastFood,venue('steak','steakhouse'),venue('cafe','cafe'),venue('tea','tea_house')],request());
+  assert.deepEqual(new Set(result.ranked.map(p=>p.entityId)),new Set(['cafe','tea']));
+  assert.equal(result.excluded.intent_not_supported,2);
 });

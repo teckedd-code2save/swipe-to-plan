@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseItinerary, buildItinerary, makeSchedule, allocateBudget } from '../src/itinerary.js';
+import { parseItinerary as parseBrief, buildItinerary, makeSchedule, allocateBudget } from '../src/itinerary.js';
 import { createDiscovery } from '../src/plan.js';
 import { selectStops, parseOutingRequest, buildOuting } from '../src/outing.js';
 
+// These fixtures test selection/evidence, not whether today's start is past.
+const parseItinerary=(body={})=>parseBrief({date:'2099-01-01',...body});
 const venue = (id, tags, contributions = []) => ({ entity_id: id, name: `Place ${id}`, tags: tags.map(tag => ({ id: `urn:tag:category:qloo:${tag}`, name: tag })), properties: { address: 'Osu, Accra, Ghana', price_level: 2 }, query: { explainability: { 'signal.interests.entities': contributions } } });
 function engine(places, resolveArtist = async name => name === 'Missing' ? { status: 'unresolved', reason: 'no_exact_artist_match' } : { status: 'resolved', entityId: name.toLowerCase(), name }) {
   return createDiscovery({ provider: { name: 'qloo', resolveArtist, discover: async () => structuredClone(places) } });

@@ -1,3 +1,4 @@
+import {conversationHistory} from './conversation.js';
 import {track} from './usage.js';
 import UsageDashboard from './UsageDashboard.jsx';
 import {formatMoney} from './money.js';
@@ -100,13 +101,13 @@ export default function PlannerApp() {
   function append(role,text,extra={}){const turn={id:identity(),role,text,...extra};setChat(c=>[...c,turn].slice(-60));return turn.id;}
   function resultReceipt(result,text){append('assistant',text||'Your day is ready.',{result:{title:result.request.title,detail:`${result.stops.filter(s=>s.item).length} ${result.stops.filter(s=>s.item).length===1?'stop':'stops'} · ${dateLabel(result.request.date)} · ${formatMoney(result.request.budget,result.request.currency)}`}});}
   function presentTool(kind,text){const id=identity();toolRef.current={id,kind};setTool(toolRef.current);setPlanOpen(false);setChat(c=>[...c,{id,role:'assistant',text:text||({tastes:'Let’s find a few favorites.',circles:'Who should we bring along?',people:'Here’s who’s in the day.',share:'Here’s the day, ready to share.',location:'Where should I plan?',timing:'When would you like to go? I haven’t picked a date or time for you.',review:'Here’s what I’ll work with. Change anything, then I’ll find the places.',profile:'A little passport to what you love. Your circles will see your latest tastes.'}[kind]),widget:kind}].slice(-60));}
-  function askLocation(request=briefRef.current,query='',scope='plan'){
+  function askLocation(request=briefRef.current,query='',scope='plan',assistantText,nearMe=false){
     if(!owner){setError('Ask the organizer to set the planning area.');return;}
     clearTimeout(autoTimer.current);autoTimer.current=null;planner.current.invalidate();setPending(false);
     localVersion.current++;
     if(request.area!==briefRef.current.area||request.locationId!==briefRef.current.locationId){locationConfirmed.current=false;planningPaused.current=true;setDraftChanged(!!planRef.current);}
-    replaceBrief(request);locationDraft.current=request;setLocationPrompt({query,scope});
-    presentTool('location',query?'Let’s confirm the area and local budget.':preferredRef.current&&!locationConfirmed.current?`Shall I plan around ${preferredRef.current.name} again?`:'Where should I plan?');
+    replaceBrief(request);locationDraft.current=request;setLocationPrompt({query,scope,nearMe});
+    presentTool('location',assistantText||(query?'Let’s confirm the area and local budget.':preferredRef.current&&!locationConfirmed.current?`Shall I plan around ${preferredRef.current.name} again?`:'Where should I plan?'));
   }
   async function applyLocation(patch,scope,selected){
     if(!owner)throw Error('Only the organizer can change the planning area.');
@@ -123,14 +124,13 @@ export default function PlannerApp() {
     if(needsTiming(next)){presentTool('timing');return;}
     const hasFavorites=next.people.some(p=>p.artists.length||p.vibes.length);
     const note=`${selected.name} it is.${scope==='default'?' I’ll offer this area next time.':''}`;
-    if(!hasFavorites){setTasteId(next.people[0].id);presentTool('tastes',`${note} Now let’s find a few things you love. You can bring people or a circle below, too.`);}
-    else presentTool('review',`${note} Your tastes and people are here. Review the plan when you’re ready.`);
+    presentTool('review',`${note} ${hasFavorites?'Your tastes and people are here. Review the plan when you’re ready.':'We can start with your area and activities. Add tastes below if you’d like to make the picks more personal.'}`);
   }
   async function applyTiming(request){
     replaceBrief(request);
     if(autopilotRef.current&&autopilotPending.current){await continueAutopilot(request);return;}
     if(planRef.current&&!planningPaused.current){toolRef.current=null;setTool(null);showWhenReady.current=true;await build(request);return;}
-    if(!request.people.some(p=>p.artists.length||p.vibes.length)){setTasteId(request.people[0].id);presentTool('tastes',`${dateLabel(request.date)} it is. Now let’s find a few things you love.`);}else presentTool('review','Your timing and tastes are here. Let’s check the plan.');
+    presentTool('review',request.people.some(p=>p.artists.length||p.vibes.length)?'Your timing and tastes are here. Let’s check the plan.':'Your timing is set. We can start with the outing you asked for, or you can add tastes below.');
   }
   async function forgetLocation(){if(account.user)await account.changePlanningLocation(null);else{localStorage.removeItem('unstressed.planning-area');setGuestLocation(null);}setNotice('Saved planning area removed. This plan keeps its area.');}
   function finishTool(){
@@ -200,7 +200,7 @@ export default function PlannerApp() {
     if(autopilotPending.current&&['location','timing','tastes'].includes(autopilotPending.current.stage))return;
     if(sharedRef.current.linked)queueMember(person);else schedule(next,`${person.name}’s tastes are now part of the day.`);
   }
-  async function addPerson(person){
+  async function addPerson(person,{assistantText,offerTastes=true}={}){
     if(account.user){
       const connected=connections.find(p=>p.id===person.id);
       if(!connected){setPeopleQuery(person.name||'');presentTool('people','Let’s invite them into your circle first. Their account joins when they accept.');return;}
@@ -209,15 +209,18 @@ export default function PlannerApp() {
     if(briefRef.current.people.some(p=>p.id===person.id))return;
     localVersion.current++;
     const added={...person,id:person.id||identity()};
-    if(shared.linked){const result=await shared.add(added);openTaste(result.request.people.at(-1).id);}
-    else {const next=updateRoster(briefRef.current,[...briefRef.current.people,added]);schedule(next,`${added.name} is coming. Here’s how the day fits everyone now.`);openTaste(added.id);}
+    let addedId=added.id;
+    if(shared.linked){const result=await shared.add(added);addedId=result.request.people.at(-1).id;}
+    else {const next=updateRoster(briefRef.current,[...briefRef.current.people,added]);schedule(next,`${added.name} is coming. Here’s how the day fits everyone now.`);}
+    if(offerTastes)openTaste(addedId,assistantText);
+    else append('assistant',assistantText||`${added.name} is part of the plan. We can add their tastes if they’d help; you don’t need them to continue.`);
   }
-  async function applyCircle(circle){
+  async function applyCircle(circle,assistantText){
     activeCircle.current={id:circle.id,people:circlePeople(circle,contacts)};
     localVersion.current++;
     if(shared.linked)await shared.circle({name:circle.name,people:circlePeople(circle,contacts)});
     else schedule(bringCircle(briefRef.current,circle,contacts),`${circle.name} is coming.`);
-    toolRef.current=null;setTool(null);if(!shared.linked&&(planningPaused.current||!planRef.current))presentTool('review',`${circle.name} is in. Everyone’s tastes are part of the draft.`);else append('assistant',`${circle.name} is in. I’m updating the day.`);
+    toolRef.current=null;setTool(null);if(!shared.linked&&(planningPaused.current||!planRef.current))presentTool('review',assistantText||`${circle.name} is in. Everyone’s tastes are part of the draft.`);else append('assistant',assistantText||`${circle.name} is in. I’m updating the day.`);
   }
   async function saveCircle(name){if(account.user){const savedCircle=await account.createCircle({name,people:[account.user.profile]});invitedCircles.current.set(savedCircle.id,savedCircle.accountIds);setNotice('Circle created. Copy its invite so people can choose to join.');}else{const next=writeCircles([makeCircle(name,briefRef.current.people),...circles]);setCircles(next);keepPeople(briefRef.current.people);}}
   async function prepareCircleInvite(id,name){
@@ -243,7 +246,7 @@ export default function PlannerApp() {
     shared.leave();snapshotVersion.current='';planRef.current=null;setPlan(null);setPrevious(null);replaceBrief(withPeopleIds({...defaults(),...(preferredRef.current?{area:preferredRef.current.label,locationId:preferredRef.current.id,currency:preferredRef.current.currency||'GHS'}:{}),...(accountRef.current.user?{people:[accountRef.current.user.profile]}:{})}));setChat([]);setMessage('');setError('');showWhenReady.current=false;setPending(false);setTasteId(null);toolRef.current=null;setTool(null);setPlanOpen(false);
   }
   async function join(){if(!joinName.trim())return;setJoinBusy(true);try{const result=await shared.join({name:joinName.trim(),artists:[],vibes:[]});openTaste(result.access.memberId);}catch(e){setError(e.message);}finally{setJoinBusy(false);}}
-  function openTaste(id=sharedRef.current.day?.access.memberId||briefRef.current.people[0].id){if(deck.length){setTasteId(id);if(toolRef.current?.kind!=='tastes')presentTool('tastes');}else setError('Taste cards are still loading. Please try again.');}
+  function openTaste(id=sharedRef.current.day?.access.memberId||briefRef.current.people[0].id,assistantText){if(deck.length){setTasteId(id);if(toolRef.current?.kind!=='tastes')presentTool('tastes',assistantText);}else setError('Taste cards are still loading. Please try again.');}
   async function ensureShared(request){if(!planRef.current||planningPaused.current)throw Error('Review and create your day before sharing its link. You can invite people through a circle while you plan.');clearTimeout(autoTimer.current);autoTimer.current=null;planner.current.invalidate();const result=await shared.ensure(request);return result;}
   const activePerson=brief.people.find(p=>p.id===tasteId);
   const guest=shared.day?.access.role==='guest';
@@ -324,7 +327,7 @@ export default function PlannerApp() {
     autopilotRef.current=enabled;setAutopilot(enabled);autopilotPending.current=null;setAutopilotPhase('');
     // A pending model response must not restart a workflow after the mode changes.
     localVersion.current++;
-    append('assistant',enabled?'Autopilot is on. Tell me the outing you have in mind—just you, your people, or a named circle. I’ll bring their saved tastes together, find places, shape the budget and check reported hours. You can change anything.':'Autopilot is off. Your tastes and draft are still here; we’ll shape the next steps together.');
+    append('assistant',enabled?'Autopilot is on. Tell me what you have in mind and who’s coming. I’ll use your tastes to shape the plan and check the details; you can steer me anytime.':'Autopilot is off. Your tastes and draft are still here; we’ll shape the next steps together.');
     setPlanOpen(false);
   }
   async function continueAutopilot(request,allowEmpty=false){
@@ -371,7 +374,7 @@ export default function PlannerApp() {
     const version=localVersion.current,revision=shared.day?.revision;
     autopilotPending.current=null;setAutopilotPhase(autopilotRef.current&&owner?'thinking':'');
     append('user',sent.trim());setMessage('');
-    const history=chat.filter(t=>t.text).slice(-8).map(({role,text})=>({role,text:text.slice(0,1600)}));
+    const history=conversationHistory(chat);
     try{
       const result=await api.agent({message:sent.trim(),mode:autopilotRef.current&&owner?'autopilot':'guided',contacts:autopilotRef.current&&owner?[...new Map(contacts.map(p=>[p.id,{id:p.id,...personInput(p)}])).values()].slice(0,30):[],context:briefRef.current,locationContext:{confirmed:locationConfirmed.current||shared.linked,preferredLabel:preferredRef.current?.label,timeZone:planningZone.current||planRef.current?.timeZone||Intl.DateTimeFormat().resolvedOptions().timeZone},history,circles:circles.map(c=>({id:c.id,name:c.name,people:circlePeople(c,contacts)})),planContext:planRef.current?{stops:planRef.current.stops.map(s=>({id:s.id,intent:s.intent,name:s.item?.name||null,connections:s.connections.map(e=>({personId:e.personId,kind:e.kind,label:e.label,preference:planRef.current.tasteMap.nodes.find(n=>n.id===e.from)?.label}))})),warnings:planRef.current.warnings}:undefined});
       setAutopilotPhase('');
@@ -380,25 +383,25 @@ export default function PlannerApp() {
         if(!owner)throw Error('Only the organizer can use Autopilot for this day.');
         if(result.circleId){const circle=circles.find(c=>c.id===result.circleId);activeCircle.current=circle?{id:circle.id,people:circlePeople(circle,contacts)}:null;}
         autopilotPending.current={stage:result.needsLocation?'location':'planning',revision};
-        if(result.needsLocation){setAutopilotPhase('location');askLocation(result.request,result.request.area);}
-        else await continueAutopilot(result.request);
+        if(result.needsLocation){setAutopilotPhase('location');askLocation(result.request,result.nearby?'':result.request.area,'plan',result.assistantMessage,result.nearby);}
+        else {if(result.assistantMessage)append('assistant',result.assistantMessage);await continueAutopilot(result.request);}
       }else if(result.status==='action'){
-        if(result.action==='invite_person'){setPeopleQuery(result.name);presentTool('people',`Let’s invite ${result.name} into a circle. They’ll join with their own account and tastes.`);}
-        if(result.action==='set_timing'){replaceBrief(result.request);presentTool('timing');}
-        if(result.action==='set_location'){askLocation(result.request,result.query,result.scope);}
-        if(result.action==='bring_circle'){if(!owner)throw Error('Only the organizer can bring a circle.');const circle=circles.find(c=>c.id===result.circleId);if(!circle)throw Error('That circle is no longer saved.');await applyCircle(circle);}
-        if(result.action==='add_person'){if(!owner)throw Error('Only the organizer can add someone.');await addPerson(result.person);}
-        if(result.action==='update_person'){if(!owner&&result.person.id!==shared.day?.access.memberId)throw Error('You can change your own tastes. Ask the organizer about other people.');showWhenReady.current=true;editTaste(result.person);append('assistant',`I’ve updated ${result.person.name}’s tastes. ${planRef.current&&!planningPaused.current?'I’m checking the day again.':'They’re saved in the draft.'}`);}
-        if(result.action==='remove_person'){if(!owner)throw Error('Only the organizer can change the group.');await removePerson(result.personId);append('assistant',planRef.current&&!planningPaused.current?'The group is updated. I’m reworking the day.':'The group is updated in your draft.');}
+        if(result.action==='invite_person'){setPeopleQuery(result.name);presentTool('people',result.assistantMessage||`Let’s invite ${result.name} into a circle. They’ll join with their own account and tastes.`);}
+        if(result.action==='set_timing'){replaceBrief(result.request);presentTool('timing',result.assistantMessage);}
+        if(result.action==='set_location'){askLocation(result.request,result.query,result.scope,result.assistantMessage,result.nearby);}
+        if(result.action==='bring_circle'){if(!owner)throw Error('Only the organizer can bring a circle.');const circle=circles.find(c=>c.id===result.circleId);if(!circle)throw Error('That circle is no longer saved.');await applyCircle(circle,result.assistantMessage);}
+        if(result.action==='add_person'){if(!owner)throw Error('Only the organizer can add someone.');await addPerson(result.person,{assistantText:result.assistantMessage,offerTastes:false});}
+        if(result.action==='update_person'){if(!owner&&result.person.id!==shared.day?.access.memberId)throw Error('You can change your own tastes. Ask the organizer about other people.');showWhenReady.current=true;editTaste(result.person);append('assistant',result.assistantMessage||`I’ve updated ${result.person.name}’s tastes. ${planRef.current&&!planningPaused.current?'I’m checking the day again.':'They’re saved in the draft.'}`);}
+        if(result.action==='remove_person'){if(!owner)throw Error('Only the organizer can change the group.');await removePerson(result.personId);append('assistant',result.assistantMessage||(planRef.current&&!planningPaused.current?'The group is updated. I’m reworking the day.':'The group is updated in your draft.'));}
       }else if(result.status==='show_ui'){
-        if(result.panel==='tastes')openTaste(result.personId);
-        else if(result.panel==='location')askLocation();
-        else if(result.panel==='timing')presentTool('timing');
-        else if(['circles','people','share'].includes(result.panel))presentTool(result.panel);
-        else {setTab(result.panel==='budget'?'budget':result.panel==='checks'?'checklist':'itinerary');setPlanOpen(true);append('assistant',planRef.current?(result.panel==='checks'?'I’m comparing your times with reported hours and gathering the venue details. You’ll see what still needs confirming.':'Here’s the current day.'):'Add a few tastes first, and I’ll put a day together.');}
+        if(result.panel==='tastes')openTaste(result.personId,result.assistantMessage);
+        else if(result.panel==='location')askLocation(briefRef.current,'','plan',result.assistantMessage);
+        else if(result.panel==='timing')presentTool('timing',result.assistantMessage);
+        else if(['circles','people','share'].includes(result.panel))presentTool(result.panel,result.assistantMessage);
+        else {setTab(result.panel==='budget'?'budget':result.panel==='checks'?'checklist':'itinerary');setPlanOpen(true);append('assistant',result.assistantMessage||(planRef.current?(result.panel==='checks'?'I’m comparing your times with reported hours and gathering the venue details. You’ll see what still needs confirming.':'Here’s the current day.'):'Tell me the outing you have in mind, and we can shape it together.'));}
       }else if(result.status==='needs_input')append('assistant',result.question);
       else if(result.status==='reply')append('assistant',result.text);
-      else {if(!owner)throw Error('Only the organizer can change the trip details.');showWhenReady.current=true;if(shared.linked)await shared.updateBrief(result.request,revision);else accept(result);}
+      else {if(!owner)throw Error('Only the organizer can change the trip details.');showWhenReady.current=true;const {assistantMessage,...planned}=result;if(assistantMessage)append('assistant',assistantMessage);if(shared.linked)await shared.updateBrief(result.request,revision);else accept(planned);}
     }catch(e){setError(e.message);setRevisionFailed(true);setMessage(sent);setAutopilotPhase('');autopilotPending.current=null;}
     finally{working.current=false;setBusy(false);}
   }
@@ -419,10 +422,10 @@ export default function PlannerApp() {
   }
   async function copy() { try { await navigator.clipboard.writeText(planText(plan)); setNotice('Your itinerary and taste connections are copied.'); } catch { setNotice('Copy isn’t available here. Use Print to keep a copy.'); } }
   const trace = id => { setSelection(id); setTab('taste');setPlanOpen(true); };
-  function chooseTool(kind){if(kind==='location'){askLocation();return;}if(kind==='profile'&&!account.user){setAccountAction('profile');setAccountOpen(true);return;}if(kind==='tastes')openTaste();else presentTool(kind);}
+  function chooseTool(kind){if(kind==='nearby'){askLocation(briefRef.current,'','plan','Let’s see what’s around you. Choose a nearby area, then we’ll shape the outing.',true);return;}if(kind==='location'){askLocation();return;}if(kind==='profile'&&!account.user){setAccountAction('profile');setAccountOpen(true);return;}if(kind==='tastes')openTaste();else presentTool(kind);}
   function openDetails(){editorRevision.current=shared.day?.revision;setEditor(true);}
   async function planFromReview(){if(!locationConfirmed.current&&!shared.linked){askLocation(briefRef.current);return;}showWhenReady.current=true;finishTool();await build(briefRef.current);}
-  function renderTool(){if(tool?.kind==='timing')return <TimingAction key={tool.id} brief={brief} timeZone={planningZone.current||plan?.timeZone} onApply={applyTiming} onClose={finishTool}/>;if(tool?.kind==='review')return <PlanReview brief={brief} deck={deck} hasPlan={!!plan} confirmed={locationConfirmed.current||shared.linked} busy={groupUpdating} onPlan={planFromReview} onTool={chooseTool} onDetails={openDetails} onDone={finishTool}/>;if(tool?.kind==='location')return <LocationAction key={tool.id} brief={locationDraft.current||brief} preferred={preferred} query={locationPrompt.query} scope={locationPrompt.scope} signedIn={!!account.user} onDone={finishTool} onApply={applyLocation} onForget={forgetLocation}/>;if(tool?.kind==='profile'&&account.user)return <TasteAction personal person={account.user.profile} people={[account.user.profile]} deck={deck} onChange={p=>account.changeProfile(p).catch(e=>setError(e.message))} onDone={finishTool} editable/>;if(tool?.kind==='tastes'&&activePerson)return <TasteAction autopilot={autopilotPending.current?.stage==='tastes'} key={activePerson.id} person={activePerson} people={brief.people} deck={deck} onPerson={openTaste} onChange={editTaste} onDone={()=>finishTool()} drafting={!plan||planningPaused.current} editable={owner||shared.day?.access.memberId===activePerson.id}/>;
+  function renderTool(){if(tool?.kind==='timing')return <TimingAction key={tool.id} brief={brief} timeZone={planningZone.current||plan?.timeZone} onApply={applyTiming} onClose={finishTool}/>;if(tool?.kind==='review')return <PlanReview brief={brief} deck={deck} hasPlan={!!plan} confirmed={locationConfirmed.current||shared.linked} busy={groupUpdating} onPlan={planFromReview} onTool={chooseTool} onDetails={openDetails} onDone={finishTool}/>;if(tool?.kind==='location')return <LocationAction key={tool.id} brief={locationDraft.current||brief} preferred={preferred} query={locationPrompt.query} scope={locationPrompt.scope} nearMe={locationPrompt.nearMe} signedIn={!!account.user} onDone={finishTool} onApply={applyLocation} onForget={forgetLocation}/>;if(tool?.kind==='profile'&&account.user)return <TasteAction personal person={account.user.profile} people={[account.user.profile]} deck={deck} onChange={p=>account.changeProfile(p).catch(e=>setError(e.message))} onDone={finishTool} editable/>;if(tool?.kind==='tastes'&&activePerson)return <TasteAction autopilot={autopilotPending.current?.stage==='tastes'} key={activePerson.id} person={activePerson} people={brief.people} deck={deck} onPerson={openTaste} onChange={editTaste} onDone={()=>finishTool()} drafting={!plan||planningPaused.current} editable={owner||shared.day?.access.memberId===activePerson.id}/>;
     if(tool?.kind==='circles')return <CirclesAction circles={circles} contacts={contacts} people={brief.people} onApply={applyCircle} onSave={saveCircle} onRemove={removeCircle} onDone={finishTool} owner={owner} accountUser={account.user} onInvite={copyCircleInvite} onSignIn={()=>{setAccountAction('circles');setAccountOpen(true);}}/>;
     if(tool?.kind==='people')return <PeopleAction key={tool.id} accountUser={account.user} circles={account.circles} connections={connections} onInvite={prepareCircleInvite} initialQuery={peopleQuery} people={brief.people} contacts={contacts} owner={owner} memberId={shared.day?.access.memberId} onTaste={openTaste} onAdd={addPerson} onRemove={removePerson} onShare={()=>presentTool('share')} onDone={()=>finishTool()}/>;
     if(tool?.kind==='share')return <ShareDay updating={groupUpdating} accountUser={account.user} onAccountRequired={action=>{setAccountAction(action);setAccountOpen(true);}} embedded plan={plan} brief={brief} shared={shared} onEnsure={ensureShared} onClose={finishTool}/>;return null;

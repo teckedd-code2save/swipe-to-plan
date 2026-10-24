@@ -2,8 +2,77 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAgent, PLAN_TOOL } from '../src/agent.js';
 import { parseItinerary } from '../src/itinerary.js';
+import {conversationHistory} from '../../frontend/src/conversation.js';
 
 const response = (name, args) => ({ ok: true, json: async () => ({ choices: [{ message: { tool_calls: [{ function: { name, arguments: JSON.stringify(args) } }] } }] }) });
+
+test('action narration travels with a validated action but never becomes a planning or taste field',async()=>{
+  const context=parseItinerary({people:[{id:'you',name:'You',artists:['Sade']}]});
+  const message='One stop gives you room to catch up without rushing between places.';
+  let payload;
+  const invoke=(name,args)=>createAgent({getKey:()=> 'test',fetchImpl:async(_,options)=>{payload=JSON.parse(options.body);return response(name,args);}}).interpret({message:'Just one place to catch up',context});
+  const result=await invoke('revise_day',{activities:['dinner'],message});
+  assert.equal(result.assistantMessage,message);
+  assert.deepEqual(result.request.people,context.people);
+  assert.equal(result.request.message,undefined);assert.equal(result.request.assistantMessage,undefined);
+  assert.equal(payload.tools.find(t=>t.function.name==='revise_day').function.parameters.properties.message.maxLength,600);
+  assert.deepEqual(await invoke('show_ui',{panel:'location',message}),{status:'show_ui',panel:'location',assistantMessage:message});
+  for(const invalid of ['',42,'x'.repeat(601)])await assert.rejects(invoke('revise_day',{activities:['dinner'],message:invalid}),e=>e.status===400);
+  await assert.rejects(invoke('revise_day',{activities:['dinner'],message,quietnessVerified:true}),e=>e.status===400);
+});
+
+test('a concern can be answered without mutating the plan or fabricating another person’s tastes',async()=>{
+  const context=parseItinerary({people:[{id:'you',name:'You'}]});
+  const before=JSON.stringify(context);
+  const text='Would finding somewhere to talk with your supervisor help, or would you prefer a break after the meeting?';
+  const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('reply',{text})});
+  assert.deepEqual(await agent.interpret({message:'I want to meet my supervisor',context,mode:'autopilot'}),{status:'reply',text});
+  assert.equal(JSON.stringify(context),before);
+});
+
+test('conversation context keeps the original purpose and recent corrections within a bounded history',async()=>{
+  const turns=Array.from({length:30},(_,i)=>({id:String(i),role:i%2?'assistant':'user',text:`Turn ${i}`,widget:'private UI state'}));
+  turns[0].text='I need a break after a difficult week.';turns[29].text='Actually, just one stop and no music.';
+  const history=conversationHistory(turns);
+  assert.equal(history.length,16);assert.equal(history[0].text,turns[0].text);assert.equal(history.at(-1).text,turns.at(-1).text);
+  assert.deepEqual(history.map(t=>t.text),[...turns.slice(0,4),...turns.slice(-12)].map(t=>t.text));
+  assert.ok(history.every(t=>Object.keys(t).length===2));
+  let received;
+  const agent=createAgent({getKey:()=> 'test',fetchImpl:async(_,options)=>{received=JSON.parse(options.body);return response('reply',{text:'We can keep it to one stop.'});}});
+  await agent.interpret({message:'Yes',history});
+  assert.deepEqual(JSON.parse(received.messages[1].content).history,history);
+  await assert.rejects(agent.interpret({message:'Yes',history:[...history,history[0]]}),e=>e.status===400);
+});
+
+test('one invalid model action is repaired before execution without dropping the original request',async()=>{
+  let calls=0,lastPayload;
+  const context=parseItinerary({people:[{id:'you',name:'You'}]});
+  const agent=createAgent({getKey:()=> 'test',fetchImpl:async(_,options)=>{
+    calls++;lastPayload=JSON.parse(options.body);
+    return calls===1?response('revise_day',{unknownField:true}):response('revise_day',{activities:['coffee'],message:'One coffee stop keeps this simple.'});
+  }});
+  const result=await agent.interpret({message:'Just one coffee stop',context});
+  assert.equal(calls,2);assert.deepEqual(result.request.activities,['coffee']);
+  assert.deepEqual(result.request.people,context.people);
+  assert.equal(JSON.parse(lastPayload.messages[1].content).message,'Just one coffee stop');
+  assert.match(lastPayload.messages[0].content,/No action ran/);
+  assert.ok(lastPayload.messages[0].content.includes('Unsupported keys: ["unknownField"]'));
+  assert.match(lastPayload.messages[0].content,/Allowed keys:/);
+  let rejected=0;
+  const broken=createAgent({getKey:()=> 'test',fetchImpl:async()=>{rejected++;return response('revise_day',{unknownField:true});}});
+  await assert.rejects(broken.interpret({message:'One stop',context}),e=>e.status===400);
+  assert.equal(rejected,2);
+});
+
+test('conversational model text gets one chance to use the reply tool instead of being dropped',async()=>{
+  let calls=0;
+  const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>{
+    calls++;
+    return calls===1?{ok:true,json:async()=>({choices:[{message:{content:'Unstructured answer'}}]})}:response('reply',{text:'Would a short break or a change of scene help?'});
+  }});
+  assert.deepEqual(await agent.interpret({message:'This week has been tiring.'}),{status:'reply',text:'Would a short break or a change of scene help?'});
+  assert.equal(calls,2);
+});
 
 test('person tools preserve spending tastes and validate conversational spending changes',async()=>{
   const context=parseItinerary({people:[{id:'sam',name:'Sam',artists:['Tems'],spending:{style:'mindful',priority:'dinner'}}]});

@@ -27,7 +27,7 @@ test('a saved circle uses refreshed contact tastes without overwriting present m
   assert.deepEqual(tasteFromSwipe(p('Alex'),{kind:'vibe',id:'v-cafe'},true).vibes,['v-cafe']);
 });
 test('one-place daybooks and calendars contain only the selected stop',async()=>{
-  const plan=await buildItinerary(createDiscovery({provider:createDemoProvider()}),parseItinerary({activities:['dinner'],party:{adults:1}}));
+  const plan=await buildItinerary(createDiscovery({provider:createDemoProvider()}),parseItinerary({date:'2099-01-01',activities:['dinner'],party:{adults:1}}));
   assert.equal(plan.stops.length,1);assert.ok(plan.stops[0].item);
   const html=daybookHtml(plan),calendar=itineraryCalendar(plan);
   assert.equal((html.match(/<section class="stop">/g)||[]).length,1);assert.equal((calendar.match(/BEGIN:VEVENT/g)||[]).length,1);
@@ -35,11 +35,11 @@ test('one-place daybooks and calendars contain only the selected stop',async()=>
 });
 
 test('personal daybooks escape content, attribute only that person’s threads and calendars remain tentative',async()=>{
-  const plan=await buildItinerary(createDiscovery({provider:createDemoProvider()}),parseItinerary({date:'2026-10-25',people:[{id:'alex',name:'Alex',vibes:['v-cafe']},{id:'sam',name:'Sam',vibes:['v-african']}]}));
+  const plan=await buildItinerary(createDiscovery({provider:createDemoProvider()}),parseItinerary({date:'2099-01-01',people:[{id:'alex',name:'Alex',vibes:['v-cafe']},{id:'sam',name:'Sam',vibes:['v-african']}]}));
   plan.request.title='<img src=x onerror=alert(1)> & our day';
   const html=daybookHtml(plan,'alex');
   assert.ok(html.includes('A little daybook for Alex'));assert.ok(html.includes('Alex, you’re part of the picture.'));assert.ok(!html.includes('<img'));assert.ok(html.includes('&lt;img'));assert.ok(!html.includes('<b>Sam ·'));assert.ok(html.includes('whole-group allowance'));
-  const ics=itineraryCalendar(plan);assert.ok(ics.includes('STATUS:TENTATIVE'));assert.ok(ics.includes('TRANSP:TRANSPARENT'));assert.match(ics,/DTSTART:20261025T\d{6}Z/);
+  const ics=itineraryCalendar(plan);assert.ok(ics.includes('STATUS:TENTATIVE'));assert.ok(ics.includes('TRANSP:TRANSPARENT'));assert.match(ics,/DTSTART:20990101T\d{6}Z/);
   for(const line of ics.split('\r\n'))assert.ok(Buffer.byteLength(line)<=75);
 });
 

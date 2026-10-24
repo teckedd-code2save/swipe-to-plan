@@ -1,3 +1,5 @@
+import {withActionMessages} from './agent-conversation.js';
+import {approximatePoint} from './locations.js';
 import express from "express";
 import fs from "node:fs";
 import path from "node:path";
@@ -64,13 +66,19 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     if(!provider.searchLocations)throw new InputError('Location search is unavailable on this server.');
     res.json({locations:await provider.searchLocations(query.trim()),source:'qloo'});
   }));
+  // POST keeps even approximate coordinates out of URLs and access logs.
+  app.post('/api/locations/nearby',limit(15),route(async(req,res)=>{
+    const point=approximatePoint(req.body);
+    if(!provider.nearbyLocations)throw new InputError('Nearby area search is unavailable. You can still search by name.');
+    res.json({locations:await provider.nearbyLocations(point),source:'qloo'});
+  }));
   app.get('/api/locations/:id',limit(60),route(async(req,res)=>{if(!provider.getLocation)throw new InputError('Location search is unavailable on this server.');res.json(await provider.getLocation(req.params.id));}));
   app.get("/api/deck", (_req, res) => res.json(publicDeck()));
   app.get('/api/places/:id',limit(30),route(async(req,res)=>res.json(await places.details(req.params.id))));
   app.post('/api/place-checks',limit(15),route(async(req,res)=>res.json(await places.check(req.body))));
   app.post("/api/recommend", limit(30), route(async (req, res) => res.json(await discovery.recommend(parseRequest(req.body)))));
   app.post("/api/outings", limit(30), route(async (req, res) => res.json(await buildOuting(discovery, parseOutingRequest(req.body)))));
-  app.get("/api/agent/tools", (_req,res) => res.json({tools:[...AGENT_TOOLS,AUTOPILOT_TOOL],modes:['guided','autopilot'],transport:{plan_day:{method:'POST',path:'/api/itineraries'}},capabilities:'/api/schema'}));
+  app.get("/api/agent/tools", (_req,res) => res.json({tools:withActionMessages([...AGENT_TOOLS,AUTOPILOT_TOOL]),modes:['guided','autopilot'],transport:{plan_day:{method:'POST',path:'/api/itineraries'}},capabilities:'/api/schema'}));
   app.post("/api/itineraries", limit(20), route(async(req,res)=>res.json(await buildItinerary(discovery,parseItinerary(req.body)))));
   app.post("/api/agent", limit(10), route(async(req,res)=>{
     strictFields(req.body,['message','context','history','circles','contacts','planContext','locationContext','mode']);
@@ -79,7 +87,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     if(['needs_input','action','show_ui','reply','autopilot'].includes(interpretation.status))return res.json(interpretation);
     const plan=await buildItinerary(discovery,interpretation.request);
     const user=await accounts.identity(req);if(visitorId(req))await metrics.record('plan_created',{userId:user?.id,visitor:visitorId(req)}).catch(()=>{});
-    res.json({...plan,agent:{model:interpretation.model,action:'plan_day'}});
+    res.json({...plan,...(interpretation.assistantMessage?{assistantMessage:interpretation.assistantMessage}:{}),agent:{model:interpretation.model,action:'plan_day'}});
   }));
   const credential = req => (req.get('authorization') || '').replace(/^Bearer /, '');
   app.post('/api/days', limit(10), route(async (req,res) => res.status(201).json(await days.create(req.body))));
