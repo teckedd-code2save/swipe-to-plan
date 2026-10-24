@@ -31,6 +31,27 @@ test('today cannot start in the past; flexible plans leave 30 minutes to get rea
 test('destination-local dates handle crossing midnight and UTC differences',()=>{
   assert.equal(localNow('Asia/Tokyo',Date.parse('2026-10-24T17:00Z')).date,'2026-10-25');assert.equal(localDate('America/Los_Angeles',0,Date.parse('2026-10-24T02:00Z')),'2026-10-23');assert.equal(localDate('Africa/Accra',0,now),'2026-10-24');
 });
+test('an unfilled coffee after noon has no placeholder time and does not delay lunch',async()=>{
+  const r=request({activities:['coffee','dinner']}),meal=place('lunch','06:00','22:00');
+  const result=await schedulePlaces([[],[meal]],makeSchedule(r),r,{now:Date.parse('2026-10-24T12:23Z'),timeZone:'Africa/Accra',details:async()=>meal});
+  assert.equal(result.stops[0].start,null);assert.equal(result.stops[0].end,null);assert.equal(result.stops[0].bufferAfterMinutes,0);
+  assert.equal(result.stops[0].reason,'no_eligible_places');
+  assert.equal(result.stops[1].start,'13:00');assert.equal(result.stops[1].end,'14:15');assert.equal(result.stops[1].bufferAfterMinutes,0);
+});
+test('a missing middle or final stop never displays an earlier time or adds phantom travel',async()=>{
+  const r=request({activities:['coffee','activity','dinner']}),cafe=place('cafe','14:00','22:00'),meal=place('meal','14:00','22:00');
+  const result=await run(r,[[cafe],[],[meal]]);
+  assert.equal(result.stops[0].start,'14:00');assert.equal(result.stops[1].start,null);
+  assert.equal(result.stops[2].start,'15:15');assert.equal(result.stops[1].bufferAfterMinutes,0);
+  const partial=await run(r,[[cafe],[],[]]);assert.equal(partial.stops[0].bufferAfterMinutes,0);
+});
+test('an elapsed or too-short remaining window leaves unscheduled slots, never stale times',async()=>{
+  const r=request({endTime:'13:00'}),p=place('meal','06:00','22:00');
+  for(const time of ['2026-10-24T12:00Z','2026-10-24T13:07Z']){
+    const result=await schedulePlaces([[p]],makeSchedule(r),r,{now:Date.parse(time),timeZone:'Africa/Accra',details:async()=>p});
+    assert.equal(result.stops[0].item,null);assert.equal(result.stops[0].start,null);assert.equal(result.stops[0].end,null);
+  }
+});
 test('unconfirmed date or time cannot start discovery',async()=>{
   const r=request({timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}});assert.equal(needsTiming(r),true);await assert.rejects(buildItinerary({},r),/Choose when/);
 });

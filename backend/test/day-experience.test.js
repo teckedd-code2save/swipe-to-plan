@@ -67,3 +67,14 @@ test('signing in attaches the guest organizer to the account without duplicating
   assert.deepEqual(adopted.people.map(p=>p.id),['account','Maya']);assert.deepEqual(adopted.people[0].artists,['SZA']);assert.deepEqual(adopted.people[0].vibes,['v-seafood']);assert.equal(adopted.budget,brief.budget);
   assert.equal(adoptAccountProfile(adopted,profile),null);
 });
+
+
+test('partial daybooks show only actual visits and never advertise old unfilled times',async()=>{
+  const plan=await buildItinerary(createDiscovery({provider:createDemoProvider()}),parseItinerary({date:'2099-01-01',activities:['dinner'],startTime:'14:00',party:{adults:1}}));
+  plan.request.startTime='09:00';
+  plan.stops.unshift({id:'missing',intent:'coffee',start:'09:00',end:'09:45',item:null,connections:[],bufferAfterMinutes:30});
+  const html=daybookHtml(plan),calendar=itineraryCalendar(plan);
+  assert.equal((html.match(/<section class="stop">/g)||[]).length,1);
+  assert.ok(!html.includes('09:00'));assert.ok(!html.includes('Not scheduled'));assert.ok(!html.includes('A moment still to be found'));
+  assert.equal((calendar.match(/BEGIN:VEVENT/g)||[]).length,1);
+});

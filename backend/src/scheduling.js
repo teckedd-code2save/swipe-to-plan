@@ -17,7 +17,7 @@ export async function schedulePlaces(pools, schedule, request, {details, timeZon
   const earliest=request.date===local.date?Math.ceil((local.minutes+30)/15)*15:start;
   const minimumStart=flexible?Math.max(start,earliest):start;
   if(request.date<local.date||!flexible&&request.date===local.date&&start<local.minutes||minimumStart>=end) {
-    return {stops:schedule.map(s=>({...s,item:null,reason:'time_in_past'})),notes:['This time has passed at your destination. Choose a later time or another date.']};
+    return {stops:schedule.map(s=>({...s,start:null,end:null,bufferAfterMinutes:0,item:null,reason:'time_in_past'})),notes:['This time has passed at your destination. Choose a later time or another date.']};
   }
   const info=new Map(),items=[...new Map(pools.flat().filter(Boolean).map(p=>[p.id,p])).values()];
   if(details) {
@@ -51,10 +51,13 @@ export async function schedulePlaces(pools, schedule, request, {details, timeZon
       const next=new Set(used);next.add(item.id);
       visit(index+1,minutes(slot.end)+base.bufferAfterMinutes,next,[...stops,slot],score+10000+(slot.hours.status==='fits_reported_hours'?1000:0)-rank*10-(minutes(slot.start)-cursor)/10);
     }
-    const empty={...base,start:base.start,end:base.end,item:null,reason:pools[index].length?'no_open_place':'no_eligible_places'};
-    visit(index+1,Math.min(end,cursor+base.durationMinutes+base.bufferAfterMinutes),used,[...stops,empty],score);
+    // An unfilled activity is a request still to resolve, not a scheduled visit.
+    // Don't display its original placeholder or consume time/travel for it.
+    const empty={...base,start:null,end:null,bufferAfterMinutes:0,item:null,reason:pools[index].length?'no_open_place':'no_eligible_places'};
+    visit(index+1,cursor,used,[...stops,empty],score);
   }
   visit(0,minimumStart,new Set(),[],0);
   const shifted=best.stops.some((s,i)=>s.item&&s.start!==schedule[i].start);
-  return {stops:best.stops,notes:[...(shifted?['I adjusted the stop times within your chosen window, allowing for the time now and any reported opening hours.']:[])]};
+  const stops=best.stops.map((s,i)=>({...s,bufferAfterMinutes:s.item&&best.stops.slice(i+1).some(next=>next.item)?s.bufferAfterMinutes:0}));
+  return {stops,notes:[...(shifted?['I adjusted the stop times within your chosen window, allowing for the time now and any reported opening hours.']:[])]};
 }
