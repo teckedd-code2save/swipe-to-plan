@@ -39,7 +39,7 @@ export function BeforeGoing({plan,checks,done,setDone,onDetails}) {
   const fits=reports.filter(s=>s.hours?.status==='fits_reported_hours').length;
   const flags=reports.filter(s=>hourTone(s.hours?.status)==='attention').length;
   const unknown=filled.length-fits-flags;
-  const summary=[fits?`${fits} stop${fits===1?'':'s'} fit reported hours`:'',flags?`${flags} timing issue${flags===1?'':'s'} to review`:'',unknown?`${unknown} with hours to confirm`:''].filter(Boolean).join(' · ');
+  const summary=[fits?`${fits} stop${fits===1?'':'s'} ${fits===1?'fits':'fit'} reported hours`:'',flags?`${flags} timing issue${flags===1?'':'s'} to review`:'',unknown?`${unknown} with hours to confirm`:''].filter(Boolean).join(' · ');
   return <section className="pg-preflight">
     <div className="pg-intro"><span className="pg-eyebrow">A LITTLE LESS HOMEWORK</span><h2>Let’s get you ready.</h2><p>I’m checking your times against reported hours and gathering the useful details for each stop.</p></div>
     <div className={`pg-progress ${flags?'attention':''}`} role="status"><Icon name={checks.status==='loading'?'clock':flags||unknown?'info':'check'} size={18}/><span>{checks.status==='loading'?'Checking your places…':checks.status==='error'?'The place check needs another try.':summary}</span><button onClick={checks.refresh} disabled={checks.status==='loading'}>Refresh</button></div>
