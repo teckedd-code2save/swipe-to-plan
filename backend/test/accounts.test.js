@@ -116,3 +116,18 @@ test('a saved planning area is account-private, survives reload and can be forgo
     await f.accounts.updatePlanningLocation(a.session,{locationId:null},resolve);assert.equal((await f.accounts.current(a.session)).user.planningLocation,null);assert.equal((await f.accounts.current(a.session)).user.profile.artists[0],'SZA');
   }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test('planning people are private accepted connections; names, emails and unclaimed placeholders never discover accounts',async()=>{
+  const f=fixture(),a=await f.login('Alex'),b=await f.login('Sam'),stranger=await f.login('Someone else');
+  const alice=(await f.accounts.current(a.session)).user,sam=(await f.accounts.current(b.session)).user;
+  await f.accounts.updateProfile(b.session,{name:'Sam',artists:['Sade'],vibes:['v-seafood']});
+  const circle=await f.accounts.createCircle(a.session,{name:'Friends',people:[alice.profile,{id:'guest-sam',name:'Sam',artists:[],vibes:[]}]});
+  const request={headers:{cookie:`outing-session=${a.session}`}};
+  const before=await f.accounts.planningPeople(request);
+  assert.equal(before.peopleMode,'connected');assert.deepEqual(before.contacts.map(p=>p.id),[alice.id]);assert.equal(before.circles[0].people.length,1);assert.doesNotMatch(JSON.stringify(before),/same@example|Sade|googleSubject|inviteToken/);
+  await f.accounts.joinCircle(b.session,circle.id,{inviteToken:circle.inviteToken,replaceId:'guest-sam'});
+  const after=await f.accounts.planningPeople(request);assert.deepEqual(after.contacts.map(p=>p.id),[alice.id,sam.id]);assert.deepEqual(after.contacts[1].artists,['Sade']);
+  assert.equal((await f.accounts.planningPeople({headers:{cookie:`outing-session=${stranger.session}`}})).contacts.length,1);
+  await f.accounts.removeCircle(b.session,circle.id);assert.equal((await f.accounts.planningPeople(request)).contacts.length,1);
+  assert.deepEqual(await f.accounts.planningPeople({headers:{}}),{peopleMode:'guest'});
+});

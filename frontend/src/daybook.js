@@ -37,6 +37,28 @@ export function itineraryCalendar(plan) {
   // Fold on UTF-8 boundaries, as required for calendar clients.
   return lines.map(line=>{let result='',part='',bytes=0;for(const char of line){const length=new TextEncoder().encode(char).length;if(bytes+length>73){result+=part+'\r\n ';part='';bytes=1;}part+=char;bytes+=length;}return result+part;}).join('\r\n')+'\r\n';
 }
+
+// Google's event-template link opens an editable draft; only the user saves it.
+// https://developers.google.com/workspace/calendar/api/concepts/inviting-attendees-to-events
+export function googleCalendarLink(plan){
+  if(!plan?.timeZone)throw new Error('Choose a precise planning area so I can use the correct calendar time zone.');
+  const stops=plan.stops.filter(s=>s.item);
+  if(!stops.length)throw new Error('Find at least one place before adding your outing to Calendar.');
+  const r=plan.request,url=new URL('https://calendar.google.com/calendar/r/eventedit');
+  url.searchParams.set('action','TEMPLATE');
+  url.searchParams.set('text',r.title);
+  url.searchParams.set('dates',`${calendarTimestamp(r.date,stops[0].start,plan.timeZone)}/${calendarTimestamp(r.date,stops.at(-1).end,plan.timeZone)}`);
+  url.searchParams.set('stz',plan.timeZone);url.searchParams.set('etz',plan.timeZone);
+  url.searchParams.set('location',stops.length===1?`${stops[0].item.name}, ${stops[0].item.address}`:r.area);
+  url.searchParams.set('details',[
+    'Planned with Unstressed',`Times at destination: ${plan.timeZone}`,'',
+    ...stops.flatMap(s=>[`${s.start}–${s.end} · ${s.item.name}`,s.item.address||'',s.item.links?.map||'','']),
+    `Group allowance: ${formatMoney(r.budget,r.currency)}. Allowances are not venue quotes.`,
+    'Suggested itinerary, not a booking. Confirm hours, prices, travel and any specific needs with the venues.',
+    'This is a snapshot. Later changes in Unstressed will not update this event.',
+  ].join('\n'));
+  return url.href;
+}
 export function downloadDay(plan,personId,calendar=false) {
   const person=plan.people.find(p=>p.id===personId);
   const blob=new Blob([calendar?itineraryCalendar(plan):daybookHtml(plan,personId)],{type:calendar?'text/calendar;charset=utf-8':'text/html;charset=utf-8'});

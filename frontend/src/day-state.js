@@ -5,6 +5,12 @@ export const hasTaste = person => !!(person.artists.length + person.vibes.length
 export function updateRoster(brief, people) {
   return {...brief,people,party:{...brief.party,adults:Math.max(brief.party.adults,people.length-brief.party.children)}};
 }
+export function adoptAccountProfile(brief,profile){
+  const host=brief.people[0];
+  if(host?.name!=='You'||brief.people.some(p=>p.id===profile.id))return null;
+  const person={...profile,artists:host.artists.length?host.artists:profile.artists,vibes:host.vibes.length?host.vibes:profile.vibes,...(host.spending?{spending:host.spending}:{})};
+  return {...brief,people:[person,...brief.people.slice(1)]};
+}
 export function tasteFromSwipe(person, card, like) {
   const key=card.kind==='artist'?'artists':'vibes', value=card.kind==='artist'?card.label:card.id;
   const values=person[key].filter(v=>v!==value);

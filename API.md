@@ -243,3 +243,11 @@ A circle returns `{id,name,owner,people,accountIds,inviteToken?}`. Only its orga
 Each result contains the place and an hours assessment: `fits_reported_hours`, `outside_reported_hours`, `reported_closed` or `unknown`. The comparison covers the entire stop, split opening periods, midnight and previous-day overnight hours. Invalid or missing hours remain unknown; one provider failure does not discard other stops. Weekly schedules are provider reports, not confirmation for a specific date, holiday, kitchen service or reservation.
 
 The studio runs these checks when a Qloo plan's venues/date/times change and discards stale responses. Timing issues appear in the day view. `show_ui` also accepts `panel:"checks"` for conversational requests about hours, menus, routes or reservations. Clicking a place opens its detail dialog, source-backed information, participant connections and an editable enquiry. Enquiries are copied by the user, never sent automatically. Travel modes create Maps directions links; no routing estimate is inserted into the plan. Prices remain relative provider bands and user allowances, not verified menu totals. Check confirmations are session-local and never represent agent-made bookings.
+
+## Autopilot and private connections
+
+`POST /api/agent` accepts optional `mode` (`guided` by default, or `autopilot`) and `contacts` (up to 72 saved profiles). Autopilot returns `{status: "autopilot", request, needsLocation, circleId?, model}` after composing and validating the brief. The client confirms missing locations, then executes `/api/itineraries` or the shared-day mutation below. This preparation does not call Qloo discovery.
+
+For signed-in sessions, the server replaces supplied contacts and circles with accepted circle memberships from the account store. Unknown people open `invite_person`; `add_saved_person` references a current connection by ID. Neither endpoint searches public accounts by name or email. Guests retain name-only `add_person` behavior.
+
+`POST /api/days/:id/autopilot` takes `{request, revision}` with the day owner bearer credential. It atomically applies the composed brief, preserves existing personal links, rejects dropped members or stale revisions, and rebuilds once. It cannot change account profiles, invite contacts externally or book a venue.

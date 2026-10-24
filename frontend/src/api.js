@@ -33,6 +33,7 @@ export const api = {
   updatePerson: (id,token,memberId,person) => json(`/api/days/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}`,dayRequest(token,'PATCH',person)),
   removePerson: (id,token,memberId) => json(`/api/days/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}`,dayRequest(token,'DELETE')),
   updateDay: (id,token,request,revision) => json(`/api/days/${encodeURIComponent(id)}`,dayRequest(token,'PATCH',{request,revision})),
+  autopilotDay: (id,token,request,revision) => json(`/api/days/${encodeURIComponent(id)}/autopilot`,dayRequest(token,'POST',{request,revision})),
   retryDay: (id,token) => json(`/api/days/${encodeURIComponent(id)}/retry`,dayRequest(token,'POST',{})),
   createRoom: (body) => json("/api/rooms", post(body)),
   room: (code) => json(`/api/rooms/${encodeURIComponent(code)}`),

@@ -100,3 +100,16 @@ test('shared days survive storage reload, initialize once under concurrency, and
   clock+=7*86400000+1;await assert.rejects(loaded.get(day.id,day.token),e=>e.status===404);
   await days.settled(day.id);
 });
+
+test('Autopilot applies group and trip changes once, preserves personal links and rejects stale or non-owner writes',async()=>{
+  const {days,day}=await fixture();
+  const request={...day.request,budget:500,party:{adults:2,children:0},activities:['dinner'],people:[{...day.request.people[0],vibes:['v-cafe']},person('sam','Sam',['v-seafood'])]};
+  await assert.rejects(days.autopilot(day.id,day.inviteToken,{request,revision:day.revision}),e=>e.status===403);
+  const updated=await days.autopilot(day.id,day.token,{request,revision:day.revision});
+  assert.equal(updated.revision,day.revision+1);assert.equal(updated.request.budget,500);assert.equal(updated.request.people.length,2);
+  assert.equal(updated.participantLinks.find(p=>p.id==='host').token,day.participantLinks.find(p=>p.id==='host').token);
+  await assert.rejects(days.autopilot(day.id,day.token,{request,revision:day.revision}),e=>e.status===409);
+  await assert.rejects(days.autopilot(day.id,day.token,{request:{...request,people:[request.people[1]]},revision:updated.revision}),e=>e.status===400);
+  await days.settled(day.id);const ready=await days.get(day.id,day.token);
+  assert.equal(ready.planRevision,updated.revision);assert.deepEqual(ready.plan.request.people,request.people);assert.equal(ready.plan.stops.length,1);
+});

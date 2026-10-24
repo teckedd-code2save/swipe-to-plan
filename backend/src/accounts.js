@@ -42,6 +42,13 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
   return {
     enabled,origin,redirectUri,
     async current(session){return store.read(data=>{const user=resolve(data,session);return {configured:enabled,user:user?safeUser(user):null,circles:user?myCircles(data,user):[]};});},
+    async planningPeople(req){
+      const current=await this.current(cookie(req,sessionName));
+      if(!current.user)return {peopleMode:'guest'};
+      const circles=current.circles.map(c=>({id:c.id,name:c.name,people:c.people.filter(p=>c.accountIds.includes(p.id))}));
+      const contacts=[...new Map([current.user.profile,...circles.flatMap(c=>c.people)].map(p=>[p.id,p])).values()].slice(0,72);
+      return {peopleMode:'connected',circles,contacts};
+    },
     async start(body){fields(body,['returnTo']);if(!enabled)throw fail('Google sign-in is being connected. Your day can continue as a guest.',503);const returnTo=returnPath(body.returnTo),state=opaque(),binding=opaque(),verifier=opaque(),nonce=opaque();await store.transact(data=>{data.flows[hash(state)]={binding:hash(binding),verifier,nonce,returnTo,expiresAt:now()+600000};});return {binding,url:oauth().generateAuthUrl({scope:['openid','email','profile'],state,nonce,prompt:'select_account',code_challenge:hash(verifier),code_challenge_method:CodeChallengeMethod.S256,access_type:'online'})};},
     async complete(query,binding,previousSession){
       if(!enabled||typeof query.state!=='string'||!/^[-\w]{43}$/.test(query.state)||typeof binding!=='string'||!/^[-\w]{43}$/.test(binding))throw fail('Sign-in expired. Please try again.',401);

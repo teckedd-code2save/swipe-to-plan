@@ -161,3 +161,14 @@ test('place details and checks validate IDs and do not require account data',asy
  assert.equal((await request('/api/places/not-an-id')).status,400);
  assert.equal((await request('/api/place-checks',{date:'2026-02-30',stops:[{entityId:id,start:'17:00',end:'18:00'}]})).status,400);
 });
+
+test('Autopilot HTTP prepares a composed brief before discovery and shared execution requires the owner',async t=>{
+  const request=parseItinerary({area:'London',people:[{id:'sam',name:'Sam',artists:['Sade']}]});
+  let received;
+  const call=await serve(t,{agent:{configured:()=>true,interpret:async body=>{received=body;return {status:'autopilot',request,needsLocation:true};}}});
+  const result=await call('/api/agent',{mode:'autopilot',message:'Plan for us',context:request,contacts:request.people});
+  assert.equal(result.status,200);assert.equal(result.body.status,'autopilot');assert.equal(result.body.needsLocation,true);assert.equal(result.body.stops,undefined);assert.deepEqual(received.contacts,request.people);
+  const created=await call('/api/days',{request});
+  const forbidden=await call(`/api/days/${created.body.id}/autopilot`,{request,revision:created.body.revision},'POST',{authorization:`Bearer ${created.body.inviteToken}`});
+  assert.equal(forbidden.status,403);
+});

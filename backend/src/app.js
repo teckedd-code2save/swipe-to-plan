@@ -9,7 +9,7 @@ import { createDiscovery, mergeGroup } from "./plan.js";
 import { buildOuting, parseOutingRequest } from "./outing.js";
 import { buildItinerary, parseItinerary } from "./itinerary.js";
 import { createDays } from "./days.js";
-import { AGENT_TOOLS, AgentError } from "./agent.js";
+import { AGENT_TOOLS, AUTOPILOT_TOOL, AgentError } from "./agent.js";
 import { createAccounts } from './accounts.js';
 import { createPlaceGuide } from './place-guide.js';
 
@@ -53,13 +53,13 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, acc
   app.post('/api/place-checks',limit(15),route(async(req,res)=>res.json(await places.check(req.body))));
   app.post("/api/recommend", limit(30), route(async (req, res) => res.json(await discovery.recommend(parseRequest(req.body)))));
   app.post("/api/outings", limit(30), route(async (req, res) => res.json(await buildOuting(discovery, parseOutingRequest(req.body)))));
-  app.get("/api/agent/tools", (_req,res) => res.json({tools:AGENT_TOOLS,transport:{plan_day:{method:'POST',path:'/api/itineraries'}},capabilities:'/api/schema'}));
+  app.get("/api/agent/tools", (_req,res) => res.json({tools:[...AGENT_TOOLS,AUTOPILOT_TOOL],modes:['guided','autopilot'],transport:{plan_day:{method:'POST',path:'/api/itineraries'}},capabilities:'/api/schema'}));
   app.post("/api/itineraries", limit(20), route(async(req,res)=>res.json(await buildItinerary(discovery,parseItinerary(req.body)))));
   app.post("/api/agent", limit(10), route(async(req,res)=>{
-    strictFields(req.body,['message','context','history','circles','planContext','locationContext']);
+    strictFields(req.body,['message','context','history','circles','contacts','planContext','locationContext','mode']);
     if(!agent)throw new AgentError('agent_not_configured');
-    const interpretation=await agent.interpret(req.body);
-    if(['needs_input','action','show_ui','reply'].includes(interpretation.status))return res.json(interpretation);
+    const interpretation=await agent.interpret({...req.body,...await accounts.planningPeople(req)});
+    if(['needs_input','action','show_ui','reply','autopilot'].includes(interpretation.status))return res.json(interpretation);
     const plan=await buildItinerary(discovery,interpretation.request);
     res.json({...plan,agent:{model:interpretation.model,action:'plan_day'}});
   }));
@@ -72,6 +72,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, acc
   app.patch('/api/days/:id/members/:memberId', limit(45), route(async (req,res) => res.json(await days.updatePerson(req.params.id, credential(req), req.params.memberId, req.body))));
   app.delete('/api/days/:id/members/:memberId', limit(20), route(async (req,res) => res.json(await days.remove(req.params.id, credential(req), req.params.memberId))));
   app.patch('/api/days/:id', limit(20), route(async (req,res) => res.json(await days.updateBrief(req.params.id, credential(req), req.body))));
+  app.post('/api/days/:id/autopilot', limit(10), route(async (req,res) => res.json(await days.autopilot(req.params.id, credential(req), req.body))));
   app.post('/api/days/:id/retry', limit(10), route(async (req,res) => res.json(await days.retry(req.params.id, credential(req)))));
   app.post("/api/baseline", (_req, res) => res.status(410).json({ code: "comparison_retired", error: "Use /api/recommend for evidence-based discovery. Model-only comparisons have been retired." }));
 

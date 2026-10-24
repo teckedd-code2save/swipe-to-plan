@@ -136,3 +136,13 @@ test('a practical-details request opens checks without inventing verification or
  const result=await agent.interpret({message:'Check hours and menus for this day',context:parseItinerary()});
  assert.deepEqual(result,{status:'show_ui',panel:'checks'});
 });
+
+test('signed-in additions use connected identities or prepare an invite; guest names stay simple',async()=>{
+  const context=parseItinerary({people:[{id:'alex',name:'Alex'}]});
+  const contacts=[{id:'sam',name:'Sam',artists:['Sade'],vibes:[]}];
+  const invoke=(name,args,peopleMode='connected')=>createAgent({getKey:()=> 'test',fetchImpl:async()=>response(name,args)}).interpret({message:'Add Sam',context,contacts,peopleMode});
+  const known=await invoke('add_saved_person',{personId:'sam'});assert.deepEqual(known.person,contacts[0]);
+  const unknown=await invoke('add_person',{name:'Maya',artists:[],vibes:[]});assert.deepEqual(unknown,{status:'action',action:'invite_person',name:'Maya'});
+  await assert.rejects(invoke('add_saved_person',{personId:'unknown'}),e=>e.status===400);
+  assert.equal((await invoke('add_person',{name:'Maya',artists:[],vibes:[]},'guest')).action,'add_person');
+});

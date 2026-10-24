@@ -53,5 +53,6 @@ export default function useSharedDay() {
   function leave(){epoch.current++;setConnecting(false);setCredential(null);setDay(null);current.current=null;setError('');history.replaceState(null,'','/#/');}
   return {day,credential,error,connecting,linked:!!credential,ensure,accept,join,leave,clearError:()=>setError(''),
     circle:value=>invoke(api.addCircle,value),add:person=>invoke(api.addPerson,person),updatePerson:(id,person)=>invoke(api.updatePerson,id,person),remove:id=>invoke(api.removePerson,id),
+    autopilot:(request,revision=current.current.revision)=>invoke(api.autopilotDay,request,revision),
     updateBrief:(request,revision=current.current.revision)=>invoke(api.updateDay,request,revision),retry:()=>invoke(api.retryDay)};
 }

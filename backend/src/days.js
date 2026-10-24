@@ -203,6 +203,22 @@ export function createDays({ discovery, store = createDayStore(), now = Date.now
         event(day, 'brief_changed', 'Organizer', 'The trip details changed. Updating everyone’s day.', now);
       });
     },
+    async autopilot(id,credential,body) {
+      checkFields(body,['request','revision']);
+      const requested=parseItinerary(body.request);
+      return change(id,credential,(day,permission)=>{
+        requireOwner(permission);
+        if(body.revision!==day.revision)throw fail('The group changed while Autopilot was working. Try again with everyone’s latest tastes.',409,'day_conflict');
+        if(day.members.some(member=>!requested.people.some(p=>p.id===member.id)))throw new InputError('Autopilot keeps everyone in this day. Remove people from the group first.');
+        if(requested.people.some(p=>!p.id))throw new InputError('Autopilot participants need stable IDs.');
+        // One revision and one rebuild. Existing personal links and join state survive.
+        const members=requested.people.map(person=>({...day.members.find(m=>m.id===person.id),...person,editToken:day.members.find(m=>m.id===person.id)?.editToken||token(),joined:day.members.find(m=>m.id===person.id)?.joined||false,updatedAt:new Date(now()).toISOString()}));
+        const organizer=day.members[0].id;
+        day.members=[members.find(p=>p.id===organizer),...members.filter(p=>p.id!==organizer)];
+        day.brief={...requested,people:day.members.map(({id,name,artists,vibes,spending})=>({id,name,artists,vibes,...(spending?{spending}:{})}))};
+        event(day,'autopilot','Organizer','Autopilot combined the group, tastes and trip details. Finding everyone’s day.',now);
+      });
+    },
     async retry(id, credential) { return change(id, credential, (day, permission) => { if (permission.role === 'guest') throw fail('Join this day first.', 403, 'day_forbidden'); day.planError = null; }); },
     // For shutdown/test coordination; network work is never held inside a storage transaction.
     settled: async id => { while (building.has(id)) await building.get(id); },
