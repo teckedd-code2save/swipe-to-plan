@@ -12,8 +12,10 @@ import { createDays } from "./days.js";
 import { AGENT_TOOLS, AgentError } from "./agent.js";
 import { createAccounts } from './accounts.js';
 
-export function createApp({ provider, prisma = null, agent = null, dayStore, accounts=createAccounts(), rateLimit = true, now = Date.now } = {}) {
+export function createApp({ provider, prisma = null, agent = null, dayStore, accounts=createAccounts(), rateLimit = true, trustProxy = process.env.TRUST_PROXY === '1' ? 1 : false, now = Date.now } = {}) {
   const app = express();
+  // Production is reachable only through the one host-level Caddy proxy.
+  app.set('trust proxy', trustProxy);
   const discovery = createDiscovery({ provider, now });
   const days = createDays({ discovery, store: dayStore, now });
   app.disable("x-powered-by");
