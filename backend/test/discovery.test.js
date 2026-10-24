@@ -108,7 +108,7 @@ test("group fairness favors overlap, separates duplicate names and preserves per
   assert.deepEqual(ranked, snapshot); assert.deepEqual(mergeGroup([]), { items: [], summary: [] });
   assert.equal(mergeGroup([{ id: "1", name: "Solo", ranked }]).items[0].score, ranked[0].score);
 });
-for (const body of [{ intent: "dancing" }, { location: { area: "London" } }, { constraints: { openNow: true } }, { constraints: { maxPriceLevel: 0 } }, { taste: { vibes: ["unknown"] } }, { feedback: [{ candidateId: "x", reason: "bad" }] }, { limit: 9 }, { area: "Osu", location: { area: "Labone" } }, { liked: ["constructor"] }]) {
+for (const body of [{ intent: "dancing" }, { location: { area: "" } }, { constraints: { openNow: true } }, { constraints: { maxPriceLevel: 0 } }, { taste: { vibes: ["unknown"] } }, { feedback: [{ candidateId: "x", reason: "bad" }] }, { limit: 9 }, { area: "Osu", location: { area: "Labone" } }, { liked: ["constructor"] }]) {
   test(`reject unsupported input ${JSON.stringify(body)}`, () => assert.throws(() => parseRequest(body), (e) => e.status === 400));
 }
 test("legacy liked/area input remains supported", () => {

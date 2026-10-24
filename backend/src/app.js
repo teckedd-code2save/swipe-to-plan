@@ -6,10 +6,16 @@ import { randomInt } from "node:crypto";
 import { publicDeck } from "./deck.js";
 import { API_SCHEMA, InputError, parseRequest } from "./contract.js";
 import { createDiscovery, mergeGroup } from "./plan.js";
+import { buildOuting, parseOutingRequest } from "./outing.js";
+import { buildItinerary, parseItinerary } from "./itinerary.js";
+import { createDays } from "./days.js";
+import { AGENT_TOOLS, AgentError } from "./agent.js";
+import { createAccounts } from './accounts.js';
 
-export function createApp({ provider, prisma = null, rateLimit = true, now = Date.now } = {}) {
+export function createApp({ provider, prisma = null, agent = null, dayStore, accounts=createAccounts(), rateLimit = true, now = Date.now } = {}) {
   const app = express();
   const discovery = createDiscovery({ provider, now });
+  const days = createDays({ discovery, store: dayStore, now });
   app.disable("x-powered-by");
   app.use(express.json({ limit: "50kb" }));
   app.use("/api", (_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
@@ -23,16 +29,44 @@ export function createApp({ provider, prisma = null, rateLimit = true, now = Dat
     hits.set(key, [...recent, now()]); next();
   };
   const route = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
+  accounts.mount(app,{route,limit,resolveLocation:provider.getLocation});
   const db = (_req, res, next) => prisma ? next() : res.status(503).json({ code: "rooms_unavailable", error: "Group rooms need a configured database. Solo discovery is available." });
   const strictFields = (body, allowed) => {
     if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((k) => !allowed.includes(k))) throw new InputError(`Supported fields: ${allowed.join(", ")}.`);
   };
   const findRoom = async (code) => prisma.room.findUnique({ where: { code: String(code).toUpperCase() }, include: { members: { orderBy: { createdAt: "asc" } } } });
 
-  app.get("/api/health", (_req, res) => res.json({ ok: true, provider: provider.name, roomsConfigured: !!prisma }));
+  app.get("/api/health", (_req, res) => res.json({ ok: true, provider: provider.name, roomsConfigured: !!prisma, agentConfigured: !!agent?.configured() }));
   app.get("/api/schema", (_req, res) => res.json(API_SCHEMA));
+  app.get('/api/locations',limit(60),route(async(req,res)=>{
+    const query=req.query.q;if(typeof query!=='string'||query.trim().length<2||query.length>160||/[\x00-\x1f<>]/.test(query))throw new InputError('Type at least two characters of a city, town or neighborhood.');
+    if(!provider.searchLocations)throw new InputError('Location search is unavailable on this server.');
+    res.json({locations:await provider.searchLocations(query.trim()),source:'qloo'});
+  }));
+  app.get('/api/locations/:id',limit(60),route(async(req,res)=>{if(!provider.getLocation)throw new InputError('Location search is unavailable on this server.');res.json(await provider.getLocation(req.params.id));}));
   app.get("/api/deck", (_req, res) => res.json(publicDeck()));
   app.post("/api/recommend", limit(30), route(async (req, res) => res.json(await discovery.recommend(parseRequest(req.body)))));
+  app.post("/api/outings", limit(30), route(async (req, res) => res.json(await buildOuting(discovery, parseOutingRequest(req.body)))));
+  app.get("/api/agent/tools", (_req,res) => res.json({tools:AGENT_TOOLS,transport:{plan_day:{method:'POST',path:'/api/itineraries'}},capabilities:'/api/schema'}));
+  app.post("/api/itineraries", limit(20), route(async(req,res)=>res.json(await buildItinerary(discovery,parseItinerary(req.body)))));
+  app.post("/api/agent", limit(10), route(async(req,res)=>{
+    strictFields(req.body,['message','context','history','circles','planContext','locationContext']);
+    if(!agent)throw new AgentError('agent_not_configured');
+    const interpretation=await agent.interpret(req.body);
+    if(['needs_input','action','show_ui','reply'].includes(interpretation.status))return res.json(interpretation);
+    const plan=await buildItinerary(discovery,interpretation.request);
+    res.json({...plan,agent:{model:interpretation.model,action:'plan_day'}});
+  }));
+  const credential = req => (req.get('authorization') || '').replace(/^Bearer /, '');
+  app.post('/api/days', limit(10), route(async (req,res) => res.status(201).json(await days.create(req.body))));
+  app.get('/api/days/:id', limit(120), route(async (req,res) => res.json(await days.get(req.params.id, credential(req)))));
+  app.post('/api/days/:id/members', limit(20), route(async (req,res) => res.status(201).json(await days.add(req.params.id, credential(req), req.body))));
+  app.post('/api/days/:id/circle', limit(20), route(async (req,res) => res.json(await days.circle(req.params.id, credential(req), req.body))));
+  app.post('/api/days/:id/join', limit(10), route(async (req,res) => res.status(201).json(await days.join(req.params.id, credential(req), req.body))));
+  app.patch('/api/days/:id/members/:memberId', limit(45), route(async (req,res) => res.json(await days.updatePerson(req.params.id, credential(req), req.params.memberId, req.body))));
+  app.delete('/api/days/:id/members/:memberId', limit(20), route(async (req,res) => res.json(await days.remove(req.params.id, credential(req), req.params.memberId))));
+  app.patch('/api/days/:id', limit(20), route(async (req,res) => res.json(await days.updateBrief(req.params.id, credential(req), req.body))));
+  app.post('/api/days/:id/retry', limit(10), route(async (req,res) => res.json(await days.retry(req.params.id, credential(req)))));
   app.post("/api/baseline", (_req, res) => res.status(410).json({ code: "comparison_retired", error: "Use /api/recommend for evidence-based discovery. Model-only comparisons have been retired." }));
 
   app.post("/api/rooms", db, limit(10), route(async (req, res) => {
@@ -95,8 +129,8 @@ export function createApp({ provider, prisma = null, rateLimit = true, now = Dat
   app.use((e, _req, res, _next) => {
     if (e.type === "entity.parse.failed") return res.status(400).json({ code: "invalid_json", error: "Request body must be valid JSON." });
     if (e.type === "entity.too.large") return res.status(413).json({ code: "body_too_large", error: "Request body exceeds 50 KB." });
-    const status = e.status === 400 ? 400 : 503;
-    res.status(status).json({ code: e.code && ["invalid_request", "provider_unavailable", "provider_not_configured", "provider_response_invalid", "provider_auth_error", "provider_rate_limited"].includes(e.code) ? e.code : "service_unavailable", error: e.status ? e.message : "The service is temporarily unavailable. Please retry." });
+    const status = [400,401,403,404,409].includes(e.status) ? e.status : 503;
+    res.status(status).json({ code: e.code && ["location_not_found", "location_ambiguous", "account_error", "invalid_request", "provider_unavailable", "provider_not_configured", "provider_response_invalid", "provider_auth_error", "provider_rate_limited", "agent_not_configured", "agent_unavailable", "day_not_found", "day_forbidden", "day_conflict", "day_unavailable"].includes(e.code) ? e.code : "service_unavailable", error: e.status ? e.message : "The service is temporarily unavailable. Please retry." });
   });
   const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../frontend/dist");
   if (fs.existsSync(path.join(dist, "index.html"))) {

@@ -1,10 +1,11 @@
-import { byId } from "./deck.js";
+import { byId,matchesTasteTag } from "./deck.js";
 import { explainCandidate } from "./explain.js";
 import { ProviderError } from "./qloo.js";
 
 // Venue category evidence is required. Interest/decor tags cannot establish a venue type.
 const VENUE = /(?:^|_)(restaurant|cafe|coffee_shop|bar|pub|lounge|nightclub|night_club|bistro|eatery|pizzeria|steakhouse)(?:$|_)/;
 function intentEvidence(tags, intent) {
+  if (intent === "activity") return tags.filter((t) => /^urn:tag:(category|genre):(place|qloo):/.test(t.id) && /(?:^|_)(museum|gallery|art_gallery|park|garden|zoo|aquarium|cultural_center|landmark|tourist_attraction|beach|market|marketplace|bookstore|bookshop|library|monument|memorial)(?:$|_)/.test(t.id.split(":").at(-1)));
   const categories = tags.filter((t) => /^urn:tag:(category|genre):(place|qloo):/.test(t.id) && VENUE.test(t.id.split(":").at(-1)));
   if (!categories.length) return [];
   if (intent === "any") return categories;
@@ -16,7 +17,7 @@ function intentEvidence(tags, intent) {
   return tags.filter((t) => /^urn:tag:(category|genre|offerings|beverage_offering|dining_options|culinary_style):(place|qloo):/.test(t.id) && allowed[intent].test(t.id.split(":").at(-1)));
 }
 const NOISY = new Set(["live_music", "loud", "noisy", "nightclub", "night_club", "dance_club"]);
-const norm = (s) => String(s ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const norm = (s) => String(s ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 const contains = (text, phrase) => ` ${norm(text)} `.includes(` ${norm(phrase)} `);
 const safeString = (s, max = 240) => typeof s === "string" && s.trim() ? s.trim().slice(0, max) : null;
 const url = (value) => {
@@ -30,12 +31,17 @@ const hotel = (p, tags) => /\b(hotel|resort|suites?|residence|apartments?|lodge|
   tags.some((t) => /hotel|lodging|accommodation/.test(t.id)) ||
   !!(p.properties?.hotel_class || p.properties?.star_rating || p.properties?.number_of_rooms || p.properties?.check_in_time);
 
-function locationEvidence(p, area) {
+function locationEvidence(p, area, locality) {
+  if(locality?.query===area&&locality.id&&locality.radius===0)return {field:"query.localities.filter",value:locality.label,method:"qloo_locality_filter",localityId:locality.id};
   const candidates = [
     ["properties.address", p.properties?.address], ["location.city", p.location?.city],
     ["location.neighborhood", p.location?.neighborhood], ["properties.neighborhood", p.properties?.neighborhood],
-    ["disambiguation", p.disambiguation],
+    ["disambiguation", p.disambiguation], ...Object.entries(p.properties?.geocode||{}).filter(([,v])=>typeof v==='string').map(([k,v])=>[`properties.geocode.${k}`,v]),
   ].filter(([, value]) => typeof value === "string" && value.trim());
+  if(!['Accra','Osu','East Legon','Cantonments','Labone','Airport Residential'].includes(area)){
+    const combined=candidates.map(([,v])=>v).join(' '),parts=area.split(',').map(s=>s.trim()).filter(Boolean);
+    return parts.every(part=>contains(combined,part))?{field:'provider_location_text',value:combined,method:'provider_text_match'}:null;
+  }
   const country = p.location?.country ?? p.properties?.country;
   if (typeof country === "string" && !["ghana", "gh", "gha"].includes(norm(country))) return null;
   if (typeof p.location?.city === "string" && !contains(p.location.city, "Accra")) return null;
@@ -53,12 +59,16 @@ function shape(p, source, retrievedAt) {
   const gid = safeString(p.external?.google_place?.[0]?.place_id);
   const map = new URL("https://www.google.com/maps/search/");
   map.searchParams.set("api", "1");
-  map.searchParams.set("query", coords ? `${lat},${lng}` : `${p.name} ${pr.address ?? "Accra Ghana"}`);
+  map.searchParams.set("query", coords ? `${lat},${lng}` : `${p.name} ${pr.address ?? ""}`);
   if (gid) map.searchParams.set("query_place_id", gid);
   const priceLevel = priceOf(p);
   return {
     id: `${source}:${p.entity_id}`, entityId: p.entity_id, name: p.name,
     address: safeString(pr.address) ?? safeString(p.disambiguation) ?? "",
+    coordinates: coords ? { lat, lng } : null,
+    description: safeString(pr.short_description ?? pr.description, 400),
+    affinityEvidence: Array.isArray(p.query?.explainability?.["signal.interests.entities"])
+      ? p.query.explainability["signal.interests.entities"].filter((e) => typeof e?.entity_id === "string" && Number.isFinite(e.score) && e.score >= 0 && e.score <= 1).map((e) => ({ entityId: e.entity_id, contribution: e.score, sourceField: "query.explainability.signal.interests.entities" })) : [],
     image: url(pr.images?.[0]?.url ?? (typeof pr.image === "string" ? pr.image : pr.image?.url)),
     links: {
       map: map.href, website: url(pr.website), menu: url(pr.menu_url),
@@ -68,13 +78,14 @@ function shape(p, source, retrievedAt) {
     facts: {
       price: { level: priceLevel, status: priceLevel === null ? "unknown" : "provider_reported", sourceField: priceLevel === null ? null : "properties.price_level" },
       hours: { status: "unverified" }, availability: { status: "unknown" },
+      childSuitability: { status: tagsOf(p).some((t) => /:(kid_friendly|family_friendly|good_for_kids)$/.test(t.id)) ? "provider_reported" : "unknown" },
     },
     provenance: { provider: source, entityId: p.entity_id, retrievedAt, freshness: "provider_update_time_unknown" },
     uncertainty: ["Opening hours and availability have not been verified.", "Provider details may be outdated; confirm with the venue."],
   };
 }
 
-export function rankPlaces(places, request, { source = "qloo", retrievedAt = new Date().toISOString(), resolved = [] } = {}) {
+export function rankPlaces(places, request, { source = "qloo", retrievedAt = new Date().toISOString(), resolved = [], locality } = {}) {
   const excluded = {};
   const reject = (reason) => { excluded[reason] = (excluded[reason] ?? 0) + 1; };
   const seen = new Set();
@@ -95,14 +106,14 @@ export function rankPlaces(places, request, { source = "qloo", retrievedAt = new
     if (administrative) return reject("non_outing_venue");
     const intentTags = intentEvidence(tags, request.intent);
     if (!intentTags.length) return reject("intent_not_supported");
-    const location = locationEvidence(p, request.location.area);
+    const location = locationEvidence(p, request.location.area,locality);
     if (!location) return reject("location_not_supported");
     if (request.constraints.excludeTags.some((excludedTag) => tags.some((t) => t.id === excludedTag || slug(t.id) === excludedTag))) return reject("excluded_tag");
     if (request.constraints.maxPriceLevel !== undefined) {
       if (priceOf(p) === null) return reject("price_unknown");
       if (priceOf(p) > request.constraints.maxPriceLevel) return reject("over_price_limit");
     }
-    const matched = selectedVibes.filter((v) => tags.some((t) => v.rx.test(t.id)));
+    const matched = selectedVibes.filter((v) => tags.some((t) => matchesTasteTag(v,t.id)));
     const noiseTags = tags.filter((t) => NOISY.has(slug(t.id)));
     const base = 1 - index / Math.max(places.length, 1);
     const boost = Math.min(0.15 * matched.length, 0.45);
@@ -111,10 +122,10 @@ export function rankPlaces(places, request, { source = "qloo", retrievedAt = new
     const intentText = request.intent === "any" ? "outing" : request.intent;
     item.reasons = [
       { code: "intent_match", text: `Provider tags match your ${intentText} request.`, evidence: intentTags.map((t) => ({ field: "tags", value: t.id })) },
-      { code: "location_match", text: `Provider location text matches ${request.location.area}.`, evidence: [location] },
+      { code: "location_match", text: locality?`Qloo filtered places to ${locality.name}.`:`Provider location text matches ${request.location.area}.`, evidence: [location] },
     ];
     if (resolved.length) item.reasons.push({ code: "taste_affinity", text: source === "demo" ? "Demo ordering uses your resolved sample signals." : "Qloo ordered these candidates using your resolved artist signals.", evidence: resolved.map((s) => ({ field: "signal.interests.entities", value: s.entityId })) });
-    if (matched.length) item.reasons.push({ code: "vibe_match", text: `Matching tags: ${matched.map((v) => v.label).join(", ")}.`, evidence: matched.flatMap((v) => tags.filter((t) => v.rx.test(t.id)).map((t) => ({ field: "tags", value: t.id }))) });
+    if (matched.length) item.reasons.push({ code: "vibe_match", text: `Matching tags: ${matched.map((v) => v.label).join(", ")}.`, evidence: matched.flatMap((v) => tags.filter((t) => matchesTasteTag(v,t.id)).map((t) => ({ field: "tags", value: t.id }))) });
     if (penalty) item.reasons.push({ code: "noise_penalty", text: "Ranked lower after your noise feedback because of music or nightlife tags.", evidence: noiseTags.map((t) => ({ field: "tags", value: t.id })) });
     if (request.constraints.maxPriceLevel !== undefined) item.reasons.push({ code: "price_match", text: `Provider price tier ${priceOf(p)} is within your cap.`, evidence: [{ field: "properties.price_level", value: priceOf(p) }] });
     item.score = +Math.max(0, base + boost - penalty).toFixed(4);
@@ -128,7 +139,7 @@ export function rankPlaces(places, request, { source = "qloo", retrievedAt = new
 
 export function relaxationOptions(request) {
   const options = [];
-  if (request.location.area !== "Accra") options.push({ code: "widen_area", label: "Search across Accra", changes: { location: { area: "Accra" } } });
+  if (["Osu","East Legon","Cantonments","Labone","Airport Residential"].includes(request.location.area)) options.push({ code: "widen_area", label: "Search across Accra", changes: { location: { area: "Accra" } } });
   if (request.intent !== "any") options.push({ code: "change_intent", label: "Try any outing type", changes: { intent: "any" } });
   if (request.constraints.maxPriceLevel !== undefined) {
     const { maxPriceLevel, ...constraints } = request.constraints;
@@ -139,7 +150,7 @@ export function relaxationOptions(request) {
 
 export function createDiscovery({ provider, now = Date.now }) {
   const cache = new Map();
-  async function person(request) {
+  async function retrieve(request,intents=[]) {
     const resolution = await Promise.all(request.taste.artists.map(async (requested) => {
       try {
         const result = await provider.resolveArtist(requested);
@@ -154,24 +165,37 @@ export function createDiscovery({ provider, now = Date.now }) {
     const resolved = resolution.filter((s) => s.entityId);
     const unresolved = resolution.filter((s) => !s.entityId);
     const signalIds = [...new Set(resolved.map((s) => s.entityId))].sort();
-    const key = JSON.stringify([request.location.area, signalIds]);
+    const tagSignals=provider.resolveTasteTags?await provider.resolveTasteTags(request.taste.vibes):[];
+    const includeActivity=intents.includes('activity');
+    const key = JSON.stringify([request.location.area,request.location.id, signalIds,...(provider.resolveTasteTags?[tagSignals,includeActivity]:[])]);
     let entry = cache.get(key);
     const cached = !!entry && now() - entry.at < 600000;
     if (!cached) {
       let places;
-      try { places = await provider.discover({ signalIds, area: request.location.area }); }
+      try { places = await provider.discover({ signalIds, area: request.location.area,locationId:request.location.id,tagSignals,includeActivity }); }
       catch (e) { throw e instanceof ProviderError ? e : new ProviderError(); }
       if (!Array.isArray(places)) throw new ProviderError("provider_response_invalid");
-      entry = { places, at: now() };
+      entry = { places, locality:places.locality||null, at: now() };
       if (cache.size >= 100) cache.delete(cache.keys().next().value);
       cache.set(key, entry);
     }
-    const provenance = { provider: provider.name, retrievedAt: new Date(entry.at).toISOString(), cached, cacheAgeMs: Math.max(0, now() - entry.at) };
-    const result = rankPlaces(entry.places, request, { source: provider.name, retrievedAt: provenance.retrievedAt, resolved });
-    return { ...result, taste: { mode: resolved.length ? "artist_affinity" : request.taste.vibes.length ? "vibe_refinement" : "discovery", resolved, unresolved, vibes: request.taste.vibes }, provenance, fetched: entry.places.length };
+    const provenance = { provider: provider.name, retrievedAt: new Date(entry.at).toISOString(), cached,...(entry.locality?{locality:entry.locality}:{}), cacheAgeMs: Math.max(0, now() - entry.at) };
+    return { places: entry.places, taste: { mode: resolved.length ? "artist_affinity" : request.taste.vibes.length ? "vibe_refinement" : "discovery", resolved, unresolved, vibes: request.taste.vibes,...(tagSignals.length?{tagSignals}:{}) }, provenance, fetched: entry.places.length };
+  }
+  function rank(retrieved, request) {
+    const { places, ...metadata } = retrieved;
+    return { ...rankPlaces(places, request, { source: provider.name, retrievedAt: metadata.provenance.retrievedAt, resolved: metadata.taste.resolved,locality:metadata.provenance.locality }), ...metadata };
+  }
+  async function person(request) {
+    return rank(await retrieve(request), request);
   }
   return {
+    location:provider.getLocation,
     person,
+    async byIntents(request, intents) {
+      const retrieved = await retrieve(request,intents);
+      return intents.map((intent) => rank(retrieved, { ...request, intent }));
+    },
     async recommend(request) {
       const p = await person(request);
       const items = p.ranked.slice(0, request.limit);

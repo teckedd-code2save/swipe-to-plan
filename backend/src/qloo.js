@@ -1,33 +1,82 @@
 // Only the live entrypoint loads dotenv. Tests inject fetch/key and never read credentials.
+import {locationId as parseLocationId,locationOption} from './locations.js';
+import {byId,matchesTasteTag} from './deck.js';
+import {find as findTimeZones} from 'geo-tz';
+const accraAreas=['Osu','East Legon','Cantonments','Labone','Airport Residential'];
+const locationQuery=area=>area==='Accra'?'Accra, Ghana':accraAreas.includes(area)?`${area}, Accra, Ghana`:area;
 export class ProviderError extends Error {
   constructor(code = "provider_unavailable") {
-    super(({ provider_not_configured: "Qloo is not configured on this server.", provider_auth_error: "Qloo could not authorize this request. Check the existing server configuration.", provider_rate_limited: "Qloo has reached its request limit. Please wait before trying again." })[code] || "Discovery is temporarily unavailable. Please retry.");
-    this.code = code; this.status = 503;
+    super(({ location_not_found:"I couldn’t resolve that location. Try the city or neighborhood with its country.", location_ambiguous:"That location could mean more than one place. Add the city, region or country.", provider_not_configured: "Qloo is not configured on this server.", provider_auth_error: "Qloo could not authorize this request. Check the existing server configuration.", provider_rate_limited: "Qloo has reached its request limit. Please wait before trying again." })[code] || "Discovery is temporarily unavailable. Please retry.");
+    this.code = code; this.status = code.startsWith("location_")?400:503;
   }
 }
-const norm = (s) => String(s ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+const norm = (s) => String(s ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 function entities(data) {
-  const items = Array.isArray(data) ? data : data?.results?.entities ?? data?.results ?? data?.entities;
+  const items = Array.isArray(data) ? data : data?.results?.entities ?? data?.results?.tags ?? data?.results ?? data?.entities;
   if (!Array.isArray(items)) throw new ProviderError("provider_response_invalid");
   return items.filter((e) => e && typeof e === "object");
 }
 export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => process.env.QLOO_API_KEY, baseUrl = process.env.QLOO_API_URL || "https://hackathon.api.qloo.com", now = Date.now } = {}) {
   const cache = new Map();
-  async function call(path, params) {
+  const tagsCache=new Map(), locationCache=new Map(), searchCache=new Map();
+  async function call(path, params, area) {
     const key = getKey();
     if (!key) throw new ProviderError("provider_not_configured");
     const url = new URL(path, baseUrl);
     for (const [k, v] of Object.entries(params)) if (v !== "") url.searchParams.set(k, String(v));
     try {
-      const res = await fetchImpl(url, { headers: { "X-Api-Key": key }, signal: AbortSignal.timeout(8000) });
+      const res = await fetchImpl(url, { headers: { "X-Api-Key": key }, signal: AbortSignal.timeout(path==='/v2/insights'?15000:8000) });
       if ([401, 403].includes(res.status)) throw new ProviderError("provider_auth_error");
       if (res.status === 429) throw new ProviderError("provider_rate_limited");
-      if (!res.ok) throw new ProviderError();
-      return entities(await res.json());
+      if(res.status===404&&path==='/search')return [];
+      if (!res.ok) {
+        if(res.status===400&&area){const problem=JSON.stringify(await res.json()).toLowerCase();if(/localit|location/.test(problem))throw new ProviderError('location_not_found');}
+        throw new ProviderError();
+      }
+      const data=await res.json(),items=entities(data);
+      if(area){
+        const raw=data.query?.localities?.filter??data.query?.locality?.signal;
+        const matches=Array.isArray(raw)?raw:raw?[raw]:[];
+        if(matches.length>1)throw new ProviderError('location_ambiguous');
+        const match=matches[0];
+        if(match?.entity_id&&match?.name){
+          const label=match.disambiguation||match.name;
+          const aliases={uk:'unitedkingdom',usa:'unitedstates',us:'unitedstates',uae:'unitedarabemirates'};
+          const parts=locationQuery(area).split(',').map(s=>norm(s)).filter(Boolean);
+          if(parts.some(part=>!norm(label+' '+match.name).includes(aliases[part]||part)))throw new ProviderError('location_ambiguous');
+          const lat=match.location?.lat,lng=match.location?.lon??match.location?.lng;
+          let timeZone=null;try{const zones=findTimeZones(lat,lng);if(zones.length===1)timeZone=zones[0];}catch{}
+          items.locality={query:area,id:match.entity_id,name:match.name,label,method:'qloo_locality_filter',radius:0,timeZone};
+        }
+      }
+      return items;
     } catch (e) { if (e instanceof ProviderError) throw e; throw new ProviderError(); }
+  }
+  async function tasteTags(id){
+    const card=byId[id];if(!card?.tagQuery)return [];
+    const hit=tagsCache.get(id);if(hit&&now()-hit.at<86400000)return hit.value;
+    const value=call('/v2/tags',{'filter.query':card.tagQuery,take:30}).then(tags=>tags.filter(t=>typeof t.id==='string'&&/^urn:tag:(category|genre|cuisine|culinary_style):(place|qloo):/.test(t.id)&&!/:hotel:/.test(t.id)&&matchesTasteTag(card,t.id)).slice(0,4).map(t=>t.id));
+    tagsCache.set(id,{at:now(),value});try{return await value;}catch(e){tagsCache.delete(id);throw e;}
+  }
+  async function getLocation(id){
+    id=parseLocationId(id);
+    const cached=locationCache.get(id);if(cached&&now()-cached.at<86400000)return cached.value;
+    const value=locationOption((await call('/entities',{entity_ids:id})).find(e=>e.entity_id?.toUpperCase()===id));
+    if(!value)throw new ProviderError('location_not_found');
+    if(locationCache.size>=512)locationCache.delete(locationCache.keys().next().value);
+    locationCache.set(id,{value,at:now()});return value;
   }
   return {
     name: "qloo",
+    getLocation,
+    async searchLocations(query){
+      const key=norm(query),cached=searchCache.get(key);if(cached&&now()-cached.at<3600000)return cached.value;
+      const value=(await call('/search',{query,types:'urn:entity:locality',take:8})).map(locationOption).filter(Boolean);
+      for(const option of value){if(locationCache.size>=512)locationCache.delete(locationCache.keys().next().value);locationCache.set(option.id,{value:option,at:now()});}
+      if(searchCache.size>=100)searchCache.delete(searchCache.keys().next().value);
+      searchCache.set(key,{value,at:now()});return value;
+    },
+    async resolveTasteTags(ids){return (await Promise.all(ids.filter(id=>byId[id]?.tagQuery).map(async id=>({preferenceId:id,tagIds:await tasteTags(id)})))).filter(s=>s.tagIds.length);},
     async resolveArtist(name) {
       const key = norm(name);
       const hit = cache.get(key);
@@ -43,11 +92,22 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
       cache.set(key, { at: now(), value });
       return value;
     },
-    async discover({ signalIds, area }) {
-      return call("/v2/insights", {
+    async discover({ signalIds, area,locationId,tagSignals=[],includeActivity=false }) {
+      const chosen=locationId?await getLocation(locationId):null;
+      const parameters={
         "filter.type": "urn:entity:place", "signal.interests.entities": signalIds.join(","),
-        "filter.location.query": area === "Accra" ? "Accra, Ghana" : `${area}, Accra, Ghana`, take: 50,
-      });
+        'signal.interests.tags':[...new Set(tagSignals.flatMap(s=>s.tagIds))].join(','),
+        "feature.explainability": true,
+        ...(chosen?{'filter.location':chosen.id}:{'filter.location.query':locationQuery(area)}), "filter.location.radius":0, take: 50,
+      };
+      const retrieve=async params=>{const items=await call('/v2/insights',params,chosen?undefined:area);if(chosen)items.locality={...chosen,query:area,method:'qloo_locality_filter',radius:0};return items;};
+      if(!includeActivity)return retrieve(parameters);
+      // An explicit discovery stop needs its own candidate pool; dining-heavy
+      // artist results alone can otherwise crowd out museums and green spaces.
+      const requested=tagSignals.filter(s=>byId[s.preferenceId]?.group==='activity').flatMap(s=>s.tagIds);
+      const categories=(requested.length?requested:[...await tasteTags('v-history'),...await tasteTags('v-nature')]).filter(id=>/^urn:tag:category:place:[^:]+$/.test(id));
+      const results=await Promise.all([retrieve(parameters),...(categories.length?[retrieve({...parameters,'filter.tags':categories.join(','),'operator.filter.tags':'union'})]:[])]);
+      return Object.assign([...new Map(results.flat().map(place=>[place.entity_id,place])).values()],{locality:results[0].locality});
     },
   };
 }
