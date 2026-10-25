@@ -3,6 +3,7 @@ WORKDIR /build/frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
+RUN npm test
 RUN npm run build
 
 FROM node:22-bookworm-slim AS backend
@@ -11,6 +12,9 @@ WORKDIR /build/backend
 COPY backend/package*.json ./
 COPY backend/prisma ./prisma
 RUN npm ci --omit=dev && npm cache clean --force
+COPY backend/src ./src
+COPY backend/test ./test
+RUN npm test
 
 FROM node:22-bookworm-slim AS runner
 LABEL org.opencontainers.image.source="https://github.com/teckedd-code2save/swipe-to-plan"
