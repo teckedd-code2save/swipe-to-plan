@@ -6,6 +6,8 @@ export function DeckIcon({ name, size = 24 }) {
 }
 export default function SwipeDeck({ deck, history, onDecide, onUndo, onDone, doneLabel = 'See my picks', completeText, disabled = false }) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [spread, setSpread] = useState(false);
+  const [stackQuery, setStackQuery] = useState('');
   const [dragging, setDragging] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [outgoingCard, setOutgoingCard] = useState(null);
@@ -39,7 +41,14 @@ export default function SwipeDeck({ deck, history, onDecide, onUndo, onDone, don
     if (e.key.toLowerCase() === 'z' || e.key === 'Backspace') { e.preventDefault(); undo(); }
   }}>
     <div className="deck-progress"><span>{card ? `${String(history.length + 1).padStart(2, '0')} / ${deck.length}` : 'All swiped'}</span><div className="progress-track"><span style={{ width: `${100 * history.length / Math.max(deck.length, 1)}%` }}/></div><span><DeckIcon name="heart" size={12}/>{likes}</span></div>
-    <div className="card-stack">
+    <div style={{display:'flex',justifyContent:'center',gap:8,margin:'8px 0'}}><button type="button" aria-pressed={!spread} onClick={()=>setSpread(false)}>Swipe</button><button type="button" aria-pressed={spread} onClick={()=>setSpread(true)}>Spread cards</button></div>
+    {spread&&<div className="deck-spread" aria-label="Scroll through remaining taste cards" style={{maxHeight:'min(55vh,480px)',overflowY:'auto',padding:'12px 16px 75px',overscrollBehavior:'contain'}}>
+      <label style={{display:'block',marginBottom:12}}>Find a card in this stack<input type="search" value={stackQuery} onChange={e=>setStackQuery(e.target.value)} placeholder="Search artists, moods, activities…" style={{display:'block',width:'100%',marginTop:6}}/></label>
+      {deck.slice(history.length).filter(item=>[item.label,item.sub,item.kind,item.group].some(value=>String(value||'').toLowerCase().includes(stackQuery.trim().toLowerCase()))).map((item,index)=><article key={item.id} tabIndex={0} style={{position:'relative',marginTop:index===0?0:-18,padding:'22px 20px',minHeight:100,background:'var(--card-bg, #fff)',color:'var(--text, #222)',border:'1px solid #aaa',borderRadius:18,boxShadow:'0 4px 16px #0002'}}><span aria-hidden="true">{item.emoji} </span><strong>{item.label}</strong><p>{item.sub}</p></article>)}
+      {!deck.slice(history.length).some(item=>[item.label,item.sub,item.kind,item.group].some(value=>String(value||'').toLowerCase().includes(stackQuery.trim().toLowerCase())))&&<p>No matching cards in this stack.</p>}
+      <p>Preview only. Return to Swipe to make your choices.</p>
+    </div>}
+    <div className="card-stack" style={spread?{display:'none'}:undefined}>
       <div className="stack-sheet sheet-back" aria-hidden="true"/><div className="stack-sheet sheet-front" aria-hidden="true"/>
       {card ? <article className={`taste-card ${card.kind} ${card.group||''} ${dragging ? 'dragging' : ''} ${leaving ? 'leaving' : ''}`} key={card.id} aria-label={`${card.label}, ${card.kind}`} style={{ transform: `translate(${offset.x}px, ${offset.y * 0.15}px) rotate(${Math.max(-15, Math.min(15, offset.x / 20))}deg)` }}
         onPointerDown={(e) => { if (disabled || locked.current || (e.pointerType === 'mouse' && e.button !== 0)) return; pointer.current = { id: e.pointerId, x: e.clientX, y: e.clientY }; e.currentTarget.setPointerCapture(e.pointerId); setDragging(true); }}
@@ -51,7 +60,7 @@ export default function SwipeDeck({ deck, history, onDecide, onUndo, onDone, don
         <div className="taste-card-copy"><span className="card-kind">{card.kind === 'artist' ? 'On repeat' : card.group==='food'?'At the table':card.group==='activity'?'Out in the world':'The feeling'}</span><h2>{card.label}</h2><p>{card.sub}</p></div>
       </article> : <div className="deck-complete"><span className="complete-heart"><DeckIcon name="heart" size={42}/></span><h2>You've got taste.</h2><p>{completeText||`${likes} favorites. Let's find your places.`}</p><button className="primary" disabled={disabled} onClick={onDone}>{doneLabel}<DeckIcon name="arrow" size={18}/></button></div>}
     </div>
-    <div className="decision-controls"><button type="button" className="undo-action" disabled={!history.length || leaving || disabled} onClick={undo} aria-label="Undo last swipe" title="Undo (Z)"><DeckIcon name="undo" size={21}/></button><button type="button" className="decision skip-action" disabled={!card || leaving || disabled} onClick={() => decide(false)} aria-label="Skip this card"><DeckIcon name="close" size={29}/><span>Skip</span></button><button type="button" className="decision love-action" disabled={!card || leaving || disabled} onClick={() => decide(true)} aria-label="Like this card"><DeckIcon name="heart" size={28}/><span>Love</span></button><span className="control-spacer"/></div>
+    {!spread&&<div className="decision-controls"><button type="button" className="undo-action" disabled={!history.length || leaving || disabled} onClick={undo} aria-label="Undo last swipe" title="Undo (Z)"><DeckIcon name="undo" size={21}/></button><button type="button" className="decision skip-action" disabled={!card || leaving || disabled} onClick={() => decide(false)} aria-label="Skip this card"><DeckIcon name="close" size={29}/><span>Skip</span></button><button type="button" className="decision love-action" disabled={!card || leaving || disabled} onClick={() => decide(true)} aria-label="Like this card"><DeckIcon name="heart" size={28}/><span>Love</span></button><span className="control-spacer"/></div>}
     <p className="keyboard-hint">Swipe or tap · <kbd>←</kbd> skip <kbd>→</kbd> love</p>
     {card && <button className="early-picks" disabled={disabled || leaving} onClick={onDone}>{doneLabel} now <DeckIcon name="arrow" size={16}/></button>}
     <span className="sr-only" role="status">{card ? `${card.label}. Card ${history.length + 1} of ${deck.length}. ${likes} liked.` : `All cards completed. ${likes} liked.`}</span>
