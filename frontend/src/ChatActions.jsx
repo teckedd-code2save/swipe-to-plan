@@ -8,14 +8,28 @@ import {tasteFromSwipe} from './day-state.js';
 import ConnectedPeople from './ConnectedPeople.jsx';
 
 export function TasteAction({person,people,deck,onChange,onPerson,onDone,editable,personal=false}){
-  const [histories,setHistories]=useState({}),[category,setCategory]=useState('food'),[error,setError]=useState(''),[custom,setCustom]=useState(''),[name,setName]=useState(person.name);
+  const [orders,setOrders]=useState({}),[histories,setHistories]=useState({}),[category,setCategory]=useState('food'),[error,setError]=useState(''),[custom,setCustom]=useState(''),[name,setName]=useState(person.name);
   const current=useRef(person);current.current=person;
-  const ordered=deck.filter(card=>(card.group||(card.kind==='artist'?'music':'mood'))===category);
+  const original=deck.filter(card=>(card.group||(card.kind==='artist'?'music':'mood'))===category);
+  const byId=new Map(original.map(card=>[card.id,card]));
+  const ordered=[...(orders[category]||[]).map(id=>byId.get(id)).filter(Boolean),...original.filter(card=>!(orders[category]||[]).includes(card.id))];
   const history=histories[category]||[];
   const setHistory=update=>setHistories(state=>({...state,[category]:update(state[category]||[])}));
   function change(value){onChange(value);setError('');}
   function addArtist(event){event.preventDefault();const label=custom.trim();if(!label)return;try{change(tasteFromSwipe(current.current,{kind:'artist',label},true));setCustom('');}catch(e){setError(e.message);}}
-  function decide(like){const card=ordered[history.length];if(!card)return;try{const key=card.kind==='artist'?'artists':'vibes',before=[...current.current[key]];change(tasteFromSwipe(current.current,card,like));setHistory(list=>[...list,{id:card.id,like,key,before}]);}catch(e){setError(e.message);}}
+  function decideCard(id,like){
+    const index=ordered.findIndex(card=>card.id===id);
+    if(index<history.length||!editable)return;
+    const card=ordered[index];
+    try{
+      const key=card.kind==='artist'?'artists':'vibes',before=[...current.current[key]];
+      change(tasteFromSwipe(current.current,card,like));
+      const arranged=[...ordered.slice(0,history.length),card,...ordered.slice(history.length).filter(item=>item.id!==id)];
+      setOrders(old=>({...old,[category]:arranged.map(item=>item.id)}));
+      setHistory(list=>[...list,{id:card.id,like,key,before}]);
+    }catch(e){setError(e.message);}
+  }
+  function decide(like){const card=ordered[history.length];if(card)decideCard(card.id,like);}
   function undo(){const last=history.at(-1);if(last){change({...current.current,[last.key]:last.before});setHistory(list=>list.slice(0,-1));}}
   function toggleVibe(card){try{change(tasteFromSwipe(current.current,card,!current.current.vibes.includes(card.id)));}catch(e){setError(e.message);}}
   function spending(patch){change({...current.current,spending:{style:'balanced',priority:'even',...current.current.spending,...patch}});}
@@ -26,7 +40,7 @@ export function TasteAction({person,people,deck,onChange,onPerson,onDone,editabl
     <div className="cs-tastes-open-layout">
       <div className="cs-tastes-discover"><div className="cs-taste-section-heading"><h3>Discover</h3><span>Swipe cards or explore the stack</span></div>
         <div className="cs-taste-categories" role="group" aria-label="Explore taste categories">{[['food','Food'],['activity','Things to do'],['mood','Mood'],['music','Music']].map(([id,label])=><button key={id} type="button" aria-pressed={category===id} onClick={()=>setCategory(id)}>{label}</button>)}</div>
-        {editable?<SwipeDeck key={category} deck={ordered} history={history} onDecide={decide} onUndo={undo} onDone={onDone} doneLabel="Done exploring" onAddMissing={category==='music'?(label)=>{try{change(tasteFromSwipe(current.current,{kind:'artist',label},true));}catch(e){setError(e.message);}}:undefined} completeText="Your favorites are saved. Explore another category or continue chatting."/>:<p className="cs-muted">Only this person can edit their own tastes.</p>}
+        {editable?<SwipeDeck key={category} deck={ordered} history={history} onDecide={decide} onDecideCard={decideCard} onUndo={undo} onDone={onDone} doneLabel="Done exploring" onAddMissing={category==='music'?(label)=>{try{change(tasteFromSwipe(current.current,{kind:'artist',label},true));}catch(e){setError(e.message);}}:undefined} completeText="Your favorites are saved. Explore another category or continue chatting."/>:<p className="cs-muted">Only this person can edit their own tastes.</p>}
       </div>
       <div className="cs-tastes-preferences">
         <section className="cs-taste-picked" aria-label="Selected favorites">
