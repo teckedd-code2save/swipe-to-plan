@@ -252,3 +252,24 @@ test('unrelated timing changes preserve stored cuisine requirements',async()=>{
   assert.equal(result.request.startTime,'17:00');
   assert.equal(result.request.endTime,'22:00');
 });
+
+
+test('a Friday nightlife request recovers from unsupported activity synonyms into contextual swipes',async()=>{
+  let calls=0;
+  const context=parseBrief({area:'East Legon',activities:[],timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}});
+  const message='Friday drinks with friends, somewhere we can start talking then go somewhere livelier.';
+  const agent=createAgent({getKey:()=> 'test',fetchImpl:async(_,options)=>{
+    calls++;
+    if(calls===1)return response('show_ui',{panel:'tastes',focus:'request',cardIds:['v-bar'],changes:{activities:['cocktails','nightlife']}});
+    assert.match(JSON.parse(options.body).messages[0].content,/Bars, cocktails and nightlife use drinks/);
+    return response('show_ui',{panel:'tastes',focus:'request',cardIds:['v-bar','v-club'],changes:{activities:['drinks'],experience:{notes:message}}});
+  }});
+  const result=await agent.interpret({message,context,mode:'autopilot',locationContext:{confirmed:true}});
+  assert.equal(calls,2);
+  assert.deepEqual(result.request.activities,['drinks']);
+  assert.equal(result.request.experience.notes,message);
+  assert.equal(result.request.timing.timeConfirmed,false);
+  assert.equal(result.request.budget,null);
+  assert.deepEqual(result.request.people[0].vibes,[]);
+  assert.deepEqual(result.cardIds,['v-bar','v-club']);
+});
