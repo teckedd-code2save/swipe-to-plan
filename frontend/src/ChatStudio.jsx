@@ -14,7 +14,7 @@ export default function ChatStudio({brief,plan,chat,tool,renderTool,message,onMe
   const phaseText=autopilotPhaseText[autopilotPhase];
   const partySize=brief.party.adults+brief.party.children;
   const resultPartySize=plan?plan.request.party.adults+plan.request.party.children:0;
-  const resultPeopleLabel=planCircleName||(resultPartySize===1?'Solo':`${resultPartySize} people`);
+  const resultPeopleLabel=planCircleName||(resultPartySize===1?'1 person':`${resultPartySize} people`);
   const peopleLabel=circleName||(partySize===1?'Solo':`${partySize} people`);
   useEffect(()=>{const media=window.matchMedia('(max-width: 1000px)'),change=()=>setCompact(media.matches);media.addEventListener('change',change);return()=>media.removeEventListener('change',change);},[]);
   useEffect(()=>{const root=scroll.current;if(!root)return;const active=tool?root.querySelector('[data-active-tool]'):null;const top=active&&active.offsetHeight>root.clientHeight-32?root.scrollTop+(active.querySelector('.cs-tool')||active).getBoundingClientRect().top-root.getBoundingClientRect().top-12:root.scrollHeight;root.scrollTo({top,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});},[chat.length,tool?.id]);
