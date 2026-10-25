@@ -195,7 +195,7 @@ export default function PlannerApp() {
     if(fromAutopilot){autopilotPending.current=null;setAutopilotPhase('checking');}
     if(!toolRef.current){
       const filled=result.stops.filter(stop=>stop.item).length;
-      resultReceipt(result,!filled?'I haven’t found a place matching this request in the selected area. No venue is confirmed.':result.status==='partial'?`I found ${filled} of ${result.stops.length} stops. The missing parts are marked on your day.`:'Your day is ready.');
+      resultReceipt(result,!filled?(result.stops.some(s=>s.reason==='time_in_past')?'That planning window has already passed. You can try tomorrow without changing the rest of your request.':result.stops.some(s=>s.reason==='no_open_place')?'I found places, but none fit the requested time and reported hours. Try another time.':'I haven’t found a place matching this request in the selected area. No venue is confirmed.'):result.status==='partial'?`I found ${filled} of ${result.stops.length} stops. The missing parts are marked on your day.`:'Your day is ready.');
       if(showWhenReady.current||!old){setPlanOpen(true);showWhenReady.current=false;}
     }
   }
@@ -430,7 +430,9 @@ export default function PlannerApp() {
       append('user','Check the hours and menus for our day.');
       append('assistant',nextSteps.note);
       setTab('checklist');setPlanOpen(true);
-    }else if(action.id==='location')askLocation();
+    }else if(action.id==='retry'){showWhenReady.current=true;build(briefRef.current).catch(e=>setError(e.message));}
+    else if(action.id==='tomorrow'){const request={...briefRef.current,date:localDate(planningZone.current||planRef.current?.timeZone,1),timing:{...briefRef.current.timing,dateConfirmed:true}};showWhenReady.current=true;build(request).catch(e=>setError(e.message));}
+    else if(action.id==='location')askLocation();
     else if(action.id==='tastes')openTaste(owner?action.personId:undefined);
     else presentTool(action.id);
   }
