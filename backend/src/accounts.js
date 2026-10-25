@@ -139,7 +139,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
     async inviteByEmail(session,id,body){
       fields(body,['email']);
       const email=String(body.email||'').trim().toLowerCase();
-      if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)||email.length>254)throw new InputError('Enter a valid email address.');
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254)throw new InputError('Enter a valid email address.');
       if(!process.env.RESEND_API_KEY||!process.env.CIRCLE_INVITE_FROM)throw fail('Email invitations are not configured yet.',503);
       const token=opaque();
       const record=await store.transact(data=>{
