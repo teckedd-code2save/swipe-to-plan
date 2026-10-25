@@ -68,5 +68,6 @@ export function locationOption(entity){
   let label=entity.disambiguation||entity.name;
   if(country&&!norm(label).includes(norm(country)))label+=`, ${country}`;
   const currency=countryCode!=='AQ'&&Intl.supportedValuesOf('currency').includes(countryToCurrency[countryCode])?countryToCurrency[countryCode]:null;
-  return {id,name,label:label.slice(0,160),country,countryCode:countryCode||null,currency,timeZone,kind:p.place||'district',source:'qloo'};
+  return {id,name,...(Number.isFinite(entity.location?.lat)&&Number.isFinite(entity.location?.lon??entity.location?.lng)?{center:{latitude:entity.location.lat,longitude:entity.location.lon??entity.location.lng}}:{}),label:label.slice(0,160),country,countryCode:countryCode||null,currency,timeZone,kind:p.place||'district',source:'qloo'};
 }
+
