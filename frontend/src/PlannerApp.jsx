@@ -58,7 +58,7 @@ export default function PlannerApp() {
   const invitedCircles=useRef(new Map());
   const [peopleQuery,setPeopleQuery]=useState('');
   const planningZone=useRef(null);
-  const restored=useRef(false),locationConfirmed=useRef(false),locationDraft=useRef(null),planningPaused=useRef(true);
+  const locationPrompted=useRef(false),restored=useRef(false),locationConfirmed=useRef(false),locationDraft=useRef(null),planningPaused=useRef(true);
   const [draftChanged,setDraftChanged]=useState(false);
   const [guestLocation,setGuestLocation]=useState(readPreferred),[locationPrompt,setLocationPrompt]=useState({});
   const preferred=account.user?account.user.planningLocation:guestLocation;
@@ -301,6 +301,7 @@ export default function PlannerApp() {
     setTasteId(null);
   }
   function resetDay(){
+    locationPrompted.current=false;
     savedIdentity.current={id:identity(),revision:0};setSavedLoading(false);
     invitedCircles.current.clear();setPeopleQuery('');setTab('itinerary');
     autopilotPending.current=null;setAutopilotPhase('');
@@ -318,6 +319,13 @@ export default function PlannerApp() {
   const working = useRef(false);
   const savedDialog = useRef(null);
   useEffect(() => { const refresh=()=>api.health().then(setHealth).catch(()=>setHealth({offline:true}));refresh();window.addEventListener('focus',refresh);return()=>window.removeEventListener('focus',refresh); }, []);
+  useEffect(()=>{
+    if(!account.ready||!restored.current||locationPrompted.current||!owner||shared.linked||planRef.current||preferred||brief.area||tool||chat.length||message||circleInvite)return;
+    if(location.hash&&location.hash!=='#/')return;
+    locationPrompted.current=true;
+    dismissLocationWelcome();
+    askLocation(briefRef.current,'','plan','Choose your planning area to begin. You can change it for any new day.');
+  },[account.ready,preferred,brief.area,tool,chat.length,message,owner,shared.linked,circleInvite]);
   useEffect(() => { if (showSaved) savedDialog.current?.showModal(); }, [showSaved]);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 5000); return () => clearTimeout(timer); }, [notice]);
   useEffect(()=>{
@@ -432,6 +440,7 @@ export default function PlannerApp() {
   }
   async function sendMessage(sent=message){
     if(working.current||!sent.trim())return;
+    if(owner&&!shared.linked&&!locationConfirmed.current&&!briefRef.current.area&&!preferredRef.current?.label){setMessage(sent);askLocation(briefRef.current,'','plan','Choose a planning area first. Your message is saved here, ready to send afterward.');return;}
     if(!health?.agentConfigured){setError('Chat isn’t connected yet. Use Tastes, People, Circles and Review plan to shape your day.');return;}
     working.current=true;setBusy(true);setError('');setRevisionFailed(false);toolRef.current=null;setTool(null);
     const version=localVersion.current,revision=shared.day?.revision;
