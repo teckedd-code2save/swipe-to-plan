@@ -277,7 +277,7 @@ export default function PlannerApp() {
   async function saveCircle(name){if(account.user){const savedCircle=await account.createCircle({name,people:[account.user.profile]});invitedCircles.current.set(savedCircle.id,savedCircle.accountIds);setNotice('Circle created. Copy its invite so people can choose to join.');}else{const next=writeCircles([makeCircle(name,briefRef.current.people),...circles]);setCircles(next);keepPeople(briefRef.current.people);}}
   async function prepareCircleInvite(id,name){
     if(!account.user)throw Error('Sign in to invite people to a circle.');
-    const circle=id?account.circles.find(c=>c.id===id&&c.owner):await account.createCircle({name,people:[account.user.profile]});
+    const circle=id?account.circles.find(c=>c.id===id):await account.createCircle({name,people:[account.user.profile]});
     if(!circle?.inviteToken)throw Error('Choose a circle you organize.');
     invitedCircles.current.set(circle.id,[...circle.accountIds]);
     return {name:circle.name,url:`${location.origin}/#/circle/${circle.id}?invite=${circle.inviteToken}`};
@@ -285,7 +285,7 @@ export default function PlannerApp() {
   async function sendCircleEmailInvite(id,name,email){
     if(!account.user)throw Error('Sign in to invite people.');
     const circle=id?account.circles.find(c=>c.id===id&&c.owner):await account.createCircle({name,people:[account.user.profile]});
-    if(!circle?.owner)throw Error('Only a circle organizer can invite members.');
+    if(!circle)throw Error('Join a circle before inviting members.');
     await account.inviteCircleByEmail(circle.id,email);
     invitedCircles.current.set(circle.id,[...circle.accountIds]);
     setNotice('Email invitation sent. They will appear after accepting.');
