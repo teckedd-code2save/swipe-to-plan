@@ -37,6 +37,15 @@ export function checkHours(hours, date, start, end, isClosed = false) {
   if (!intervals || clock(start) < 720 && !previous) return {...base,status:'unknown',summary:'There aren’t enough reported hours to check this stop.'};
   return {...base,status:'outside_reported_hours',summary:`Your ${start}–${end} stop falls outside reported weekly hours.`};
 }
+export function suggestedVisitSlots(hours,date,durationMinutes=60){
+  const day=DAYS[new Date(`${date}T12:00:00Z`).getUTCDay()];
+  return (hours?.[day]||[]).filter(row=>!row.overnight).flatMap(row=>{
+    const start=clock(row.opens),end=clock(row.closes);
+    if(start===null||end===null||end-start<durationMinutes)return [];
+    const first=Math.max(start+30,start),latest=end-durationMinutes;
+    return first<=latest?[{start:time(Math.min(first,latest)),end:time(Math.min(first,latest)+durationMinutes),basis:'reported opening hours only'}]:[];
+  }).slice(0,2);
+}
 export function parsePlaceCheck(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(k => !['date','stops'].includes(k))) throw new InputError('Provide a date and up to three stops.');
   if (typeof body.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.date) || !Number.isFinite(Date.parse(`${body.date}T12:00:00Z`)) || new Date(`${body.date}T12:00:00Z`).toISOString().slice(0,10) !== body.date) throw new InputError('Choose a valid date.');
@@ -70,7 +79,7 @@ export function createPlaceGuide({provider, now = Date.now}) {
   return {details, async check(input) {
     const request = parsePlaceCheck(input);
     const stops = await Promise.all(request.stops.map(async stop => {
-      try { const place = await details(stop.entityId); return {...stop,place,hours:checkHours(place.hours,request.date,stop.start,stop.end,place.isClosed)}; }
+      try { const place = await details(stop.entityId); return {...stop,place,hours:checkHours(place.hours,request.date,stop.start,stop.end,place.isClosed),menu:{status:place.links?.menu?'link_available':place.highlights?.length?'highlights_only':'unknown',highlights:place.highlights||[],link:place.links?.menu||null,priceVerified:false,serviceHoursVerified:false},suggestedSlots:suggestedVisitSlots(place.hours,request.date,clock(stop.end)-clock(stop.start))}; }
       catch { return {...stop,error:'I couldn’t retrieve this place’s details. Try again or use the venue link.'}; }
     }));
     return {date:request.date,checkedAt:new Date(now()).toISOString(),stops,source:'qloo'};
