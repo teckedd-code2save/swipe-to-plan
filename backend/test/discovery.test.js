@@ -199,3 +199,16 @@ test('a coffee stop needs café category evidence rather than a drink offering o
   assert.deepEqual(new Set(result.ranked.map(p=>p.entityId)),new Set(['cafe','tea']));
   assert.equal(result.excluded.intent_not_supported,2);
 });
+
+
+test('serving alcohol does not establish a bar venue or a cocktail-bar taste match',()=>{
+  const pizza=venue('pizza','restaurant');
+  pizza.tags.push({id:'urn:tag:beverage_offering:place:full_bar',name:'Full bar'});
+  const bar=venue('bar','cocktail_bar');
+  const r=request({intent:'drinks',taste:{vibes:['v-bar']}});
+  const result=rankPlaces([pizza,bar],r);
+  assert.deepEqual(result.ranked.map(p=>p.id),['qloo:bar']);
+  assert.equal(result.excluded.intent_not_supported,1);
+  const meal=rankPlaces([pizza],request({intent:'dinner',taste:{vibes:['v-bar']}}));
+  assert.equal(meal.ranked[0].scoreComponents.vibeBoost,0);
+});
