@@ -4,7 +4,7 @@ import { swipeDirection } from './swipe.js';
 export function DeckIcon({ name, size = 24 }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill={name === 'heart' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{name === 'heart' ? <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/> : name === 'undo' ? <><path d="m8 3-5 5 5 5M3 8h10a7 7 0 0 1 0 14"/></> : name === 'arrow' ? <path d="M4 12h16m-6-6 6 6-6 6"/> : name === 'pin' ? <><path d="M20 10c0 6-8 11-8 11S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></> : name === 'sound' ? <><path d="m11 4-6 5H2v6h3l6 5ZM15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></> : <path d="m6 6 12 12M6 18 18 6"/>}</svg>;
 }
-export default function SwipeDeck({ deck, history, onDecide, onUndo, onDone, doneLabel = 'See my picks', completeText, disabled = false }) {
+export default function SwipeDeck({ deck, history, onDecide, onUndo, onDone, doneLabel = 'See my picks', completeText, disabled = false, onAddMissing }) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [spread, setSpread] = useState(false);
   const [stackQuery, setStackQuery] = useState('');
@@ -45,7 +45,7 @@ export default function SwipeDeck({ deck, history, onDecide, onUndo, onDone, don
     {spread&&<div className="deck-spread" aria-label="Scroll through remaining taste cards" style={{maxHeight:'min(55vh,480px)',overflowY:'auto',padding:'12px 16px 75px',overscrollBehavior:'contain'}}>
       <label style={{display:'block',marginBottom:12}}>Find a card in this stack<input type="search" value={stackQuery} onChange={e=>setStackQuery(e.target.value)} placeholder="Search artists, moods, activities…" style={{display:'block',width:'100%',marginTop:6}}/></label>
       {deck.slice(history.length).filter(item=>[item.label,item.sub,item.kind,item.group].some(value=>String(value||'').toLowerCase().includes(stackQuery.trim().toLowerCase()))).map((item,index)=><article key={item.id} tabIndex={0} style={{position:'relative',marginTop:index===0?0:-18,padding:'22px 20px',minHeight:100,background:'var(--card-bg, #fff)',color:'var(--text, #222)',border:'1px solid #aaa',borderRadius:18,boxShadow:'0 4px 16px #0002'}}><span aria-hidden="true">{item.emoji} </span><strong>{item.label}</strong><p>{item.sub}</p></article>)}
-      {!deck.slice(history.length).some(item=>[item.label,item.sub,item.kind,item.group].some(value=>String(value||'').toLowerCase().includes(stackQuery.trim().toLowerCase())))&&<p>No matching cards in this stack.</p>}
+      {!deck.slice(history.length).some(item=>[item.label,item.sub,item.kind,item.group].some(value=>String(value||'').toLowerCase().includes(stackQuery.trim().toLowerCase())))&&<div><p>No matching cards in this stack.</p>{onAddMissing&&stackQuery.trim()&&<button type="button" disabled={disabled} onClick={()=>{onAddMissing(stackQuery.trim());setStackQuery('');}}>Add “{stackQuery.trim()}” to my favorites</button>}</div>}
       <p>Preview only. Return to Swipe to make your choices.</p>
     </div>}
     <div className="card-stack" style={spread?{display:'none'}:undefined}>
