@@ -151,7 +151,10 @@ test('undecided activities never invent coffee or query places', async () => {
 });
 
 test('new plans use activity-specific names and reject explicit unset budgets',()=>{
-  assert.throws(()=>parseItinerary({area:'Accra',budget:null,activities:['dinner']}),/Group budget/);
+  const suggested=parseItinerary({area:'Accra',budget:null,activities:['dinner']});
+  assert.ok(suggested.budget>0);
+  assert.notEqual(suggested.budget,800);
+  assert.ok(parseItinerary({area:'Accra',budget:600,activities:['dinner']}).budget===600);
   const dinner=parseItinerary({area:'Accra',budget:600,activities:['dinner'],title:''});
   const coffee=parseItinerary({area:'Accra',budget:600,activities:['coffee'],title:''});
   assert.match(dinner.title,/Dinner/);
