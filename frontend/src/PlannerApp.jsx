@@ -75,8 +75,8 @@ export default function PlannerApp() {
   const [error, setError] = useState(''),[revisionFailed,setRevisionFailed]=useState(false);
   const [message, setMessage] = useState('');
   const [chat, setChat] = useState([]);
-  const [autopilot,setAutopilot]=useState(false),[autopilotPhase,setAutopilotPhase]=useState('');
-  const autopilotRef=useRef(false),autopilotPending=useRef(null);
+  const [autopilot,setAutopilot]=useState(true),[autopilotPhase,setAutopilotPhase]=useState('');
+  const autopilotRef=useRef(true),autopilotPending=useRef(null);
   const [tab, setTab] = useState('itinerary');
   const [selection, setSelection] = useState(null);
   const [saved, setSaved] = useState(readSaved);
