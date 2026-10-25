@@ -1,7 +1,7 @@
 name: unstressed
 services:
   web:
-    image: ${UNSTRESSED_IMAGE:-unstressed-web:local}
+    image: ${UNSTRESSED_IMAGE:-ghcr.io/teckedd-code2save/unstressed}
     build:
       context: ..
       dockerfile: Dockerfile
