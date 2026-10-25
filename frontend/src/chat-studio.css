@@ -86,3 +86,9 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 .cs-profile-circle button,.cs-profile-create button{border:1px solid var(--cs-line);padding:10px;border-radius:8px}
 .cs-profile-circle>button{margin-top:8px;color:#995a48}
 @media(max-width:600px){.cs-quick-actions{display:flex;flex-wrap:wrap;gap:8px}.cs-quick-actions button{flex:1;min-width:0}.cs-messages>.cs-draft-plan{margin:0 0 14px}}
+
+/* Circles is a light context indicator beside Tastes, not a second add action. */
+.cs-quick-actions .cs-circle-indicator{margin-left:0!important;padding:6px 4px!important;min-height:32px!important;border:0!important;background:transparent!important;box-shadow:none!important;color:var(--cs-muted)!important;gap:6px}
+.cs-quick-actions .cs-circle-indicator:hover,.cs-quick-actions .cs-circle-indicator[aria-pressed=true]{background:transparent!important;border:0!important;color:var(--cs-green)!important}
+.cs-quick-actions .cs-circle-indicator .gs-circle-faces{display:inline-flex;align-items:center}.cs-quick-actions .cs-circle-indicator .gs-circle-faces i{width:22px;height:22px;font-size:9px}
+@media(max-width:600px){.cs-quick-actions .cs-circle-indicator{flex:0 0 auto!important;padding:5px 2px!important}}
