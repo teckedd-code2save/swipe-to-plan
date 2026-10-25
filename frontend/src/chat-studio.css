@@ -246,3 +246,14 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 .cs-result-next-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}.cs-day-footer{flex-wrap:wrap}.cs-result-next-actions button:first-child{background:#4d6247;color:#fff}
 
 .cs-menu-choice{display:flex;align-items:center;gap:10px;padding:10px 0}.cs-menu-choice input{width:18px;height:18px;accent-color:#4d6247}
+
+.cs-place-shortlist{margin:24px 0 24px 36px;max-width:760px}
+.cs-place-option{padding:18px 0;border-top:1px solid var(--line,#dfe2d7)}
+.cs-place-option>label{display:flex;align-items:flex-start;gap:12px;cursor:pointer}
+.cs-place-option input{width:20px;height:20px;flex:none;accent-color:#425737;margin-top:3px}
+.cs-place-option strong{display:block;font-size:17px;line-height:1.4}
+.cs-place-option small{display:block;color:#7c8475;line-height:1.6}
+.cs-place-option p{font-size:14px;line-height:1.7;margin:10px 0 10px 32px}
+.cs-place-option .cs-starters{margin:10px 0 0 32px;align-items:center}
+.cs-place-shortlist>small{display:block;margin-top:14px;line-height:1.7}
+@media(max-width:600px){.cs-place-shortlist{margin-left:0}.cs-place-option p,.cs-place-option .cs-starters{margin-left:0}}
