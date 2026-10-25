@@ -48,6 +48,7 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
     return { ...(person.id ? {id:person.id} : {}), name: text(person.name,24,'a name'), artists: parsed.taste.artists, vibes: parsed.taste.vibes, ...(spending?{spending}:{}) };
   });
   if (new Set(profiles.filter(p=>p.id).map(p=>p.id)).size !== profiles.filter(p=>p.id).length) throw new InputError('Taste profile IDs must be distinct.');
+  const activities = body.activities ?? [];
   const suggestedBudget = Math.max(100,Math.ceil((activities.reduce((sum,activity)=>sum+({coffee:90,activity:170,dinner:220,drinks:110}[activity]||0),0)||220)*(adults+children*.6)*1.2/50)*50);
   const budgetSuggested = body.budget == null;
   const budget = integer(budgetSuggested?suggestedBudget:body.budget,1,10000000,'Group budget');
@@ -58,7 +59,6 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
   const pace = body.pace ?? 'easy';
   if (!['easy','balanced'].includes(pace)) throw new InputError('Choose an easy or balanced pace.');
   // An unfinished brief has no activities until the person chooses them.
-  const activities = body.activities ?? [];
   if (!Array.isArray(activities) || activities.length > 3 || activities.some((item) => !ACTIVITIES.includes(item)) || new Set(activities).size !== activities.length) throw new InputError('Choose one to three different activities.');
   if (children && activities.includes('drinks')) throw new InputError('Choose coffee, discovery or a meal for a family outing with children.');
   const pins = object(body.pins ?? {}, activities, 'kept stops');
