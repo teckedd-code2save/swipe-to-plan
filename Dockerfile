@@ -3,6 +3,7 @@ WORKDIR /build/frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
+COPY shared /build/shared
 RUN npm test
 RUN npm run build
 
@@ -16,6 +17,7 @@ COPY backend/src ./src
 COPY backend/test ./test
 # Backend regression tests reuse browser-independent planning helpers.
 COPY frontend/src /build/frontend/src
+COPY shared /build/shared
 RUN npm test
 
 FROM node:22-bookworm-slim AS runner

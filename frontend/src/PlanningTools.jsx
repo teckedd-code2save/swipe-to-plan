@@ -2,14 +2,14 @@ import {useState} from 'react';
 import {TasteAction} from './ChatActions.jsx';
 import {formatMoney} from './money.js';
 import {Icon} from './PlannerIcons.jsx';
+import BudgetChoices from './BudgetChoices.jsx';
 
 // Each surface has a separate agent action and only the controls for that decision.
 export function TasteCardsAction({focus='mood',cardIds=[],...props}) {
   return <TasteAction {...props} focus={focus} suggestedIds={cardIds}/>;
 }
-export function BudgetAction({brief,onApply,onDone,editable=true}) {
-  const [amount,setAmount]=useState(brief.budget??''),[busy,setBusy]=useState(false),[error,setError]=useState('');
-  return <section className="cs-tool" aria-label="Choose a spending limit"><div className="cs-tool-head"><span><Icon name="wallet" size={18}/>Spending limit</span><button onClick={onDone}>Back to chat</button></div><p>{brief.party.adults+brief.party.children===1?'Your total allowance':'Total for everyone'} · {brief.currency}. Optional; this is not a venue quote.</p><form className="cs-inline-form" onSubmit={async e=>{e.preventDefault();setBusy(true);setError('');try{await onApply(amount===''?null:Number(amount));}catch(e){setError(e.message);}finally{setBusy(false);}}}><input aria-label="Total spending limit" type="number" min="1" max="10000000" placeholder="Leave unset" value={amount} disabled={!editable||busy} onChange={e=>setAmount(e.target.value)}/><button disabled={!editable||busy}>{busy?'Saving…':'Use this limit'}</button></form>{error&&<p role="alert">{error}</p>}</section>;
+export function BudgetAction({brief,onApply,onPerson,onDone,editable=true,busy=false}) {
+  return <section className="cs-tool" aria-label="Choose a spending limit"><div className="cs-tool-head"><span><Icon name="wallet" size={18}/>Spending, your way</span><button onClick={onDone}>Back to chat</button></div><BudgetChoices request={brief} onBudget={editable?onApply:undefined} onPerson={editable?onPerson:undefined} disabled={!editable||busy}/><p className="cs-muted">You can explore places without setting a budget.</p></section>;
 }
 export function MenuChoicesAction({plan,checks,onDone,onConfirm,onDetails}) {
   const [selected,setSelected]=useState([]);

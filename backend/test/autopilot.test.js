@@ -45,7 +45,7 @@ test('fulfilled discovery points toward menus, comparison and visit planning rat
  const steps=nextPlanSteps(plan,{status:'ready',data:{stops:[]}});
  assert.deepEqual(steps.actions.map(a=>a.id),['menus','compare','timing']);
  const sparse=nextPlanSteps({...plan,stops:[{item:null,reason:'no_eligible_places'}]},{});
- assert.equal(sparse.actions[0].id,'location');assert.equal(sparse.actions[1].id,'retry');
+ assert.deepEqual(sparse.actions.map(a=>a.id),['review','location']);
 });
 
 

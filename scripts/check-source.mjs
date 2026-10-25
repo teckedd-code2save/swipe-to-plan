@@ -12,5 +12,5 @@ function check(directory) {
     }
   }
 }
-for (const directory of ['backend/src', 'backend/test', 'scripts']) check(directory);
+for (const directory of ['backend/src', 'backend/test', 'shared', 'scripts']) check(directory);
 console.log('JavaScript syntax checks passed. The frontend build validates JSX.');
