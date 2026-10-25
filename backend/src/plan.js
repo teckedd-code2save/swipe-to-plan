@@ -1,3 +1,4 @@
+import {areaDistanceKm} from "./locations.js";
 import { byId,matchesTasteTag } from "./deck.js";
 import { explainCandidate } from "./explain.js";
 import { ProviderError } from "./qloo.js";
@@ -34,6 +35,7 @@ const hotel = (p, tags) => /\b(hotel|resort|suites?|residence|apartments?|lodge|
   !!(p.properties?.hotel_class || p.properties?.star_rating || p.properties?.number_of_rooms || p.properties?.check_in_time);
 
 function locationEvidence(p, area, locality) {
+  if(locality?.scope==='nearby'&&locality.query===area&&locality.center){const distanceKm=areaDistanceKm(locality.center,p.location);return distanceKm!==null&&distanceKm<=locality.radiusKm?{field:'provider_coordinates',value:distanceKm,method:'nearby_radius',radiusKm:locality.radiusKm}:null;}
   if(locality?.query===area&&locality.id&&locality.radius===0)return {field:"query.localities.filter",value:locality.label,method:"qloo_locality_filter",localityId:locality.id};
   const candidates = [
     ["properties.address", p.properties?.address], ["location.city", p.location?.city],
@@ -122,6 +124,7 @@ export function rankPlaces(places, request, { source = "qloo", retrievedAt = new
     const boost = Math.min(0.15 * matched.length, 0.45);
     const penalty = dislikesNoise && noiseTags.length ? 0.25 : 0;
     const item = shapePlace(p, source, retrievedAt);
+    if(locality?.scope==='nearby')item.nearby={distanceKm:location.value,fromArea:request.location.area,radiusKm:locality.radiusKm};
     const intentText = request.intent === "any" ? "outing" : request.intent;
     item.reasons = [
       { code: "intent_match", text: `Provider tags match your ${intentText} request.`, evidence: intentTags.map((t) => ({ field: "tags", value: t.id })) },
@@ -156,7 +159,7 @@ export function relaxationOptions(request) {
 
 export function createDiscovery({ provider, now = Date.now }) {
   const cache = new Map();
-  async function retrieve(request,intents=[]) {
+  async function retrieve(request,intents=[],radiusKm=0) {
     const resolution = await Promise.all(request.taste.artists.map(async (requested) => {
       try {
         const result = await provider.resolveArtist(requested);
@@ -174,12 +177,12 @@ export function createDiscovery({ provider, now = Date.now }) {
     const tagSignals=provider.resolveTasteTags?await provider.resolveTasteTags(request.taste.vibes):[];
     const includeActivity=intents.includes('activity');
     const includeDrinks=intents.includes('drinks');
-    const key = JSON.stringify([request.location.area,request.location.id, signalIds,...(provider.resolveTasteTags?[tagSignals,includeActivity,includeDrinks]:[])]);
+    const key = JSON.stringify([request.location.area,request.location.id, signalIds,...(provider.resolveTasteTags?[tagSignals,includeActivity,includeDrinks,radiusKm]:[])]);
     let entry = cache.get(key);
     const cached = !!entry && now() - entry.at < 600000;
     if (!cached) {
       let places;
-      try { places = await provider.discover({ signalIds, area: request.location.area,locationId:request.location.id,tagSignals,includeActivity,includeDrinks }); }
+      try { places = await provider.discover({ signalIds, area: request.location.area,locationId:request.location.id,tagSignals,includeActivity,includeDrinks,radiusKm }); }
       catch (e) { throw e instanceof ProviderError ? e : new ProviderError(); }
       if (!Array.isArray(places)) throw new ProviderError("provider_response_invalid");
       entry = { places, locality:places.locality||null, at: now() };
@@ -199,8 +202,8 @@ export function createDiscovery({ provider, now = Date.now }) {
   return {
     location:provider.getLocation,
     person,
-    async byIntents(request, intents) {
-      const retrieved = await retrieve(request,intents);
+    async byIntents(request, intents, {radiusKm=0}={}) {
+      const retrieved = await retrieve(request,intents,radiusKm);
       return intents.map((intent) => rank(retrieved, { ...request, intent }));
     },
     async recommend(request) {
