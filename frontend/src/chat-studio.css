@@ -139,3 +139,9 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 
 .cs-draft-summary{display:inline;color:var(--cs-muted);font-weight:400;margin-left:8px;font-size:11px}
 @media(max-width:600px){.cs-draft-summary{display:block;margin:4px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+
+/* Results lead with itinerary; a quiet edit action replaces the nested disclosure. */
+.cs-result-edit{display:flex;justify-content:flex-end;padding:0 26px 8px}
+.cs-result-edit button{display:flex;align-items:center;gap:7px;color:var(--cs-green)!important;font-size:11px;padding:7px 10px;border-radius:8px}
+.cs-result-edit button:hover{background:var(--cs-soft)}
+@media(max-width:600px){.cs-result-edit{padding:0 17px 7px}}
