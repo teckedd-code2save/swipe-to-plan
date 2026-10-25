@@ -13,7 +13,7 @@ function engine(places, resolveArtist = async name => name === 'Missing' ? { sta
 
 test('one-place plans have one allowance, no between-stop travel and working destination directions',async()=>{
   for(const [intent,tag] of [['coffee','cafe'],['dinner','restaurant'],['activity','museum'],['drinks','bar']]){
-    const request=parseItinerary({activities:[intent],startTime:'12:00',endTime:'13:30',people:[{id:'sam',name:'Sam',spending:{style:'mindful',priority:'dinner'}}]});
+    const request=parseItinerary({budget:200,activities:[intent],startTime:'12:00',endTime:'13:30',people:[{id:'sam',name:'Sam',spending:{style:'mindful',priority:'dinner'}}]});
     const plan=await buildItinerary(engine([venue('one',[tag])]),request);
     assert.equal(plan.status,'complete');assert.equal(plan.stops.length,1);assert.equal(plan.stops[0].bufferAfterMinutes,0);
     assert.equal(plan.budget.allocations.length,1);assert.equal(plan.budget.allocations[0].amount+plan.budget.reserve+plan.budget.transport,request.budget);
@@ -150,10 +150,12 @@ test('undecided activities never invent coffee or query places', async () => {
   }
 });
 
-test('new plans use activity-specific names and reject explicit unset budgets',()=>{
+test('new plans keep unspecified budgets unset and use activity-specific names',()=>{
   const suggested=parseItinerary({area:'Accra',budget:null,activities:['dinner']});
-  assert.ok(suggested.budget>0);
-  assert.notEqual(suggested.budget,800);
+  assert.equal(suggested.budget,null);
+  assert.equal(parseItinerary(suggested).budget,null);
+  const unset=allocateBudget(suggested,['dinner']);
+  assert.equal(unset.total,null);assert.equal(unset.allocations[0].amount,null);assert.equal(unset.basis,'not_set');
   assert.ok(parseItinerary({area:'Accra',budget:600,activities:['dinner']}).budget===600);
   const dinner=parseItinerary({area:'Accra',budget:600,activities:['dinner'],title:''});
   const coffee=parseItinerary({area:'Accra',budget:600,activities:['coffee'],title:''});
@@ -182,3 +184,4 @@ test('a user-chosen outing title survives result construction',async()=>{
   const plan=await buildItinerary(engine([restaurant]),parseItinerary({title:'My birthday surprise',activities:['dinner']}));
   assert.equal(plan.request.title,'My birthday surprise');
 });
+
