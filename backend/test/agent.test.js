@@ -274,10 +274,16 @@ test('a Friday nightlife request recovers from unsupported activity synonyms int
   assert.deepEqual(result.cardIds,['v-bar','v-club']);
 });
 
-test('route problems open travel alternatives without changing the plan',async()=>{
-  const context=parseItinerary({people:[{id:'you',name:'You'}],budget:500});
-  const before=JSON.stringify(context);
-  const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('show_ui',{panel:'routes',message:'Let’s compare other ways to get there.'})});
-  const result=await agent.interpret({message:'Maps could not find transit directions',context});
-  assert.equal(result.status,'show_ui');assert.equal(result.panel,'routes');assert.equal(JSON.stringify(context),before);
+test('contextual swipe suggestions accompany planning without becoming votes or blocking discovery',async()=>{
+  let payload;
+  const context=parseBrief({activities:[],timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}});
+  const agent=createAgent({getKey:()=> 'test',fetchImpl:async(_,options)=>{
+    payload=JSON.parse(options.body);
+    return response('autopilot_day',{cardIds:['v-bar','v-club'],changes:{activities:['drinks']},message:'Swipe what fits while I find places.'});
+  }});
+  const result=await agent.interpret({message:'Drinks with friends',context,mode:'autopilot',locationContext:{confirmed:true}});
+  assert.deepEqual(result.tasteCards,['v-bar','v-club']);
+  assert.deepEqual(result.request.people[0].vibes,[]);
+  assert.equal(result.request.timing.dateConfirmed,false);
+  assert.ok(payload.tools.find(t=>t.function.name==='autopilot_day').function.parameters.required.includes('cardIds'));
 });
