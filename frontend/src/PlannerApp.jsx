@@ -9,6 +9,7 @@ import TasteMap from './TasteMap.jsx';
 import TripEditor from './TripEditor.jsx';
 import TimingAction from './TimingAction.jsx';
 import {localDate,needsTiming,timingLabel} from './timing.js';
+import {nextPlanningStep} from './plan-transition.js';
 import PlanReview from './PlanReview.jsx';
 import {PlaceDetails,PlaceCheckNotice,usePlaceChecks} from './PlaceGuide.jsx';
 import './place-guide.css';
@@ -435,9 +436,10 @@ export default function PlannerApp() {
 
   function accept(result, text) {locationConfirmed.current=true;showPlan(result,text);replaceBrief(result.request);setTab('itinerary');}
   async function build(request, description, revision) {
-    if(!locationConfirmed.current&&!shared.linked){askLocation(request);return false;}
-    if(needsTiming(request)){replaceBrief(request);presentTool('timing');return false;}
-    if(!request.activities.length){replaceBrief(request);presentTool('review','Choose what you’d like to do. I’ll only find places for those moments.');return false;}
+    const nextStep=nextPlanningStep(request,locationConfirmed.current||shared.linked);
+    if(nextStep==='location'){askLocation(request);return false;}
+    if(nextStep==='timing'){replaceBrief(request);presentTool('timing');return false;}
+    if(nextStep==='activities'){replaceBrief(request);presentTool('review','Choose what you’d like to do. I’ll find places once you select an activity.');return false;}
     planningPaused.current=false;setDraftChanged(false);localVersion.current++;
     clearTimeout(autoTimer.current);autoTimer.current=null;setError('');setRevisionFailed(false);
     if(shared.linked){try{await shared.updateBrief(request,revision);return true;}catch(e){setError(e.message);return false;}}
