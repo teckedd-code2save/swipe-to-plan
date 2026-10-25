@@ -177,7 +177,7 @@ test('unsupported cuisine stays explicitly unverified, never promoted as a confi
   assert.equal(plan.stops[0].item.experienceFit.cuisine.status,'unverified');
   assert.ok(plan.warnings.some(w=>w.includes("couldn't verify Ghanaian cuisine")));
 });
-test('a user's distinctive outing title survives result construction',async()=>{
+test('a user-chosen outing title survives result construction',async()=>{
   const restaurant=venue('meal',['restaurant']);
   const plan=await buildItinerary(engine([restaurant]),parseItinerary({title:'My birthday surprise',activities:['dinner']}));
   assert.equal(plan.request.title,'My birthday surprise');
