@@ -319,13 +319,7 @@ export default function PlannerApp() {
   const working = useRef(false);
   const savedDialog = useRef(null);
   useEffect(() => { const refresh=()=>api.health().then(setHealth).catch(()=>setHealth({offline:true}));refresh();window.addEventListener('focus',refresh);return()=>window.removeEventListener('focus',refresh); }, []);
-  useEffect(()=>{
-    if(!account.ready||!restored.current||locationPrompted.current||!owner||shared.linked||planRef.current||preferred||brief.area||tool||chat.length||message||circleInvite)return;
-    if(location.hash&&location.hash!=='#/')return;
-    locationPrompted.current=true;
-    dismissLocationWelcome();
-    askLocation(briefRef.current,'','plan','Choose your planning area to begin. You can change it for any new day.');
-  },[account.ready,preferred,brief.area,tool,chat.length,message,owner,shared.linked,circleInvite]);
+
   useEffect(() => { if (showSaved) savedDialog.current?.showModal(); }, [showSaved]);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 5000); return () => clearTimeout(timer); }, [notice]);
   useEffect(()=>{
@@ -371,6 +365,13 @@ export default function PlannerApp() {
       }
     }
   },[account.ready,account.user,account.circles]);
+  useEffect(()=>{
+    if(!account.ready||!restored.current||locationPrompted.current||!owner||shared.linked||planRef.current||preferred||brief.area||tool||chat.length||message||circleInvite)return;
+    if(location.hash&&location.hash!=='#/')return;
+    locationPrompted.current=true;
+    dismissLocationWelcome();
+    askLocation(briefRef.current,'','plan','Choose your planning area to begin. You can change it for any new day.');
+  },[account.ready,preferred,brief.area,tool,chat.length,message,owner,shared.linked,circleInvite]);
   useEffect(()=>{
     if(!account.user||!owner)return;
     for(const [id,known] of invitedCircles.current){
