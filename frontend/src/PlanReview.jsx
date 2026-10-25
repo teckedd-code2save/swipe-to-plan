@@ -9,7 +9,7 @@ export default function PlanReview({brief,deck,hasPlan,confirmed,busy,onActiviti
   const favorites=brief.people.reduce((sum,p)=>sum+p.artists.length+p.vibes.length,0);
   const labels=[...new Set(brief.people.flatMap(p=>[...p.artists,...p.vibes.map(id=>deck.find(c=>c.id===id)?.label).filter(Boolean)]))];
   return <section className="cs-tool cs-plan-review" aria-label="Review your plan">
-    <div className="cs-tool-head"><span><Icon name="list" size={17}/>Your outing, taking shape</span><button onClick={onDone} aria-label="Close plan review"><Icon name="close" size={15}/></button></div>
+    <div className="cs-tool-head"><span><Icon name="list" size={17}/>Your outing, taking shape</span>{onDone&&<button onClick={onDone} aria-label="Close plan review"><Icon name="close" size={15}/></button>}</div>
     <ActivityChoices activities={brief.activities} children={brief.party.children} disabled={busy||!onActivities} onChange={onActivities}/>
     <button className="cs-review-row" onClick={()=>onTool('people')}><CircleFaces people={brief.people}/><span><strong>{brief.people.map(p=>p.name).join(', ')}</strong><small>{brief.party.adults+brief.party.children} going · add people or bring a circle</small></span><Icon name="arrowUpRight" size={14}/></button>
     <button className={`cs-review-row ${!favorites?'needs-tastes':''}`} onClick={()=>onTool('tastes')}><Icon name="music" size={19}/><span><strong>{favorites?`${favorites} ${favorites===1?'favorite':'favorites'} in the mix`:'What would make this your kind of day?'}</strong><small>{favorites?labels.slice(0,3).join(' · '):'Add food, activities, music and mood'}</small></span><Icon name="plus" size={15}/></button>
