@@ -104,7 +104,8 @@ test('itinerary HTTP contract exposes evidence and supports external tool consum
   assert.equal(result.body.provenance.provider,'demo');
   assert.equal(result.body.links.directions,null);
   assert.ok(result.body.tasteMap.edges.length);
-  assert.equal(result.body.budget.basis,'spending_allowances');
+  assert.equal(result.body.budget.basis,'not_set');
+  assert.equal(result.body.request.budget,null);
   assert.equal((await call('/api/agent',{message:'Plan a day'})).body.code,'agent_not_configured');
   assert.equal((await call('/api/itineraries',{startTime:'12:00',endTime:'12:15'})).status,400);
 });
@@ -184,3 +185,4 @@ test('nearby areas use a no-store POST and coarse coordinates without changing t
   assert.deepEqual(result.body,{source:'qloo',locations:[{id:'area',name:'Nearby neighborhood',currency:'GHS'}]});
   assert.equal((await call('/api/locations/nearby',{latitude:200,longitude:0})).status,400);assert.equal(calls,1);
 });
+
