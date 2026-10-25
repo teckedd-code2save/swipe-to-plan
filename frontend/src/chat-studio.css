@@ -71,3 +71,18 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 .cs-nearby-expand{padding:12px 14px;margin:8px 0 12px;background:#f0f2e8;border-radius:10px;color:#526346}.cs-nearby-expand p{font-size:11px;line-height:1.65;margin:0 0 7px}.cs-nearby-expand button{display:flex;align-items:center;gap:12px;min-height:36px;font-size:12px!important;color:#3e5532!important;text-decoration:underline;text-underline-offset:4px}
 
 .cs-activity-choices{margin:18px 0 12px}.cs-activity-choices legend{color:#405536;font-size:15px}.cs-activity-choices .pl-help{color:#626b58;font-size:11px;line-height:1.6;margin:8px 0 12px}.cs-activity-choices .pl-choice{background:#fffdf7!important;color:#43543a!important;border:1px solid #97a28b!important;min-height:42px;font-size:11px!important}.cs-activity-choices .pl-choice.selected{background:#405536!important;color:#fffdf7!important;border-color:#405536!important}.cs-activity-choices .pl-choice.selected>span{background:#fffdf7;color:#405536}.cs-activity-choices .pl-choice:disabled{opacity:.5}.cs-activity-choices .pl-choice:focus-visible{outline:2px solid #9b713e;outline-offset:3px}
+
+/* Draft review stays in the scrollable conversation; never occupies a fixed header. */
+.cs-messages>.cs-draft-plan{max-width:680px;margin:0 auto 18px;border:1px solid var(--cs-line);border-radius:12px;background:var(--cs-surface);padding:0 14px;box-shadow:0 3px 12px #34472508}
+.cs-messages>.cs-draft-plan>summary{cursor:pointer;padding:13px 3px;font-size:12px;color:var(--cs-green);font-weight:600}
+.cs-messages>.cs-draft-plan .cs-tool{max-width:none;margin:0 0 14px;border:0;box-shadow:none;padding:8px 0 12px}
+.cs-profile-circles{max-width:580px;width:min(94vw,580px)}
+.cs-profile-circle{border:1px solid var(--cs-line);padding:15px;border-radius:12px;margin:12px 0}
+.cs-profile-circle h3{margin:0 0 7px;font:21px Georgia,serif}
+.cs-profile-circle p{color:var(--cs-muted);font-size:12px}
+.cs-profile-circle form,.cs-profile-create{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
+.cs-profile-circle label,.cs-profile-create label{flex:1;min-width:180px;font-size:12px}
+.cs-profile-circle input,.cs-profile-create input{display:block;width:100%;padding:10px;border:1px solid var(--cs-line);border-radius:8px}
+.cs-profile-circle button,.cs-profile-create button{border:1px solid var(--cs-line);padding:10px;border-radius:8px}
+.cs-profile-circle>button{margin-top:8px;color:#995a48}
+@media(max-width:600px){.cs-quick-actions{display:flex;flex-wrap:wrap;gap:8px}.cs-quick-actions button{flex:1;min-width:0}.cs-messages>.cs-draft-plan{margin:0 0 14px}}
