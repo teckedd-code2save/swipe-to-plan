@@ -5,7 +5,7 @@ import {formatMoney} from './money.js';
 import {CircleFaces} from './Circles.jsx';
 
 // Reuse the studio's inline action pattern: prepare first, discover on request.
-export default function PlanReview({brief,deck,hasPlan,confirmed,busy,onActivities,onPlan,onTool,onDetails,onDone}) {
+export default function PlanReview({brief,deck,hasPlan,confirmed,busy,onActivities,onTool,onDetails,onDone}) {
   const favorites=brief.people.reduce((sum,p)=>sum+p.artists.length+p.vibes.length,0);
   const labels=[...new Set(brief.people.flatMap(p=>[...p.artists,...p.vibes.map(id=>deck.find(c=>c.id===id)?.label).filter(Boolean)]))];
   return <section className="cs-tool cs-plan-review" aria-label="Review your plan">
