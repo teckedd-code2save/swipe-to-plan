@@ -206,3 +206,57 @@ test('an expired visit window preserves relevant places without claiming a sched
   assert.equal(result.stops[0].timeStatus,'needs_time');
   assert.equal(result.request.date,'2001-01-01');
 });
+
+test('a selected route can visit several distinct bars, preserving order, evidence and the total budget',async()=>{
+  const request=parseItinerary({activities:['drinks'],budget:301,people:[{id:'you',name:'You',vibes:['v-bar']}],timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'},route:[{intent:'drinks',placeId:'qloo:second'},{intent:'drinks',placeId:'qloo:first'}]});
+  const result=await buildItinerary(engine([venue('first',['bar']),venue('second',['bar']),venue('third',['bar'])]),request);
+  assert.equal(result.phase,'discovery');assert.equal(result.status,'complete');
+  assert.deepEqual(result.stops.map(s=>s.item.id),['qloo:second','qloo:first']);
+  assert.deepEqual(result.request.activities,['drinks']);
+  assert.equal(result.stops[0].start,null);
+  assert.equal(result.stops[0].connections[0].kind,'tag_match');
+  assert.equal(result.stops[1].connections[0].kind,'tag_match');
+  assert.deepEqual(result.budget.allocations.map(a=>a.stopId),['stop-0','stop-1']);
+  assert.equal(result.budget.allocations.reduce((n,a)=>n+a.amount,result.budget.transport+result.budget.reserve),301);
+  assert.equal(result.shortlist.length,3);
+  const restored=parseBrief(JSON.parse(JSON.stringify(result.request)));
+  assert.deepEqual(restored.route,request.route);
+});
+
+test('route validation rejects duplicate places, unsupported categories and excess stops',()=>{
+  for(const route of [[],[{intent:'drinks',placeId:'qloo:a'},{intent:'drinks',placeId:'qloo:a'}],[{intent:'dinner',placeId:'qloo:a'}],Array.from({length:4},(_,i)=>({intent:'drinks',placeId:'qloo:'+i}))])assert.throws(()=>parseItinerary({activities:['drinks'],route}),e=>e.status===400);
+  assert.throws(()=>parseItinerary({activities:['drinks'],searchRadiusKm:200}),e=>e.status===400);
+});
+
+test('an unavailable selected route venue is not silently replaced by another bar',async()=>{
+  const request=parseItinerary({activities:['drinks'],timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'},route:[{intent:'drinks',placeId:'qloo:missing'},{intent:'drinks',placeId:'qloo:second'}]});
+  const result=await buildItinerary(engine([venue('first',['bar']),venue('second',['bar'])]),request);
+  assert.equal(result.stops[0].item,null);assert.equal(result.stops[1].item.id,'qloo:second');
+});
+
+test('empty area results proactively offer nearby places separately, preserving the requested area and constraints',async()=>{
+  const locationId='12345678-1234-1234-1234-123456789abc',calls=[];
+  const item={id:'qloo:near',entityId:'near',name:'Nearby Bar',reasons:[],affinityEvidence:[],score:1,nearby:{distanceKm:9,fromArea:'Selected Area',radiusKm:20}};
+  const metadata={taste:{resolved:[],unresolved:[],vibes:[]},provenance:{provider:'qloo',retrievedAt:'2026-10-25T20:00:00Z'},fetched:1};
+  const discovery={location:async()=>({label:'Selected Area',currency:'GHS'}),byIntents:async(request,intents,options)=>{calls.push({request,intents,options});return intents.map(()=>({...metadata,ranked:options.radiusKm?[item]:[]}));}};
+  const request=parseItinerary({locationId,activities:['drinks'],maxPriceLevel:2,excludeIds:['qloo:excluded'],timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}});
+  const result=await buildItinerary(discovery,request);
+  assert.equal(result.stops[0].item,null);assert.equal(result.searchScope.kind,'area');
+  assert.equal(result.request.area,'Selected Area');assert.equal(result.request.searchRadiusKm,undefined);
+  assert.equal(result.nearbySuggestions[0].item.nearby.distanceKm,9);
+  assert.deepEqual(calls.map(c=>c.options.radiusKm),[0,20]);
+  assert.deepEqual(calls[1].request.constraints,calls[0].request.constraints);
+  const chosen=await buildItinerary(discovery,parseBrief({...result.request,searchRadiusKm:20,route:[{intent:'drinks',placeId:'qloo:near'}]}));
+  assert.equal(chosen.stops[0].item.id,'qloo:near');assert.equal(chosen.searchScope.kind,'nearby');
+});
+
+test('selected repeated-category stops can be scheduled with distinct time slots and a travel buffer',async()=>{
+  const request=parseItinerary({activities:['drinks'],startTime:'18:00',endTime:'22:00',route:[{intent:'drinks',placeId:'qloo:first'},{intent:'drinks',placeId:'qloo:second'}]});
+  const result=await buildItinerary(engine([venue('first',['bar']),venue('second',['bar'])]),request);
+  assert.equal(result.phase,'scheduled');
+  assert.equal(result.stops.length,2);
+  assert.ok(result.stops[1].start>result.stops[0].end);
+  assert.equal(result.stops[0].bufferAfterMinutes,30);
+  assert.equal(result.stops[1].bufferAfterMinutes,0);
+  assert.equal(result.request.route.length,2);
+});
