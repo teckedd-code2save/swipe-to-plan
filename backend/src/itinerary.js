@@ -48,7 +48,9 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
     return { ...(person.id ? {id:person.id} : {}), name: text(person.name,24,'a name'), artists: parsed.taste.artists, vibes: parsed.taste.vibes, ...(spending?{spending}:{}) };
   });
   if (new Set(profiles.filter(p=>p.id).map(p=>p.id)).size !== profiles.filter(p=>p.id).length) throw new InputError('Taste profile IDs must be distinct.');
-  const budget = integer(body.budget === undefined ? 800 : body.budget,1,10000000,'Group budget');
+  const suggestedBudget = Math.max(100,Math.ceil((activities.reduce((sum,activity)=>sum+({coffee:90,activity:170,dinner:220,drinks:110}[activity]||0),0)||220)*(adults+children*.6)*1.2/50)*50);
+  const budgetSuggested = body.budget == null;
+  const budget = integer(budgetSuggested?suggestedBudget:body.budget,1,10000000,'Group budget');
   const currency=body.currency??'GHS';
   if(typeof currency!=='string'||!Intl.supportedValuesOf('currency').includes(currency))throw new InputError('Choose a valid three-letter currency code, such as USD, EUR or GHS.');
   const startTime = clock(body.startTime ?? '11:00'), endTime = clock(body.endTime ?? '18:00');
@@ -63,7 +65,7 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
   Object.values(pins).forEach((id) => text(id,160,'a kept place ID'));
   if (new Set(Object.values(pins)).size !== Object.values(pins).length) throw new InputError('Keep a different place for each stop.');
   const constraints = parseRequest({ constraints: { excludeIds: body.excludeIds ?? [], ...(body.maxPriceLevel !== undefined ? { maxPriceLevel: body.maxPriceLevel } : {}) } }).constraints;
-  const request = { title: text((typeof body.title==='string'&&!body.title.trim()||body.title==null ? null : body.title) || (activities.length ? `${activities.map(item=>({coffee:'Coffee',activity:'Something fun',dinner:'Dinner',drinks:'Drinks'}[item])).join(' & ')}${area?' in '+area.split(',')[0]:''}` : children ? 'Family day' : adults > 2 ? 'A day together' : 'A day out'),80,'a title'), area,...(locationId?{locationId}:{}),currencyMode, timing:{...timing}, date, party:{ adults, children }, people:profiles, budget, currency, startTime, endTime, pace, activities, pins:{...pins}, excludeIds:constraints.excludeIds, ...(body.maxPriceLevel !== undefined ? { maxPriceLevel:body.maxPriceLevel } : {}) };
+  const request = { title: text((typeof body.title==='string'&&!body.title.trim()||body.title==null ? null : body.title) || (activities.length ? `${activities.map(item=>({coffee:'Coffee',activity:'Something fun',dinner:'Dinner',drinks:'Drinks'}[item])).join(' & ')}${area?' in '+area.split(',')[0]:''}` : children ? 'Family day' : adults > 2 ? 'A day together' : 'A day out'),80,'a title'), area,...(locationId?{locationId}:{}),currencyMode, timing:{...timing}, date, party:{ adults, children }, people:profiles, budget, budgetSuggested, currency, startTime, endTime, pace, activities, pins:{...pins}, excludeIds:constraints.excludeIds, ...(body.maxPriceLevel !== undefined ? { maxPriceLevel:body.maxPriceLevel } : {}) };
   makeSchedule(request); // Fail an impossible time window before any provider calls.
   return request;
 }
