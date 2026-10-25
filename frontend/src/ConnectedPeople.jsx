@@ -17,7 +17,7 @@ export default function ConnectedPeople({people,connections,circles,onAdd,onInvi
       <p>Enter their email. They will only appear in your circle after accepting the invitation.</p>
       <label>Invite into<select value={circleId} onChange={e=>setCircleId(e.target.value)} aria-label="Circle for this invitation"><option value="new">A new circle</option>{available.map(c=><option value={c.id} key={c.id}>{c.name}</option>)}</select></label>
       {circleId==='new'&&<label>Circle name<input aria-label="New circle name" maxLength={40} value={name} onChange={e=>setName(e.target.value)}/></label>}
-      <form onSubmit={e=>{e.preventDefault();run(async()=>{await onEmailInvite(circleId==='new'?null:circleId,name,email.trim());setSent(true);});}}>
+      <form onSubmit={e=>{e.preventDefault();run(async()=>{const createdId=await onEmailInvite(circleId==='new'?null:circleId,name,email.trim());if(createdId)setCircleId(createdId);setSent(true);});}}>
         <label>Email address<input type="email" required maxLength={254} autoComplete="email" value={email} onChange={e=>{setEmail(e.target.value);setSent(false);}} placeholder="friend@example.com"/></label>
         <button type="submit" className="cs-invite-primary" disabled={busy||sent||!email.trim()||circleId==='new'&&!name.trim()}>{busy?'Sending…':sent?'Invitation requested':'Send email invitation'}<Icon name={sent?'check':'arrow'} size={15}/></button>
       </form>
