@@ -149,3 +149,12 @@ test('undecided activities never invent coffee or query places', async () => {
     await assert.rejects(buildItinerary({byIntents:()=>assert.fail('No discovery before an activity choice')},draft),/Choose what/);
   }
 });
+
+test('new plans use activity-specific names and reject explicit unset budgets',()=>{
+  assert.throws(()=>parseItinerary({area:'Accra',budget:null,activities:['dinner']}),/Group budget/);
+  const dinner=parseItinerary({area:'Accra',budget:600,activities:['dinner'],title:''});
+  const coffee=parseItinerary({area:'Accra',budget:600,activities:['coffee'],title:''});
+  assert.match(dinner.title,/Dinner/);
+  assert.match(coffee.title,/Coffee/);
+  assert.notEqual(dinner.title,coffee.title);
+});
