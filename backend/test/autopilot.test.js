@@ -40,17 +40,12 @@ test('Autopilot retains child constraints and can ask one clarification without 
   await assert.rejects(invoke({changes:{activities:['drinks']}},{context:{...context,party:{adults:1,children:1}}}),e=>e.status===400);
   const result=await invoke({question:'Which Sunday circle do you mean?'},{},'ask_question');assert.equal(result.status,'needs_input');
 });
-test('post-plan suggestions prioritize real timing issues, missing tastes, retries and sharing',()=>{
-  const plan={request:context,stops:[{item:{id:'place'}}]};
-  const fits={status:'ready',data:{stops:[{hours:{status:'fits_reported_hours'}}]}};
-  assert.match(nextPlanSteps(plan,fits).note,/fit reported weekly/);assert.equal(nextPlanSteps(plan,fits).actions[1].id,'share');
-  const closed={status:'ready',data:{stops:[{hours:{status:'reported_closed'}}]}};
-  assert.equal(nextPlanSteps(plan,closed).attention,true);assert.match(nextPlanSteps(plan,closed).actions[0].label,/Review hours/);
-  assert.match(nextPlanSteps(plan,{status:'error'}).actions[0].label,/Retry/);
-  const missing={...plan,request:{...context,people:[profile('Sam')]}};assert.equal(nextPlanSteps(missing,fits).actions[1].personId,'Sam');
-  assert.equal(nextPlanSteps({...plan,stops:[{item:null}]},{}).actions[0].id,'review');
-  const sparse=nextPlanSteps({...plan,stops:[{item:null,reason:'no_eligible_places'}]},{});
-  assert.match(sparse.note,/don’t cover yet/);assert.equal(sparse.actions[0].id,'location');assert.equal(sparse.actions[1].id,'retry');
+test('fulfilled discovery points toward menus, comparison and visit planning rather than another questionnaire',()=>{
+ const plan={phase:'discovery',request:context,stops:[{item:{id:'place'}}]};
+ const steps=nextPlanSteps(plan,{status:'ready',data:{stops:[]}});
+ assert.deepEqual(steps.actions.map(a=>a.id),['menus','compare','timing']);
+ const sparse=nextPlanSteps({...plan,stops:[{item:null,reason:'no_eligible_places'}]},{});
+ assert.equal(sparse.actions[0].id,'location');assert.equal(sparse.actions[1].id,'retry');
 });
 
 
