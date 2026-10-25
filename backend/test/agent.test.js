@@ -287,3 +287,11 @@ test('contextual swipe suggestions accompany planning without becoming votes or 
   assert.equal(result.request.timing.dateConfirmed,false);
   assert.ok(payload.tools.find(t=>t.function.name==='autopilot_day').function.parameters.required.includes('cardIds'));
 });
+
+test('route problems open travel alternatives without changing the plan',async()=>{
+  const context=parseItinerary({people:[{id:'you',name:'You'}],budget:500});
+  const before=JSON.stringify(context);
+  const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('show_ui',{panel:'routes',message:'Let’s compare other ways to get there.'})});
+  const result=await agent.interpret({message:'Maps could not find transit directions',context});
+  assert.equal(result.status,'show_ui');assert.equal(result.panel,'routes');assert.equal(JSON.stringify(context),before);
+});
