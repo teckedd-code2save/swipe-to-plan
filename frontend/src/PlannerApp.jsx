@@ -24,6 +24,7 @@ import {readCircles,writeCircles,makeCircle,bringCircle,circlePeople} from './ci
 import useSharedDay from './useSharedDay.js';
 import useAccount from './useAccount.js';
 import {AccountButton,AccountPanel,CircleInvite} from './AccountPanel.jsx';
+import ProfileCircles from './ProfileCircles.jsx';
 import {createLatestPlanner,withPeopleIds,updateRoster,adoptAccountProfile,identity,personInput,readContacts,saveContacts} from './day-state.js';
 import './planner.css';
 import './group-studio.css';
@@ -51,6 +52,7 @@ export default function PlannerApp() {
   const [usageOpen,setUsageOpen]=useState(false);
   useEffect(()=>{track('visit');},[]);
   const [accountAction,setAccountAction]=useState(null);
+  const [profileCirclesOpen,setProfileCirclesOpen]=useState(false);
   const [accountOpen,setAccountOpen]=useState(false),[circleInvite,setCircleInvite]=useState(()=>location.hash.startsWith('#/circle/'));
   const accountIdentity=useRef(undefined),activeCircle=useRef(null),accountProfileSeen=useRef(null);
   const invitedCircles=useRef(new Map());
@@ -517,7 +519,8 @@ export default function PlannerApp() {
   </ChatStudio>
   {showLocationWelcome({ready:account.ready,dismissed:locationWelcomeDismissed,area:brief.area,preferred,plan,chatLength:chat.length,tool,message,hash:location.hash,search:location.search})&&!accountOpen&&!showSaved&&<LocationWelcome onSkip={dismissLocationWelcome} onNearby={()=>{dismissLocationWelcome();chooseTool('nearby');}} onChoose={()=>{dismissLocationWelcome();chooseTool('location');}}/>}
   {selectedStop&&<PlaceDetails key={selectedPlace} stop={selectedStop} plan={plan} checks={placeChecks} onClose={()=>setSelectedPlace(null)} onSwap={()=>{setSelectedPlace(null);swap(selectedStop);}} canSwap={owner&&!groupUpdating&&!plan.request.pins[selectedStop.intent]}/> }
-  {accountOpen&&<AccountPanel resumeAction={accountAction} account={account} onClose={()=>{setAccountOpen(false);setAccountAction(null);}} onSignIn={signIn} onTastes={()=>{setAccountOpen(false);presentTool('profile');}} onCircles={()=>{setAccountOpen(false);presentTool('circles');}} onLocation={()=>{setAccountOpen(false);askLocation();}} onUsage={()=>{setAccountOpen(false);setUsageOpen(true);}} onSignOut={async()=>{await account.signOut();setAccountOpen(false);}}/>}
+  {accountOpen&&<AccountPanel resumeAction={accountAction} account={account} onClose={()=>{setAccountOpen(false);setAccountAction(null);}} onSignIn={signIn} onTastes={()=>{setAccountOpen(false);presentTool('profile');}} onCircles={()=>{setAccountOpen(false);setProfileCirclesOpen(true);}} onLocation={()=>{setAccountOpen(false);askLocation();}} onUsage={()=>{setAccountOpen(false);setUsageOpen(true);}} onSignOut={async()=>{await account.signOut();setAccountOpen(false);}}/>}
+  {profileCirclesOpen&&account.user&&<ProfileCircles account={account} onClose={()=>setProfileCirclesOpen(false)}/>}
   {usageOpen&&<UsageDashboard onClose={()=>setUsageOpen(false)}/>}
   {circleInvite&&<CircleInvite account={account} onSignIn={signIn} onClose={()=>{setCircleInvite(false);history.replaceState(null,'',location.pathname);}} onJoined={circle=>{setCircleInvite(false);history.replaceState(null,'',location.pathname);applyCircle(circle).catch(e=>setError(e.message));}}/>}
   {editor&&owner&&<TripEditor draftOnly={planningPaused.current||!plan} onLocation={draft=>{setEditor(false);askLocation(draft);}} brief={activeBrief} groupManaged hasPlan={!!plan} onClose={()=>setEditor(false)} onSubmit={async request=>{if(planningPaused.current||!planRef.current){replaceBrief(request);setDraftChanged(!!planRef.current);setEditor(false);presentTool('review','Those details are saved. I’ll search when you’re ready.');return;}if(await build(request,undefined,editorRevision.current))setEditor(false);else{editorRevision.current=sharedRef.current.day?.revision;throw Error('The update could not be saved. Your edits are still here; review the group and retry.');}}}/>}
