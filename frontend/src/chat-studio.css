@@ -96,3 +96,43 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 /* Keep taste and optional selected-circle context together at composer start. */
 .cs-quick-actions button:last-child{margin-left:0!important}
 .cs-quick-actions{justify-content:flex-start}
+
+/* Compact, profile-scoped circle manager */
+.cs-profile-circles{width:min(440px,calc(100vw - 26px));max-width:440px;max-height:86dvh;padding:0!important;overflow:auto;border:1px solid #e2e5da;border-radius:18px;background:#fafaf6;color:#35432f;box-shadow:0 18px 70px #1520112a}
+.cs-pc-header{display:flex;align-items:center;justify-content:space-between;padding:22px 24px 12px}
+.cs-pc-header h2{font:31px/1.1 Georgia,serif;margin:4px 0 0}
+.cs-pc-eyebrow{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#879480}
+.cs-pc-close{display:grid;place-items:center;width:34px;height:34px;color:#607059}
+.cs-pc-body{padding:8px 24px 24px}
+.cs-pc-intro{display:flex;align-items:center;justify-content:space-between;padding-bottom:14px;border-bottom:1px solid #e1e5da;color:#818b7a;font-size:12px}
+.cs-pc-intro button{display:flex;align-items:center;gap:5px;color:#45613e;font-size:12px;padding:8px}
+.cs-pc-list{display:grid;gap:9px;margin-top:14px}
+.cs-pc-circle{border:1px solid #e2e6da;border-radius:12px;background:#fffefa;overflow:hidden}
+.cs-pc-circle>summary{list-style:none;display:flex;align-items:center;gap:12px;padding:15px;cursor:pointer}
+.cs-pc-circle>summary::-webkit-details-marker{display:none}
+.cs-pc-circle>summary>svg{margin-left:auto;transition:transform .2s;color:#879480}
+.cs-pc-circle[open]>summary>svg{transform:rotate(180deg)}
+.cs-pc-identity{display:grid;gap:3px;min-width:0}
+.cs-pc-identity strong{font:18px Georgia,serif;color:#35452e}
+.cs-pc-identity small{color:#8b9483;font-size:10px}
+.cs-pc-faces{display:flex;padding-left:5px;min-width:36px}
+.cs-pc-face{display:grid;place-items:center;width:27px;height:27px;margin-left:-6px;border:2px solid #fffefa;border-radius:50%;font-style:normal;font-size:11px;background:#b6c8a9;color:#253921}
+.cs-pc-face.face-1{background:#e6ccb8}.cs-pc-face.face-2{background:#d7d0e4}
+.cs-pc-expanded{padding:2px 15px 16px;border-top:1px solid #eff0e9}
+.cs-pc-section-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#8e9688;margin:13px 0 8px}
+.cs-pc-member{display:flex;align-items:center;gap:9px;min-height:36px;font-size:12px}
+.cs-pc-member-avatar{display:grid;place-items:center;width:27px;height:27px;background:#eef2e9;border-radius:50%;color:#536649}
+.cs-pc-member>span:nth-child(2){flex:1;min-width:0}
+.cs-pc-member small{color:#899783}
+.cs-pc-member button{font-size:11px;color:#a16452}
+.cs-pc-invite{margin:15px 0 0}
+.cs-pc-invite label,.cs-pc-create label{display:block;font-size:11px;color:#788672;margin-bottom:7px}
+.cs-pc-invite>div,.cs-pc-create>div{display:flex;gap:7px}
+.cs-pc-invite input,.cs-pc-create input{flex:1;width:100%;min-width:0;border:1px solid #e0e5d9;background:#fff;border-radius:8px;padding:10px;font-size:12px}
+.cs-pc-invite button,.cs-pc-create button{display:flex;align-items:center;gap:5px;border-radius:8px;padding:9px 11px;background:#4f6947!important;color:#fff!important;font-size:11px}
+.cs-pc-leave{font-size:11px;color:#9d6658!important;margin-top:15px}
+.cs-pc-create{margin-top:12px;padding:12px;background:#f0f3eb;border-radius:10px}
+.cs-pc-empty{padding:34px 10px;text-align:center;display:grid;justify-items:center;gap:9px;color:#6b7e60}
+.cs-pc-empty strong{font:19px Georgia,serif}.cs-pc-empty p{max-width:250px;margin:0;font-size:12px;line-height:1.55}
+.cs-pc-feedback{padding:9px 0;color:#456b38;font-size:12px}
+@media(max-width:600px){.cs-profile-circles{max-height:90dvh}.cs-pc-header{padding:18px 18px 10px}.cs-pc-body{padding:8px 17px 20px}}
