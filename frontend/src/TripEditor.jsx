@@ -34,7 +34,7 @@ export default function TripEditor({ brief, onClose, onSubmit, hasPlan, groupMan
     <form onSubmit={submit}>
       <div className="pl-dialog-heading"><h2 id="trip-editor-title">Plan details</h2><button type="button" className="pl-dialog-close" aria-label="Close trip details" onClick={onClose}>Close<Icon name="close" size={18}/></button></div>
       <div className="pl-dialog-body">
-        <label className="pl-field">Give your day a name<input required maxLength={80} value={draft.title} onChange={e => update('title', e.target.value)}/></label>
+        <label className="pl-field">Give your day a name<input maxLength={80} placeholder="Optional. We can name it for you." value={draft.title} onChange={e => update('title', e.target.value)}/></label>
         <div className="pl-field-grid">
           <label className="pl-field">City or neighborhood<input readOnly={!!onLocation} required={!onLocation} minLength={2} maxLength={160} aria-label="City or neighborhood" placeholder="e.g. Shibuya, Tokyo, Japan" value={draft.area} onChange={e => update('area', e.target.value)}/>{onLocation&&<button type="button" className="pl-text-button" onClick={()=>onLocation(draft)}>Change planning area</button>}</label>
           <label className="pl-field">When<input required type="date" value={draft.timing?.dateConfirmed!==false?draft.date:''} onChange={e => update('date', e.target.value)}/></label>
@@ -42,7 +42,7 @@ export default function TripEditor({ brief, onClose, onSubmit, hasPlan, groupMan
           <label className="pl-field">Children<input required type="number" min="0" max="6" value={draft.party.children} onChange={e => { const children = Number(e.target.value); setDraft(d => ({ ...d, party: { ...d.party, children }, activities: children ? d.activities.filter(a => a !== 'drinks') : d.activities })); }}/></label>
           <label className="pl-field">{draft.timing?.mode==='flexible'?'Earliest start':'Start time'}<input required type="time" value={draft.startTime} onChange={e => update('startTime', e.target.value)}/></label>
           <label className="pl-field">Back by<input required type="time" value={draft.endTime} onChange={e => update('endTime', e.target.value)}/></label>
-          <label className="pl-field">Whole group budget<input required type="number" min="1" max="10000000" value={draft.budget} onChange={e => update('budget', Number(e.target.value))}/></label>
+          <label className="pl-field">Whole group budget<input required type="number" min="1" max="10000000" value={draft.budget??""} onChange={e => update('budget', e.target.value===""?null:Number(e.target.value))}/></label>
           <label className="pl-field">Currency<select value={draft.currency||'GHS'} onChange={e=>setDraft(d=>({...d,currency:e.target.value,currencyMode:'custom'}))}>{CURRENCIES.map(c=><option key={c}>{c}</option>)}</select></label><label className="pl-field">Pace<select value={draft.pace} onChange={e => update('pace', e.target.value)}><option value="easy">Easy does it · 30 min buffers</option><option value="balanced">A little fuller · 20 min buffers</option></select></label>
         </div>
         <ActivityChoices activities={draft.activities} children={draft.party.children} onChange={activities=>update('activities',activities)}/>
