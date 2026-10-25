@@ -9,8 +9,7 @@ services:
     restart: unless-stopped
     init: true
     env_file:
-      - path: /opt/unstressed/.env
-        format: raw
+      - /opt/unstressed/.env
     ports:
       - "127.0.0.1:13000:4000"
     volumes:
