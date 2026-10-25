@@ -28,8 +28,9 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
   if(!['local','custom'].includes(currencyMode))throw new InputError('Choose local currency or a custom currency.');
   const date = body.date === undefined ? new Date().toISOString().slice(0,10) : body.date;
   if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date)) || new Date(date).toISOString().slice(0,10) !== date) throw new InputError('Choose a valid date.');
-  const timing=object(body.timing??{dateConfirmed:true,timeConfirmed:true,mode:'fixed'},['dateConfirmed','timeConfirmed','mode'],'timing');
+  const timing=object(body.timing??{dateConfirmed:true,timeConfirmed:true,mode:'fixed'},['dateConfirmed','timeConfirmed','mode','window'],'timing');
   if(typeof timing.dateConfirmed!=='boolean'||typeof timing.timeConfirmed!=='boolean'||!['fixed','flexible'].includes(timing.mode))throw new InputError('Choose a date and whether your start time is flexible.');
+  if(timing.window!==undefined&&!['any','morning','afternoon','evening','custom'].includes(timing.window))throw new InputError('Choose a supported time window.');
   const party = object(body.party ?? {}, ['adults','children'], 'party');
   const adults = integer(party.adults ?? 2,1,8,'Adults'), children = integer(party.children ?? 0,0,6,'Children');
   const people = body.people ?? [{ name: 'You', artists: [], vibes: [] }];
