@@ -17,6 +17,6 @@ export default function PlanReview({brief,deck,hasPlan,confirmed,busy,onActiviti
     <button className="cs-review-row" onClick={()=>onTool('timing')}><Icon name="calendar" size={19}/><span><strong>Date & time</strong><small>{brief.timing?.dateConfirmed!==false?dateLabel(brief.date):'Choose a day'} · {timingLabel(brief)}</small></span><span className="cs-review-edit">Edit</span></button>
     <button className="cs-review-row" onClick={onDetails}><Icon name="wallet" size={19}/><span><strong>{brief.budget==null?'Budget open to suggestions':`${formatMoney(brief.budget,brief.currency)} group allowance`}</strong><small>Activities, budget and other details</small></span><span className="cs-review-edit">Edit</span></button>
     <p className="cs-review-note">{favorites?'I’ll use everyone’s tastes to find the places.':'You can add tastes first, or ask me to start with the area and activities.'}</p>
-    <button className="cs-review-plan" disabled={busy||!brief.activities.length} onClick={onPlan}>{!brief.activities.length?'Choose what to do':!confirmed?'Choose an area':needsTiming(brief)?'Choose when to go':hasPlan?'Update my plan':'Plan it'}<Icon name="arrow" size={16}/></button>
+    
   </section>;
 }
