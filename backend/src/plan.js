@@ -129,8 +129,11 @@ export function rankPlaces(places, request, { source = "qloo", retrievedAt = new
     if (matched.length) item.reasons.push({ code: "vibe_match", text: `Matching tags: ${matched.map((v) => v.label).join(", ")}.`, evidence: matched.flatMap((v) => tags.filter((t) => matchesTasteTag(v,t.id)).map((t) => ({ field: "tags", value: t.id }))) });
     if (penalty) item.reasons.push({ code: "noise_penalty", text: "Ranked lower after your noise feedback because of music or nightlife tags.", evidence: noiseTags.map((t) => ({ field: "tags", value: t.id })) });
     if (request.constraints.maxPriceLevel !== undefined) item.reasons.push({ code: "price_match", text: `Provider price tier ${priceOf(p)} is within your cap.`, evidence: [{ field: "properties.price_level", value: priceOf(p) }] });
-    item.score = +Math.max(0, base + boost - penalty).toFixed(4);
-    item.scoreComponents = { providerOrder: +base.toFixed(4), vibeBoost: boost, noisePenalty: penalty };
+    // Grounded venue-detail completeness is a small tiebreaker, not proof of
+    // quality, price or opening hours. Relevance and direct taste evidence lead.
+    const detailBonus=(item.description?0.03:0)+(item.links.menu?0.03:0)+(item.links.website?0.02:0)+(item.links.phone?0.01:0);
+    item.score = +Math.max(0, base + boost + detailBonus - penalty).toFixed(4);
+    item.scoreComponents = { providerOrder: +base.toFixed(4), vibeBoost: boost, detailBonus, noisePenalty: penalty };
     item.matchedVibes = matched.map((v) => v.label);
     item.why = explainCandidate(item);
     ranked.push(item);
