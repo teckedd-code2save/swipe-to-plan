@@ -244,3 +244,5 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 }
 
 .cs-result-next-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}.cs-day-footer{flex-wrap:wrap}.cs-result-next-actions button:first-child{background:#4d6247;color:#fff}
+
+.cs-menu-choice{display:flex;align-items:center;gap:10px;padding:10px 0}.cs-menu-choice input{width:18px;height:18px;accent-color:#4d6247}
