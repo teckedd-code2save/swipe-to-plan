@@ -31,6 +31,13 @@ test('today cannot start in the past; flexible plans leave 30 minutes to get rea
 test('destination-local dates handle crossing midnight and UTC differences',()=>{
   assert.equal(localNow('Asia/Tokyo',Date.parse('2026-10-24T17:00Z')).date,'2026-10-25');assert.equal(localDate('America/Los_Angeles',0,Date.parse('2026-10-24T02:00Z')),'2026-10-23');assert.equal(localDate('Africa/Accra',0,now),'2026-10-24');
 });
+
+test('choose-for-me can use late reported hours beyond the old 21:00 cutoff',async()=>{
+  const r=request({activities:['drinks'],startTime:'00:00',endTime:'23:59',timing:{dateConfirmed:true,timeConfirmed:true,mode:'flexible',window:'any'}});
+  const bar=place('late-bar','18:00','23:59');
+  const result=await schedulePlaces([[bar]],makeSchedule(r),r,{now:Date.parse('2026-10-24T22:07Z'),timeZone:'Africa/Accra',details:async()=>bar});
+  assert.equal(result.stops[0].item.id,'late-bar');assert.equal(result.stops[0].start,'22:45');assert.equal(result.stops[0].end,'23:45');
+});
 test('an unfilled coffee after noon has no placeholder time and does not delay lunch',async()=>{
   const r=request({activities:['coffee','dinner']}),meal=place('lunch','06:00','22:00');
   const result=await schedulePlaces([[],[meal]],makeSchedule(r),r,{now:Date.parse('2026-10-24T12:23Z'),timeZone:'Africa/Accra',details:async()=>meal});
@@ -71,3 +78,4 @@ test('named afternoon windows are deterministic even if the model supplies a fix
   const result=await agent.interpret({message:'Plan a lunch today afternoon',mode:'autopilot',context,locationContext:{confirmed:true}});
   assert.equal(result.request.startTime,'12:00');assert.equal(result.request.endTime,'17:00');assert.equal(result.request.timing.mode,'flexible');assert.equal(result.request.date,context.date);
 });
+
