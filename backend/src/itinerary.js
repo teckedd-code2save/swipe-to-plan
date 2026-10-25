@@ -48,7 +48,7 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
     return { ...(person.id ? {id:person.id} : {}), name: text(person.name,24,'a name'), artists: parsed.taste.artists, vibes: parsed.taste.vibes, ...(spending?{spending}:{}) };
   });
   if (new Set(profiles.filter(p=>p.id).map(p=>p.id)).size !== profiles.filter(p=>p.id).length) throw new InputError('Taste profile IDs must be distinct.');
-  const budget = integer(body.budget,1,10000000,'Group budget');
+  const budget = integer(body.budget === undefined ? 800 : body.budget,1,10000000,'Group budget');
   const currency=body.currency??'GHS';
   if(typeof currency!=='string'||!Intl.supportedValuesOf('currency').includes(currency))throw new InputError('Choose a valid three-letter currency code, such as USD, EUR or GHS.');
   const startTime = clock(body.startTime ?? '11:00'), endTime = clock(body.endTime ?? '18:00');
