@@ -26,6 +26,7 @@ export function Icon({name,size=20,...props}) {
 }
 export function Sun({size=32}) {return <svg className="outing-sun" width={size} height={size} viewBox="0 0 40 40" aria-hidden="true"><g fill="none" stroke="currentColor" strokeWidth="2.7" strokeLinecap="round"><circle cx="20" cy="20" r="7"/>{Array.from({length:12},(_,i)=><path key={i} d="M20 3v4" transform={`rotate(${i*30} 20 20)`}/>)}</g></svg>;}
 export const PERSON_COLORS=['#bb613b','#5b7b65','#7768a8','#b18a35','#427e91','#a6687b'];
-export const ACTIVITY_NAMES={coffee:'Coffee',activity:'Discovery',dinner:'A good meal',drinks:'Drinks'};
+export const ACTIVITY_NAMES={coffee:'Cafés',activity:'Discovery',dinner:'A good meal',drinks:'Drinks'};
 export {money,formatMoney} from './money.js';
 export const dateLabel=(date)=>new Date(`${date}T12:00:00Z`).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',timeZone:'UTC'});
+
