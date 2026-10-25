@@ -25,6 +25,7 @@ export const api = {
   saveCircle:body=>json('/api/account/circles',post(body)),
   emailCircleInvite:(id,email)=>json(`/api/account/circles/${encodeURIComponent(id)}/email-invites`,post({email})),
   acceptEmailCircleInvite:(id,token)=>json(`/api/account/circles/${encodeURIComponent(id)}/email-invites/accept`,post({token})),
+  removeCircleMember:(id,memberId)=>json(`/api/account/circles/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}`,{method:'DELETE',body:'{}'}),
   forgetCircle:id=>json(`/api/account/circles/${encodeURIComponent(id)}`,{method:'DELETE',body:'{}'}),
   circleInvite:(id,token)=>json(`/api/circle-invites/${encodeURIComponent(id)}`,{headers:{'x-circle-invite':token}}),
   joinCircle:(id,body)=>json(`/api/account/circles/${encodeURIComponent(id)}/join`,post(body)),
