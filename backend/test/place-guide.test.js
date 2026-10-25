@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {weeklyHours,checkHours,parsePlaceCheck,createPlaceGuide} from '../src/place-guide.js';
+import {weeklyHours,checkHours,suggestedVisitSlots,parsePlaceCheck,createPlaceGuide} from '../src/place-guide.js';
 import {createQlooClient} from '../src/qloo.js';
 const id='AB662328-C415-495E-B21E-390E20FC08F9';
 const other='AB662328-C415-495E-B21E-390E20FC08F8';
@@ -48,4 +48,13 @@ test('place endpoint uses an exact provider entity and rejects non-place entitie
  const calls=[];const client=createQlooClient({getKey:()=> 'test-only',fetchImpl:async url=>{calls.push(new URL(url));return {ok:true,status:200,json:async()=>({results:[{entity_id:id,types:['urn:entity:artist']}]})};}});
  await assert.rejects(client.getPlace(id));assert.equal(calls[0].pathname,'/entities');assert.equal(calls[0].searchParams.get('entity_ids'),id);
  await assert.rejects(client.getPlace('https://example.com'));assert.equal(calls.length,1);
+});
+
+test('suggested visit slots come from reported opening hours, not inferred kitchen times',()=>{
+  const hours=weeklyHours({sunday:[range('12:00','15:00'),range('18:00','22:00')]});
+  const slots=suggestedVisitSlots(hours,'2026-10-25',60);
+  assert.equal(slots.length,2);
+  assert.equal(slots[0].start,'12:30');
+  assert.equal(slots[0].basis,'reported opening hours only');
+  assert.deepEqual(suggestedVisitSlots(weeklyHours({}),'2026-10-25',60),[]);
 });
