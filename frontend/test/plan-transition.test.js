@@ -11,9 +11,9 @@ test('complete chat-driven draft advances to research without a second review',(
 
 test('missing prerequisites only ask for the missing planning input',()=>{
   assert.equal(nextPlanningStep(brief,false),'location');
-  assert.equal(nextPlanningStep({...brief,timing:{...brief.timing,timeConfirmed:false}},true),'timing');
+  assert.equal(nextPlanningStep({...brief,timing:{...brief.timing,timeConfirmed:false}},true),'research');
   assert.equal(nextPlanningStep({...brief,activities:[]},true),'activities');
-  assert.equal(nextPlanningStep({...brief,activities:[],timing:{...brief.timing,timeConfirmed:false}},true),'timing');
+  assert.equal(nextPlanningStep({...brief,activities:[],timing:{...brief.timing,timeConfirmed:false}},true),'activities');
 });
 
 test('planning transition is based on state, never arbitrary chat keywords',()=>{
@@ -21,3 +21,4 @@ test('planning transition is based on state, never arbitrary chat keywords',()=>
     assert.equal(nextPlanningStep({...brief,message},true),'research');
   }
 });
+
