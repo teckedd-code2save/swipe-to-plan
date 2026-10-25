@@ -42,7 +42,7 @@ export default function TripEditor({ brief, onClose, onSubmit, hasPlan, groupMan
           <label className="pl-field">Children<input required type="number" min="0" max="6" value={draft.party.children} onChange={e => { const children = Number(e.target.value); setDraft(d => ({ ...d, party: { ...d.party, children }, activities: children ? d.activities.filter(a => a !== 'drinks') : d.activities })); }}/></label>
           <label className="pl-field">{draft.timing?.mode==='flexible'?'Earliest start':'Start time'}<input required type="time" value={draft.startTime} onChange={e => update('startTime', e.target.value)}/></label>
           <label className="pl-field">Back by<input required type="time" value={draft.endTime} onChange={e => update('endTime', e.target.value)}/></label>
-          <label className="pl-field">Whole group budget (optional)<input type="number" min="1" max="10000000" value={draft.budget??""} onChange={e => update('budget', e.target.value===""?null:Number(e.target.value))}/></label>
+          <label className="pl-field">Spending limit (optional)<input type="number" min="1" max="10000000" value={draft.budget??""} onChange={e => update('budget', e.target.value===""?null:Number(e.target.value))}/></label>
           <label className="pl-field">Currency<select value={draft.currency||'GHS'} onChange={e=>setDraft(d=>({...d,currency:e.target.value,currencyMode:'custom'}))}>{CURRENCIES.map(c=><option key={c}>{c}</option>)}</select></label><label className="pl-field">Pace<select value={draft.pace} onChange={e => update('pace', e.target.value)}><option value="easy">Easy does it · 30 min buffers</option><option value="balanced">A little fuller · 20 min buffers</option></select></label>
         </div>
         <ActivityChoices activities={draft.activities} children={draft.party.children} onChange={activities=>update('activities',activities)}/>
@@ -58,3 +58,4 @@ export default function TripEditor({ brief, onClose, onSubmit, hasPlan, groupMan
     </form>
   </dialog>;
 }
+
