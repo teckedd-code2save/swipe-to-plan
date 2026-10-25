@@ -5,9 +5,11 @@ import {Icon,PERSON_COLORS} from './PlannerIcons.jsx';
 import {CircleFaces} from './Circles.jsx';
 import {circlePeople} from './circles.js';
 import {tasteFromSwipe} from './day-state.js';
+import {bringCardToFront} from './taste-order.js';
 import ConnectedPeople from './ConnectedPeople.jsx';
 
 export function TasteAction({person,people,deck,onChange,onPerson,onDone,editable,personal=false}){
+  const decisionLock=useRef(false);
   const [orders,setOrders]=useState({}),[histories,setHistories]=useState({}),[category,setCategory]=useState('food'),[error,setError]=useState(''),[custom,setCustom]=useState(''),[name,setName]=useState(person.name);
   const current=useRef(person);current.current=person;
   useEffect(()=>setName(person.name),[person.id,person.name]);
@@ -16,20 +18,22 @@ export function TasteAction({person,people,deck,onChange,onPerson,onDone,editabl
   const byId=new Map(original.map(card=>[card.id,card]));
   const ordered=[...(orders[scope]||[]).map(id=>byId.get(id)).filter(Boolean),...original.filter(card=>!(orders[scope]||[]).includes(card.id))];
   const history=histories[scope]||[];
+  useEffect(()=>{decisionLock.current=false;},[scope,history.length]);
   const setHistory=update=>setHistories(state=>({...state,[scope]:update(state[scope]||[])}));
   function change(value){onChange(value);setError('');}
   function addArtist(event){event.preventDefault();const label=custom.trim();if(!label)return;try{change(tasteFromSwipe(current.current,{kind:'artist',label},true));setCustom('');}catch(e){setError(e.message);}}
   function decideCard(id,like){
     const index=ordered.findIndex(card=>card.id===id);
-    if(index<history.length||!editable)return;
+    if(index<history.length||!editable||decisionLock.current)return;
+    decisionLock.current=true;
     const card=ordered[index];
     try{
       const key=card.kind==='artist'?'artists':'vibes',before=[...current.current[key]];
       change(tasteFromSwipe(current.current,card,like));
-      const arranged=[...ordered.slice(0,history.length),card,...ordered.slice(history.length).filter(item=>item.id!==id)];
+      const arranged=bringCardToFront(ordered,history.length,id);
       setOrders(old=>({...old,[scope]:arranged.map(item=>item.id)}));
       setHistory(list=>[...list,{id:card.id,like,key,before}]);
-    }catch(e){setError(e.message);}
+    }catch(e){decisionLock.current=false;setError(e.message);}
   }
   function decide(like){const card=ordered[history.length];if(card)decideCard(card.id,like);}
   function undo(){const last=history.at(-1);if(last){change({...current.current,[last.key]:last.before});setHistory(list=>list.slice(0,-1));}}
