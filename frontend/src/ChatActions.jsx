@@ -1,6 +1,7 @@
 import {CURRENCIES} from './money.js';
 import {useEffect,useRef,useState} from 'react';
 import SwipeDeck from './SwipeDeck.jsx';
+import {tailorTasteCards} from './taste-context.js';
 import {Icon,PERSON_COLORS} from './PlannerIcons.jsx';
 import {CircleFaces} from './Circles.jsx';
 import {circlePeople} from './circles.js';
@@ -8,13 +9,13 @@ import {tasteFromSwipe} from './day-state.js';
 import {bringCardToFront} from './taste-order.js';
 import ConnectedPeople from './ConnectedPeople.jsx';
 
-export function TasteAction({person,people,deck,onChange,onPerson,onDone,editable,personal=false}){
+export function TasteAction({person,people,deck,onChange,onPerson,onDone,editable,personal=false,focus=null,suggestedIds=[]}){
   const decisionLock=useRef(false);
-  const [orders,setOrders]=useState({}),[histories,setHistories]=useState({}),[category,setCategory]=useState('food'),[error,setError]=useState(''),[custom,setCustom]=useState(''),[name,setName]=useState(person.name);
+  const [orders,setOrders]=useState({}),[histories,setHistories]=useState({}),[category,setCategory]=useState(focus||'food'),[error,setError]=useState(''),[custom,setCustom]=useState(''),[name,setName]=useState(person.name);
   const current=useRef(person);current.current=person;
   useEffect(()=>setName(person.name),[person.id,person.name]);
   const scope=`${person.id}:${category}`;
-  const original=deck.filter(card=>(card.group||(card.kind==='artist'?'music':'mood'))===category);
+  const original=tailorTasteCards(deck,person,category,suggestedIds);
   const byId=new Map(original.map(card=>[card.id,card]));
   const ordered=[...(orders[scope]||[]).map(id=>byId.get(id)).filter(Boolean),...original.filter(card=>!(orders[scope]||[]).includes(card.id))];
   const history=histories[scope]||[];
@@ -41,14 +42,14 @@ export function TasteAction({person,people,deck,onChange,onPerson,onDone,editabl
   function spending(patch){change({...current.current,spending:{style:'balanced',priority:'even',...current.current.spending,...patch}});}
   const style=person.spending?.style||'balanced',priority=person.spending?.priority||'even',favorites=person.artists.length+person.vibes.length;
   return <section className="cs-tool cs-tastes cs-tastes-open" aria-label={`${person.name}'s tastes`}>
-    <div className="cs-tool-head"><span><Icon name="music" size={18}/>{personal?'My tastes':'Shape the tastes'}</span><button type="button" onClick={onDone}>Done <Icon name="check" size={14}/></button></div>
+    <div className="cs-tool-head"><span><Icon name="music" size={18}/>{personal?'My tastes':focus?({food:'Food for this outing',activity:'What would you enjoy?',mood:'The setting you want',music:'Music you enjoy'})[focus]:'Shape the tastes'}</span><button type="button" onClick={onDone}>{focus?'Continue':'Done'} <Icon name="check" size={14}/></button></div>
     <div className="cs-taste-person">{personal?<strong>{person.name}</strong>:<select aria-label="Whose tastes" value={person.id} onChange={e=>onPerson?.(e.target.value)}>{people.map(p=><option key={p.id} value={p.id}>{p.name==='You'?'Your tastes':`${p.name}’s tastes`}</option>)}</select>}<small>{favorites} favorites · changes saved as you go</small></div>
-    <div className="cs-tastes-open-layout">
+    <div className="cs-tastes-open-layout" style={focus?{display:'block'}:undefined}>
       <div className="cs-tastes-discover"><div className="cs-taste-section-heading"><h3>Discover</h3><span>Swipe cards or explore the stack</span></div>
-        <div className="cs-taste-categories" role="group" aria-label="Explore taste categories">{[['food','Food'],['activity','Things to do'],['mood','Mood'],['music','Music']].map(([id,label])=><button key={id} type="button" aria-pressed={category===id} onClick={()=>setCategory(id)}>{label}</button>)}</div>
+        {!focus&&<div className="cs-taste-categories" role="group" aria-label="Explore taste categories">{[['food','Food'],['activity','Things to do'],['mood','Mood'],['music','Music']].map(([id,label])=><button key={id} type="button" aria-pressed={category===id} onClick={()=>setCategory(id)}>{label}</button>)}</div>}
         {editable?<SwipeDeck key={scope} deck={ordered} history={history} onDecide={decide} onDecideCard={decideCard} onUndo={undo} onDone={onDone} doneLabel="Done exploring" onAddMissing={category==='music'?(label)=>{try{change(tasteFromSwipe(current.current,{kind:'artist',label},true));}catch(e){setError(e.message);}}:undefined} completeText="Your favorites are saved. Explore another category or continue chatting."/>:<p className="cs-muted">Only this person can edit their own tastes.</p>}
       </div>
-      <div className="cs-tastes-preferences">
+      {!focus&&<div className="cs-tastes-preferences">
         <section className="cs-taste-picked" aria-label="Selected favorites">
           <div className="cs-taste-section-heading"><h3>Your favorites</h3><span>{favorites} saved</span></div>
           {editable&&<label className="cs-name-edit">Name<input aria-label="Person’s name" maxLength={24} value={name} onChange={e=>setName(e.target.value)} onBlur={()=>{if(name.trim()&&name.trim()!==person.name)change({...current.current,name:name.trim()});else setName(person.name);}}/></label>}
@@ -67,7 +68,7 @@ export function TasteAction({person,people,deck,onChange,onPerson,onDone,editabl
           <label className="cs-field-label" htmlFor="cs-spend-priority">Where would you spend more?</label>
           <select id="cs-spend-priority" disabled={!editable} value={priority} onChange={e=>spending({priority:e.target.value})}>{[['even','A bit of everything'],['coffee','Coffee'],['dinner','A great meal'],['activity','Experiences'],['drinks','Drinks']].map(([id,label])=><option key={id} value={id}>{label}</option>)}</select>
         </section>
-      </div>
+      </div>}
     </div>
     <p className="cs-spend-note">Tastes guide discovery, not verified allergies, affordability or venue suitability.</p>
     {personal&&<small className="cs-tool-foot">Saved to your account. Your circle members see your latest tastes.</small>}
@@ -89,3 +90,4 @@ export function PeopleAction({people,contacts,owner,memberId,onTaste,onAdd,onRem
 
 
 export {default as LocationAction} from './LocationAction.jsx';
+
