@@ -1,7 +1,10 @@
 name: unstressed
 services:
   web:
-    image: ${UNSTRESSED_IMAGE:?Set UNSTRESSED_IMAGE to an immutable release tag}
+    image: ${UNSTRESSED_IMAGE:-unstressed-web:local}
+    build:
+      context: ..
+      dockerfile: Dockerfile
     container_name: unstressed-web
     restart: unless-stopped
     init: true
