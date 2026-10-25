@@ -20,3 +20,9 @@ test('unknown budgets survive repeated parsing, activity changes and currencies 
   assert.equal(allocation.total,null);assert.equal(allocation.reserve,null);assert.equal(allocation.transport,null);assert.ok(allocation.allocations.every(a=>a.amount===null));
  }
 });
+
+test('an unspecified evening outing never defaults to a meal or invented spend',async()=>{
+ const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('autopilot_day',{changes:{},message:'I’ll look for a change of scene.'})});
+ const result=await agent.interpret({message:'Somewhere to unwind after work',context:draft(),mode:'autopilot',locationContext:{confirmed:true}});
+ assert.deepEqual(result.request.activities,['activity']);assert.equal(result.request.budget,null);assert.equal(result.request.party.adults,1);
+});
