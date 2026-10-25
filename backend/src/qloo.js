@@ -112,7 +112,7 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
       cache.set(key, { at: now(), value });
       return value;
     },
-    async discover({ signalIds, area,locationId,tagSignals=[],includeActivity=false }) {
+    async discover({ signalIds, area,locationId,tagSignals=[],includeActivity=false,includeDrinks=false }) {
       const chosen=locationId?await getLocation(locationId):null;
       const parameters={
         "filter.type": "urn:entity:place", "signal.interests.entities": signalIds.join(","),
@@ -121,13 +121,18 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
         ...(chosen?{'filter.location':chosen.id}:{'filter.location.query':locationQuery(area)}), "filter.location.radius":0, take: 50,
       };
       const retrieve=async params=>{const items=await call('/v2/insights',params,chosen?undefined:area);if(chosen)items.locality={...chosen,query:area,method:'qloo_locality_filter',radius:0};return items;};
-      if(!includeActivity)return retrieve(parameters);
-      // An explicit discovery stop needs its own candidate pool; dining-heavy
-      // artist results alone can otherwise crowd out museums and green spaces.
-      const requested=tagSignals.filter(s=>byId[s.preferenceId]?.group==='activity').flatMap(s=>s.tagIds);
-      const categories=(requested.length?requested:[...await tasteTags('v-history'),...await tasteTags('v-nature')]).filter(id=>/^urn:tag:category:place:[^:]+$/.test(id));
-      const results=await Promise.all([retrieve(parameters),...(categories.length?[retrieve({...parameters,'filter.tags':categories.join(','),'operator.filter.tags':'union'})]:[])]);
+      if(!includeActivity&&!includeDrinks)return retrieve(parameters);
+      // Retrieve the requested venue types as well as the taste-led pool, so a
+      // dining-heavy result cannot hide eligible bars or discovery venues.
+      const categories=[];
+      if(includeActivity){
+        const requested=tagSignals.filter(s=>byId[s.preferenceId]?.group==='activity').flatMap(s=>s.tagIds);
+        categories.push(...(requested.length?requested:[...await tasteTags('v-history'),...await tasteTags('v-nature')]).filter(id=>/^urn:tag:category:place:[^:]+$/.test(id)));
+      }
+      if(includeDrinks)categories.push(...await tasteTags('v-bar'),...await tasteTags('v-club'));
+      const results=await Promise.all([retrieve(parameters),...(categories.length?[retrieve({...parameters,'filter.tags':[...new Set(categories)].join(','),'operator.filter.tags':'union'})]:[])]);
       return Object.assign([...new Map(results.flat().map(place=>[place.entity_id,place])).values()],{locality:results[0].locality});
     },
   };
 }
+
