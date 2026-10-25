@@ -2,7 +2,7 @@ import {useState} from 'react';
 import {Icon} from './PlannerIcons.jsx';
 
 export default function ConnectedPeople({people,connections,circles,onAdd,onInvite,onEmailInvite,initialQuery=''}){
-  const [email,setEmail]=useState(''),[sent,setSent]=useState(false),[query,setQuery]=useState(initialQuery),[inviting,setInviting]=useState(!!initialQuery),[circleId,setCircleId]=useState('new'),[name,setName]=useState('My people'),[invite,setInvite]=useState(null),[busy,setBusy]=useState(false),[copied,setCopied]=useState(false),[error,setError]=useState('');
+  const [email,setEmail]=useState(''),[sent,setSent]=useState(false),[query,setQuery]=useState(initialQuery),[inviting,setInviting]=useState(!!initialQuery),[circleId,setCircleId]=useState('new'),[name,setName]=useState('My people'),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const matches=connections.filter(p=>p.name.toLowerCase().includes(query.trim().toLowerCase()));
   const available=circles.filter(c=>c.owner&&c.people.length<6);
   async function run(fn){setError('');setBusy(true);try{await fn();}catch(e){setError(e.message);}finally{setBusy(false);}}
@@ -13,7 +13,7 @@ export default function ConnectedPeople({people,connections,circles,onAdd,onInvi
     <div className="cs-connection-results">{matches.slice(0,6).map(person=>{const here=people.some(p=>p.id===person.id);return <button className="cs-saved-person" key={person.id} disabled={busy||here||people.length>=6} onClick={()=>run(()=>onAdd(person))}><span><strong>{person.name}</strong><small>{circles.filter(c=>c.accountIds?.includes(person.id)).map(c=>c.name).join(' · ')}</small></span><span>{here?'In this day':'Add'}<Icon name={here?'check':'plus'} size={14}/></span></button>;})}</div>
     {!matches.length&&<p className="cs-muted">{query?`No one named “${query}” in your circles yet.`:'Your people will appear here after they accept a circle invitation.'}</p>}
     {!inviting?<button className="cs-text-button" onClick={()=>setInviting(true)}><Icon name="plus" size={14}/>{query?`Invite ${query.slice(0,24)}`:'Invite someone new'}</button>:<div className="cs-circle-invitation">
-      <div className="cs-tool-head"><span><Icon name="people" size={16}/>A place in your circle</span><button aria-label="Close invitation" onClick={()=>{setInviting(false);setInvite(null);}}><Icon name="close" size={14}/></button></div>
+      <div className="cs-tool-head"><span><Icon name="people" size={16}/>A place in your circle</span><button aria-label="Close invitation" onClick={()=>{setInviting(false);}}><Icon name="close" size={14}/></button></div>
       <p>Enter their email. They will only appear in your circle after accepting the invitation.</p>
       <label>Invite into<select value={circleId} onChange={e=>setCircleId(e.target.value)} aria-label="Circle for this invitation"><option value="new">A new circle</option>{available.map(c=><option value={c.id} key={c.id}>{c.name}</option>)}</select></label>
       {circleId==='new'&&<label>Circle name<input aria-label="New circle name" maxLength={40} value={name} onChange={e=>setName(e.target.value)}/></label>}
