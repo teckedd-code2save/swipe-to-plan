@@ -4,6 +4,7 @@ import {schedulePlaces,localNow} from '../src/scheduling.js';
 import {weeklyHours} from '../src/place-guide.js';
 import {parseItinerary,makeSchedule,buildItinerary} from '../src/itinerary.js';
 import {createAgent} from '../src/agent.js';
+import {createDiscovery} from '../src/plan.js';
 import {localDate,needsTiming} from '../../frontend/src/timing.js';
 const now=Date.parse('2026-10-24T08:00:00Z');
 const request=changes=>parseItinerary({area:'Accra',date:'2026-10-24',activities:['dinner'],startTime:'09:00',endTime:'18:00',timing:{dateConfirmed:true,timeConfirmed:true,mode:'flexible'},...changes});
@@ -59,13 +60,15 @@ test('an elapsed or too-short remaining window leaves unscheduled slots, never s
     assert.equal(result.stops[0].item,null);assert.equal(result.stops[0].start,null);assert.equal(result.stops[0].end,null);
   }
 });
-test('unconfirmed date or time cannot start discovery',async()=>{
-  const r=request({timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}});assert.equal(needsTiming(r),true);await assert.rejects(buildItinerary({},r),/Choose when/);
+test('unconfirmed timing permits place discovery without fabricated dates or visit times',async()=>{
+  const r=request({timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}});assert.equal(needsTiming(r),true);
+  const discovery=createDiscovery({provider:{name:'qloo',discover:async()=>[{entity_id:'one',name:'A real option',tags:[{id:'urn:tag:category:qloo:restaurant'}],properties:{address:'Accra Ghana'}}]}});
+  const plan=await buildItinerary(discovery,r);assert.equal(plan.phase,'discovery');assert.equal(plan.stops[0].item.entityId,'one');assert.equal(plan.stops[0].start,null);assert.equal(plan.request.timing.dateConfirmed,false);
 });
-test('an open agent request preserves unconfirmed timing and asks before discovery',async()=>{
+test('an open agent request preserves unknown timing and proceeds to discovery',async()=>{
   const context=request({timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}});
   const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>({ok:true,json:async()=>({choices:[{message:{tool_calls:[{function:{name:'revise_day',arguments:JSON.stringify({title:'A solo date'})}}]}}]})})});
-  const result=await agent.interpret({message:'plan for me a solo date inside accra',context,locationContext:{confirmed:true}});assert.equal(result.action,'set_timing');assert.equal(result.request.date,'2026-10-24');assert.equal(result.request.timing.dateConfirmed,false);
+  const result=await agent.interpret({message:'plan for me a solo date inside accra',context,locationContext:{confirmed:true}});assert.equal(result.status,'ready');assert.equal(result.request.date,'2026-10-24');assert.equal(result.request.timing.dateConfirmed,false);
 });
 test('an explicit chat time switches flexible scheduling to a fixed start without changing the date',async()=>{
   const context=request({});const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>({ok:true,json:async()=>({choices:[{message:{tool_calls:[{function:{name:'revise_day',arguments:JSON.stringify({startTime:'12:00',timing:{dateConfirmed:true,timeConfirmed:true,mode:'fixed'}})}}]}}]})})});
