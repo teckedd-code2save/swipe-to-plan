@@ -212,3 +212,14 @@ test('serving alcohol does not establish a bar venue or a cocktail-bar taste mat
   const meal=rankPlaces([pizza],request({intent:'dinner',taste:{vibes:['v-bar']}}));
   assert.equal(meal.ranked[0].scoreComponents.vibeBoost,0);
 });
+
+test('nearby suggestions require coordinates within the declared radius rather than area-name guesses',()=>{
+  const locality={scope:'nearby',query:'Selected Area',id:'area',center:{latitude:5.6,longitude:-.2},radiusKm:20};
+  const near={...venue('near','bar','Another district'),location:{lat:5.65,lon:-.2}};
+  const far={...venue('far','bar','Selected Area'),location:{lat:6.6,lon:-.2}};
+  const missing=venue('unknown','bar','Selected Area');
+  const result=rankPlaces([far,missing,near],request({intent:'drinks',location:{area:'Selected Area'}}),{locality});
+  assert.deepEqual(result.ranked.map(i=>i.id),['qloo:near']);
+  assert.equal(result.ranked[0].nearby.distanceKm,6);
+  assert.equal(result.ranked[0].nearby.radiusKm,20);
+});
