@@ -5,13 +5,16 @@ import {formatMoney} from './money.js';
 
 export function usePlaceChecks(plan) {
   const stops = plan?.stops.filter(s=>s.item?.entityId&&s.item?.provenance?.provider==='qloo').map(s=>({entityId:s.item.entityId,start:s.start,end:s.end})) || [];
-  const payload = stops.length ? JSON.stringify({date:plan.request.date,stops}) : '';
+  const discovery=plan?.phase==='discovery'||plan?.phase==='needs_timing';
+  const payload = stops.length ? JSON.stringify({date:plan.request.date,stops,discovery}) : '';
   const [state,setState] = useState({key:'',status:'idle'}), [revision,setRevision] = useState(0);
   useEffect(()=>{
     if(!payload || !JSON.parse(payload).stops.length) return;
     const abort = new AbortController();
     setState({key:payload,status:'loading'});
-    api.placeChecks(JSON.parse(payload),abort.signal).then(data=>{if(!abort.signal.aborted)setState({key:payload,status:'ready',data});}).catch(e=>{if(!abort.signal.aborted)setState({key:payload,status:'error',error:e.message});});
+    const request=JSON.parse(payload);
+    const task=request.discovery?Promise.all(request.stops.map(async stop=>{try{const place=await api.place(stop.entityId,abort.signal);return {...stop,place,hours:{status:'unknown',summary:'Choose a time to check reported opening hours.'},menu:{status:place.links?.menu?'link_available':place.highlights?.length?'highlights_only':'unknown',highlights:place.highlights||[],link:place.links?.menu||null,priceVerified:false}};}catch{return {...stop,error:'Venue details could not be loaded.'};}})).then(stops=>({stops})):api.placeChecks({date:request.date,stops:request.stops},abort.signal);
+    task.then(data=>{if(!abort.signal.aborted)setState({key:payload,status:'ready',data});}).catch(e=>{if(!abort.signal.aborted)setState({key:payload,status:'error',error:e.message});});
     return ()=>abort.abort();
   },[payload,revision]);
   return {...(state.key===payload?state:{status:payload?'loading':'idle'}),refresh:()=>setRevision(v=>v+1)};
@@ -47,7 +50,7 @@ export function BeforeGoing({plan,checks,done,setDone,onDetails}) {
     <div className="pg-check-places">{filled.map(stop=>{const report=checkedStop(checks,stop);return <button className="pg-check-place" key={stop.id} onClick={()=>onDetails(stop)}><span className="pg-check-time">{stop.start}</span><span><strong>{stop.item.name}</strong><span className={`pg-badge ${hourTone(report?.hours?.status)}`}>{checks.status==='loading'?'Checking hours…':hourLabel(report?.hours?.status)}</span><small>{report?.error||report?.hours?.summary||'Open the place to see its details.'}</small></span><Icon name="arrow" size={18}/></button>;})}</div>
     <p className="pg-note">Weekly hours are a useful first check. Special dates, kitchen hours and availability still need the venue’s confirmation.</p>
     <div className="pg-route"><Icon name="map" size={25}/><div><h3>Your route, ready to open.</h3><p>{filled.length>1?'Your stops are already in order. Choose how you’ll travel.':'Choose how you’ll get there. Maps will ask for your starting point.'}</p><div className="pg-modes" aria-label="Travel mode">{[['walking','Walk'],['transit','Transit'],['driving','Drive']].map(([value,label])=><button key={value} aria-pressed={mode===value} onClick={()=>setMode(value)}>{label}</button>)}</div><a className="pg-link" href={routeLink(plan,mode)} target="_blank" rel="noreferrer">See route & travel times <Icon name="arrowUpRight" size={15}/></a><small>Maps supplies the route estimate. Your plan’s travel buffers haven’t been adjusted.</small></div></div>
-    <div className="pg-human"><h3>The final human touch</h3><p>Each place has an editable enquiry ready for you—your date, group and time included. Open a place to copy it or call the venue.</p><label><input type="checkbox" checked={!!done.book} onChange={e=>setDone(d=>({...d,book:e.target.checked}))}/><span>I’ve confirmed bookings, prices and any specific needs with the venues.</span></label><small>This is your confirmation. Unstressed hasn’t contacted or booked a venue.</small></div>
+    <div className="pg-human"><h3>The final human touch</h3><p>Each place has an editable enquiry ready for you—confirmed visit details included. Open a place to copy it or call the venue.</p><label><input type="checkbox" checked={!!done.book} onChange={e=>setDone(d=>({...d,book:e.target.checked}))}/><span>I’ve confirmed bookings, prices and any specific needs with the venues.</span></label><small>This is your confirmation. Unstressed hasn’t contacted or booked a venue.</small></div>
   </section>;
 }
 export function PlaceCheckNotice({checks,onOpen}) {
@@ -56,6 +59,7 @@ export function PlaceCheckNotice({checks,onOpen}) {
   return <button className="pg-plan-alert" onClick={onOpen}><Icon name="clock" size={17}/><span>{issues===1?'One stop needs a timing check.':`${issues} stops need a timing check.`}<small>I found a mismatch with reported opening hours.</small></span><Icon name="arrow" size={17}/></button>;
 }
 function enquiry(plan,stop) {
+  if(!stop.start||!stop.end)return `Hello ${stop.item.name},\n\nWe’re considering a visit. Could you share your current menu, prices, opening hours and reservation process?\n\nThank you!`;
   return `Hello ${stop.item.name},\n\nWe’re planning to visit on ${dateLabel(plan.request.date)} ${plan.request.date.slice(0,4)}, around ${stop.start}–${stop.end}, with ${plan.request.party.adults} adult${plan.request.party.adults===1?'':'s'}${plan.request.party.children?` and ${plan.request.party.children} ${plan.request.party.children===1?'child':'children'}`:''}.\n\nCould you confirm you’ll be open, whether we need a reservation, and any deposits or entry fees? Please share your current menu or prices${stop.intent==='dinner'||stop.intent==='coffee'?' and the kitchen’s serving hours':''}.\n\nWe’ll confirm any dietary, accessibility or other specific needs with you before visiting.\n\nThank you!`;
 }
 export function PlaceDetails({stop,plan,checks,onClose,onSwap,canSwap}) {
@@ -64,7 +68,7 @@ export function PlaceDetails({stop,plan,checks,onClose,onSwap,canSwap}) {
   useEffect(()=>{const element=dialog.current,trigger=document.activeElement;element.showModal();return()=>{element.close();if(trigger?.isConnected)trigger.focus({preventScroll:true});};},[]);
   async function copy(){try{await navigator.clipboard.writeText(draft);setCopyState('Copied. Ready to send yourself.');}catch{setCopyState('Select and copy the enquiry below.');}}
   return <dialog className="pl-dialog pg-dialog" ref={dialog} onCancel={onClose} aria-labelledby="place-details-title">
-    <div className="pg-dialog-top"><span>{ACTIVITY_NAMES[stop.intent]} · {stop.start}–{stop.end}</span><button type="button" className="pl-dialog-close" aria-label="Close place details" onClick={onClose}>Close<Icon name="close" size={18}/></button></div>
+    <div className="pg-dialog-top"><span>{ACTIVITY_NAMES[stop.intent]} · {stop.start&&stop.end?`${stop.start}–${stop.end}`:"Time to choose"}</span><button type="button" className="pl-dialog-close" aria-label="Close place details" onClick={onClose}>Close<Icon name="close" size={18}/></button></div>
     <div className="pg-dialog-scroll">
       <div className={`pg-photo ${!place.image||imageFailed?'empty':''}`}>{place.image&&!imageFailed?<img src={place.image} alt={place.name} onError={()=>setImageFailed(true)}/>:<Icon name={stop.intent} size={56}/>}<span>YOUR KIND OF PLACE</span></div>
       <div className="pg-detail-body"><div className="pg-place-heading"><h2 id="place-details-title">{place.name}</h2><p><Icon name="pin" size={16}/>{place.address}</p></div>
@@ -80,7 +84,7 @@ export function PlaceDetails({stop,plan,checks,onClose,onSwap,canSwap}) {
         <section className="pg-detail-section pg-menu-context"><span className="pg-eyebrow">MENU AT YOUR VISIT</span><h3>What's known for this stop</h3>
           {report?.menu?.highlights?.length>0?<><p>Provider-reported dishes and highlights (not a full menu):</p><div className="pg-tags">{report.menu.highlights.map((item,i)=><span key={`${item}-${i}`}>{item}</span>)}</div></>:<p>No itemized menu was supplied for this venue.</p>}
           {report?.menu?.link&&<p><a href={report.menu.link} target="_blank" rel="noreferrer">View venue menu <Icon name="arrowUpRight" size={13}/></a></p>}
-          <p className="pg-note">Prices, meal-specific menu hours and item availability haven't been verified. Your planned stop is {stop.start}–{stop.end}.</p>
+          <p className="pg-note">Prices, meal-specific menu hours and item availability haven't been verified. {stop.start&&stop.end?`Your planned stop is ${stop.start}–${stop.end}.`:'Choose a visit time after exploring the options.'}</p>
           {report?.hours?.status!=='fits_reported_hours'&&report?.suggestedSlots?.length>0&&<div className="pg-menu-slots"><strong>Possible times based on opening hours</strong>{report.suggestedSlots.map(slot=><p key={slot.start}>{slot.start}–{slot.end} · {slot.basis}</p>)}<small>These are not confirmed kitchen or reservation slots.</small></div>}
         </section>
         {!!stop.connections.length&&<section className="pg-detail-section"><span className="pg-eyebrow">THE PEOPLE BEHIND THIS PICK</span><h3>A few familiar threads.</h3><div className="pg-connections">{plan.people.map((person,index)=>{const edges=stop.connections.filter(e=>e.personId===person.id);return edges.length?<div key={person.id}><span className="cs-person-dot" style={{background:PERSON_COLORS[index%6]}}>{person.name[0]}</span><div><strong>{person.name}</strong>{edges.map(edge=><p key={edge.id}><b>{plan.tasteMap.nodes.find(n=>n.id===edge.from)?.label}</b><span>{edge.kind==='search_signal'?'Used to discover this place; not a confirmed individual match.':edge.label}</span></p>)}</div></div>:null;})}</div></section>}
