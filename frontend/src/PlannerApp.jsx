@@ -475,7 +475,7 @@ export default function PlannerApp() {
         else {setTab(result.panel==='budget'?'budget':result.panel==='checks'?'checklist':'itinerary');setPlanOpen(true);append('assistant',result.assistantMessage||(planRef.current?(result.panel==='checks'?'I’m comparing your times with reported hours and gathering the venue details. You’ll see what still needs confirming.':'Here’s the current day.'):'Tell me the outing you have in mind, and we can shape it together.'));}
       }else if(result.status==='needs_input')append('assistant',result.question);
       else if(result.status==='reply')append('assistant',result.text);
-      else {if(!owner)throw Error('Only the organizer can change the trip details.');showWhenReady.current=true;const {assistantMessage,...planned}=result;if(assistantMessage)append('assistant',assistantMessage);if(shared.linked)await shared.updateBrief(result.request,revision);else accept(planned);}
+      else if(result.status==='ready'){if(!owner)throw Error('Only the organizer can change the trip details.');if(result.assistantMessage)append('assistant',result.assistantMessage);replaceBrief(result.request);showWhenReady.current=true;await build(result.request,undefined,revision);}else throw Error('The planning response was not understood. Please retry your request.');
     }catch(e){setError(e.message);setRevisionFailed(true);setMessage(sent);setAutopilotPhase('');autopilotPending.current=null;}
     finally{working.current=false;setBusy(false);}
   }
