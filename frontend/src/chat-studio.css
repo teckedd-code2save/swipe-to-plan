@@ -145,3 +145,7 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 .cs-result-edit button{display:flex;align-items:center;gap:7px;color:var(--cs-green)!important;font-size:11px;padding:7px 10px;border-radius:8px}
 .cs-result-edit button:hover{background:var(--cs-soft)}
 @media(max-width:600px){.cs-result-edit{padding:0 17px 7px}}
+
+/* Single contextual action belongs to chat, not the draft editor. */
+.cs-send:has(.cs-plan-submit-label){width:auto;min-width:86px;border-radius:18px;padding:0 11px;display:flex;align-items:center;justify-content:center;gap:7px}
+.cs-plan-submit-label{font-size:11px;font-weight:600;white-space:nowrap}
