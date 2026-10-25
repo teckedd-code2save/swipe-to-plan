@@ -2,7 +2,8 @@ import {locationId as parseLocationId} from './locations.js';
 import { parseArea, InputError, parseRequest } from './contract.js';
 import { byId,matchesTasteTag } from './deck.js';
 import { mergeGroup } from './plan.js';
-import { schedulePlaces } from './scheduling.js';
+import { schedulePlaces,discoverPlaces } from './scheduling.js';
+import {suggestedActivities} from './activity-suggestions.js';
 import {rerankForExperience} from './experience.js';
 
 export const ACTIVITIES = ['coffee', 'activity', 'dinner', 'drinks'];
@@ -69,7 +70,7 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
   const experienceInput=body.experience===undefined?null:object(body.experience,['cuisine','atmosphere','occasion','notes'],'experience');
   const experience=experienceInput?Object.fromEntries(Object.entries(experienceInput).map(([key,value])=>[key,text(value,key==='notes'?220:80,key)])):{};
   const request = { title: text((typeof body.title==='string'&&!body.title.trim()||body.title==null ? null : body.title) || (activities.length ? `${activities.map(item=>({coffee:'Coffee',activity:'Something fun',dinner:'Dinner',drinks:'Drinks'}[item])).join(' & ')}${area?' in '+area.split(',')[0]:''}` : children ? 'Family day' : adults > 2 ? 'A day together' : 'A day out'),80,'a title'), area,...(locationId?{locationId}:{}),currencyMode, timing:{...timing}, date, party:{ adults, children }, people:profiles, budget, currency, startTime, endTime, pace, activities, ...(Object.keys(experience).length?{experience}:{}), pins:{...pins}, excludeIds:constraints.excludeIds, ...(body.maxPriceLevel !== undefined ? { maxPriceLevel:body.maxPriceLevel } : {}) };
-  makeSchedule(request); // Fail an impossible time window before any provider calls.
+  if(request.timing.dateConfirmed&&request.timing.timeConfirmed)makeSchedule(request); // Only chosen timing constrains scheduling.
   return request;
 }
 
@@ -161,15 +162,16 @@ function resultTitle(request,stops){
 }
 
 export async function buildItinerary(discovery, request) {
-  if(!request.activities.length)throw new InputError('Choose what you’d like to do before finding places.');
-  if(!request.timing.dateConfirmed||!request.timing.timeConfirmed)throw new InputError('Choose when you want to go before planning.');
+  const activityBasis=request.activities.length?'request':'taste_suggestion';
+  if(!request.activities.length)request={...request,activities:suggestedActivities(request.people,request.party),title:''};
+  const exploring=!request.timing.dateConfirmed||!request.timing.timeConfirmed;
   if(request.locationId){
     if(!discovery.location)throw new InputError('Location search is unavailable on this server.');
     const location=await discovery.location(request.locationId);
     if(request.currencyMode==='local'&&!location.currency)throw new InputError('Choose a budget currency for this area.');
     request={...request,area:location.label,currency:request.currencyMode==='local'?location.currency:request.currency};
   }
-  const schedule = makeSchedule(request);
+  const schedule = exploring?request.activities.map(intent=>({intent,start:null,end:null,durationMinutes:DEFAULT_MINUTES[intent],bufferAfterMinutes:0,status:'unscheduled'})):makeSchedule(request);
   const voters=request.people.map((person,index)=>({person,index})).filter(({person})=>person.artists.length||person.vibes.length);
   const participating=voters.length?voters:request.people.map((person,index)=>({person,index}));
   const fetched = await Promise.all(participating.map(async({person,index}) => {
@@ -185,12 +187,20 @@ export async function buildItinerary(discovery, request) {
   const makePools=(limit)=>ranked.map((items,index) => request.pins[request.activities[index]] ? items.filter((item) => item.id===request.pins[request.activities[index]]) : items.filter((item) => !reserved.has(item.id)).slice(0,limit));
   const pools=makePools(8);
   const timeZone=members[0][0].provenance.locality?.timeZone||(['Accra','Osu','East Legon','Cantonments','Labone','Airport Residential'].includes(request.area)?'Africa/Accra':null);
-  let fitted=await schedulePlaces(pools,schedule,request,{details:discovery.placeDetails,timeZone,now:discovery.now?.()});
+  const fit=p=>exploring?Promise.resolve(discoverPlaces(p,schedule)):schedulePlaces(p,schedule,request,{details:discovery.placeDetails,timeZone,now:discovery.now?.()});
+  let fitted=await fit(pools);
   // Expand only when an initial shortlist cannot fill the outing. Preserve hard
   // constraints, pinned venues, and the previous result if the retry is no better.
   if(fitted.stops.some(stop=>!stop.item)&&fitted.stops.some(stop=>stop.reason!=='time_in_past')&&ranked.some((items,index)=>items.length>pools[index].length)){
-    const expanded=await schedulePlaces(makePools(14),schedule,request,{details:discovery.placeDetails,timeZone,now:discovery.now?.()});
+    const expanded=await fit(makePools(14));
     if(expanded.stops.filter(stop=>stop.item).length>fitted.stops.filter(stop=>stop.item).length)fitted=expanded;
+  }
+  // A timing conflict must not erase useful venue recommendations. Keep the
+  // requested date/window intact, and show matching places as unscheduled.
+  let needsTiming=false;
+  if(!exploring&&fitted.stops.some(s=>!s.item&&['time_in_past','no_open_place'].includes(s.reason))){
+    const fallback=discoverPlaces(pools.map((pool,i)=>fitted.stops[i].item?[fitted.stops[i].item]:pool),schedule);
+    fitted={...fitted,stops:fitted.stops.map((stop,i)=>{if(stop.item||!fallback.stops[i].item)return stop;needsTiming=true;return {...stop,item:fallback.stops[i].item,start:null,end:null,bufferAfterMinutes:0,timeStatus:'needs_time'};})};
   }
   const selected=fitted.stops.map(s=>s.item);
   const stops = fitted.stops.map((slot,index) => ({...slot,id:`stop-${index}`,label:LABELS[slot.intent],item:selected[index],status:selected[index]?'matched':'unfilled',alternatives:ranked[index].filter((item) => !selected.some((chosen) => chosen?.id===item.id)).slice(0,2),...(selected[index]?{}:{reason:slot.reason|| (request.pins[slot.intent]?'kept_place_unavailable':pools[index].length?'no_distinct_place':'no_eligible_places')})}));
@@ -203,13 +213,13 @@ export async function buildItinerary(discovery, request) {
   const provider = members[0][0].provenance.provider;
   const unresolved = members.flatMap((results,index) => results[0].taste.unresolved.map((entry) => ({...entry,person:request.people[index].name})));
   return {
-    version:'1.0',status:filled.length===stops.length?'complete':'partial',request:{...request,title:resultTitle(request,stops)},stops,tasteMap,
+    version:'1.0',phase:exploring?'discovery':needsTiming?'needs_timing':'scheduled',activityBasis,status:filled.length===stops.length&&!needsTiming?'complete':'partial',request:{...request,title:resultTitle(request,stops)},stops,tasteMap,
     budget:allocateBudget(request,filled.map((stop)=>stop.intent)),
     people:request.people.map((person,index)=>({id:person.id || `person-${index}`,name:person.name,taste:members[index][0].taste})),
     provenance:{provider,retrievedAt:members[0][0].provenance.retrievedAt,...(members[0][0].provenance.locality?{locality:members[0][0].provenance.locality}:{})},
     timeZone,timingNotes:fitted.notes,
     links:{directions:provider!=='demo'&&filled.length>=1?directions.href:null},
-    checks:[{label:'Distinct stops',status:'passed'},{label:'Time window',status:'passed'},{label:'Budget allocated',status:request.budget==null?'not_set':'passed'},{label:'Opening hours',status:filled.length&&filled.every(s=>s.hours?.status==='fits_reported_hours')?'checked':'unverified'},{label:'Travel time',status:'unverified'},...(request.party.children?[{label:'Child suitability',status:'unverified'}]:[])],
+    checks:[{label:'Distinct stops',status:'passed'},{label:'Time window',status:exploring?'not_set':needsTiming?'needs_review':'passed'},{label:'Budget allocated',status:request.budget==null?'not_set':'passed'},{label:'Opening hours',status:filled.length&&filled.every(s=>s.hours?.status==='fits_reported_hours')?'checked':'unverified'},{label:'Travel time',status:'unverified'},...(request.party.children?[{label:'Child suitability',status:'unverified'}]:[])],
     activity:[{label:'Preferences resolved',detail:`${members.reduce((sum,r)=>sum+r[0].taste.resolved.length,0)} artist signals across ${members.length} taste profile${members.length===1?'':'s'}`},{label:'Qloo places considered',detail:`${members.reduce((sum,r)=>sum+r[0].fetched,0)} candidate appearances before activity and area checks`},{label:'A day assembled',detail:`${filled.length} of ${stops.length} stops filled; no filters widened`},{label:'Budget and time checked',detail:request.budget==null?'Suggested time slots calculated; no budget specified':'Spending allowances and suggested time slots calculated'}],
     warnings:[...fitted.notes,...(provider==='demo'?['Sample plan with synthetic places.']:[]),...(unresolved.length?[`Unresolved artists: ${unresolved.map((entry)=>`${entry.requested} (${entry.person})`).join(', ')}.`]:[]),...(filled.length<stops.length?['Some stops could not be filled without changing your preferences.']:[]),
       ...(request.experience?.cuisine&&request.activities.includes('dinner')&&!stops.some(stop=>stop.intent==='dinner'&&stop.item?.experienceFit?.cuisine?.status==='provider_text_signal')?[`I couldn't verify ${request.experience.cuisine} cuisine among the available places. The current alternatives may not meet that request.`]:[]),'Suggested times do not verify opening hours. Travel buffers are not route estimates.','Budget figures are allowances, not venue quotes. Confirm prices and availability before going.',...(request.party.children?['Check child suitability directly with the venues.']:[])],
