@@ -166,3 +166,45 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 .deck-no-match{padding:20px 10px;text-align:center;font-size:12px}
 @media(max-width:600px){.deck-spread{max-height:52dvh;padding:0 2px 25px}.deck-spread .deck-fan-card{height:190px!important;min-height:190px!important;padding:14px 15px}.deck-spread .deck-fan-card+.deck-fan-card{margin-top:-20px!important}.deck-gesture-hint{font-size:10px}}
 @media(prefers-reduced-motion:reduce){.deck-spread .deck-fan-card{transition:none!important}}
+
+
+/* Taste Studio: important controls visible together, without three nested tabs. */
+.cs-messages .cs-tastes-open{max-width:710px;width:100%;padding:19px 20px}
+.cs-tastes-open-layout{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:18px;align-items:start}
+.cs-tastes-open-layout>div{min-width:0}
+.cs-taste-section-heading{display:flex;align-items:baseline;justify-content:space-between;gap:9px;margin:6px 0 12px}
+.cs-taste-section-heading h3{margin:0;color:#3c5234;font:20px/1.14 Georgia,serif}
+.cs-taste-section-heading span{font-size:10px;color:#839078}
+.cs-tastes-open .cs-taste-person{padding:0 0 13px;margin-bottom:15px;border-bottom:1px solid #e6e9df}
+.cs-tastes-open .cs-taste-categories{display:flex;flex-wrap:wrap;gap:6px}
+.cs-tastes-open .cs-taste-categories button{white-space:nowrap}
+.cs-tastes-preferences{display:grid;gap:16px}
+.cs-tastes-preferences>section{padding:13px;background:#f5f7ef;border-radius:12px}
+.cs-taste-picked .cs-name-edit{display:block;font-size:10px;color:#75816e;margin-bottom:10px}
+.cs-taste-picked .cs-name-edit input{display:block;width:100%;background:#fff;border:1px solid #dfe5d6;padding:9px;border-radius:8px;margin-top:5px}
+.cs-taste-picked .cs-taste-chips{display:flex;flex-wrap:wrap;gap:5px;min-height:24px}
+.cs-taste-picked .cs-taste-chips button{display:flex;align-items:center;gap:5px;color:#3f5639!important;background:#fff!important;border:1px solid #dce5d5!important;padding:6px 8px;border-radius:20px;font-size:10px}
+.cs-taste-picked .cs-inline-form{margin-bottom:0}
+.cs-taste-direct{display:flex;flex-wrap:wrap;align-items:center;gap:5px}
+.cs-taste-direct .cs-taste-section-heading{flex:0 0 100%}
+.cs-taste-direct-chip{border:1px solid #dce3d3!important;border-radius:18px;color:#566b4e!important;background:#fff!important;padding:7px 9px!important;font-size:10px;display:flex;gap:5px;align-items:center}
+.cs-taste-direct-chip[aria-pressed=true]{background:#e2eadb!important;border-color:#8fa483!important}
+.cs-taste-style-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+.cs-taste-style-choices button{min-height:34px;padding:7px 5px!important;border:1px solid #dce3d3!important;border-radius:8px!important;background:#fff!important;color:#586b50!important;font-size:10px!important}
+.cs-taste-style-choices button[aria-pressed=true]{background:#e3eadc!important;border-color:#889e7c!important;color:#354f2d!important}
+.cs-taste-spending label{display:block;margin-top:13px;margin-bottom:7px}
+.cs-taste-spending select{width:100%;background:#fff;border:1px solid #dce3d3;border-radius:8px;padding:9px;color:#3e5238;font-size:12px}
+.cs-tastes-open .swipe-deck{width:100%}
+.cs-tastes-open .deck-gesture-hint{font-size:10px}
+.cs-tastes-open .cs-spend-note{margin-top:14px}
+@media(max-width:650px){
+ .cs-messages .cs-tastes-open{padding:14px;width:100%}
+ .cs-tastes-open-layout{display:flex;flex-direction:column;gap:13px}
+ .cs-tastes-open-layout>div{width:100%}
+ .cs-tastes-preferences{width:100%;gap:12px}
+ .cs-tastes-preferences>section{padding:11px}
+ .cs-taste-section-heading h3{font-size:18px}
+ .cs-tastes-open .card-stack{height:180px}
+ .cs-tastes-open .taste-card{height:170px}
+ .cs-taste-style-choices{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
