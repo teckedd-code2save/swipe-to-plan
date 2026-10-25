@@ -86,9 +86,11 @@ function chooseAutopilotActivities(brief){
     for(const intent of intents)votes.set(intent,(votes.get(intent)||0)+1/intents.size);
   }
   const ranked=[...votes].sort((a,b)=>b[1]-a[1]||ACTIVITIES.indexOf(a[0])-ACTIVITIES.indexOf(b[0])).map(([intent])=>intent);
-  // With no relevant tastes, delegate one discovery stop; do not invent a coffee preference.
+  // An open-ended evening outing needs a venue type likely to serve at night.
+  // This is a suggested starting point, not a fabricated permanent preference.
+  const afterHours=Number(brief.startTime?.slice(0,2)||0)>=17;
   const selected=[];
-  for(const intent of ranked.length?ranked:['activity']){
+  for(const intent of ranked.length?ranked:[afterHours?'dinner':'activity']){
     if(selected.length===2)break;
     try{makeSchedule({...brief,activities:[...selected,intent]});selected.push(intent);}catch{/* Keep automatic suggestions inside the chosen window. */}
   }
