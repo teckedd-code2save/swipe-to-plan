@@ -182,6 +182,17 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       return circleView(data,circle,user);
     });},
     async removeCircle(session,id){await store.transact(data=>{const user=requireUser(data,session),circle=data.circles[id];if(!circle||!circle.members.some(m=>m.userId===user.id))throw fail('Circle not found.',404);if(circle.ownerId===user.id)delete data.circles[id];else circle.members=circle.members.filter(m=>m.userId!==user.id);});},
+    async removeCircleMember(session,id,memberId){
+      return store.transact(data=>{
+        const user=requireUser(data,session),circle=data.circles[id];
+        if(!circle||circle.ownerId!==user.id)throw fail('Only the circle organizer can remove members.');
+        if(memberId===circle.ownerId)throw fail('The organizer cannot be removed from their circle.');
+        const index=circle.members.findIndex(m=>m.userId===memberId||(!m.userId&&m.profile?.id===memberId));
+        if(index<0)throw fail('Circle member not found.',404);
+        circle.members.splice(index,1);
+        return circleView(data,circle,user);
+      });
+    },
     async updateCirclePerson(session,id,memberId,body){fields(body,['name','artists','vibes','spending']);return store.transact(data=>{const user=requireUser(data,session),circle=data.circles[id];if(!circle||circle.ownerId!==user.id)throw fail('Only this circle’s organizer can edit an invited profile.');const member=circle.members.find(m=>!m.userId&&m.profile.id===memberId);if(!member)throw fail('Members who have joined manage their own account tastes.');member.profile=profile(body,memberId);return circleView(data,circle,user);});},
     mount(app,{route,limit,resolveLocation}){
       const session=req=>cookie(req,sessionName);
@@ -204,6 +215,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       app.post('/api/account/circles/:id/email-invites/accept',limit(15),mutation(async(req,res)=>res.json(await this.acceptEmailInvite(session(req),req.params.id,req.body))));
       app.get('/api/circle-invites/:id',limit(30),route(async(req,res)=>res.json(await this.invite(req.params.id,req.get('x-circle-invite')))));
       app.post('/api/account/circles/:id/join',limit(15),mutation(async(req,res)=>res.json(await this.joinCircle(session(req),req.params.id,req.body))));
+      app.delete('/api/account/circles/:id/members/:memberId',limit(20),mutation(async(req,res)=>res.json(await this.removeCircleMember(session(req),req.params.id,req.params.memberId))));
       app.patch('/api/account/circles/:id/members/:memberId',limit(45),mutation(async(req,res)=>res.json(await this.updateCirclePerson(session(req),req.params.id,req.params.memberId,req.body))));
       app.delete('/api/account/circles/:id',limit(15),mutation(async(req,res)=>{await this.removeCircle(session(req),req.params.id);res.json({ok:true});}));
     },
