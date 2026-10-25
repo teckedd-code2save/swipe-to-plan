@@ -208,3 +208,12 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
  .cs-tastes-open .taste-card{height:170px}
  .cs-taste-style-choices{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
+
+
+/* Draft controls remain visible in chat, without accordion chrome. */
+.cs-messages>.cs-draft-plan{background:transparent;border:0;box-shadow:none;padding:0;max-width:710px;margin:0 auto 18px}
+.cs-messages>.cs-draft-plan .cs-tool{max-width:none;width:100%;padding:17px;border:1px solid var(--cs-line);border-radius:14px;background:var(--cs-surface);box-shadow:0 3px 12px #34472506;margin:0}
+.pl-experience-note{display:flex;align-items:flex-start;gap:6px;font-size:11px;color:#627854;line-height:1.5;margin:8px 0}
+.pl-experience-note svg{flex:0 0 auto;margin-top:2px}
+.pg-experience-fit p{font-size:12px;line-height:1.6;margin:7px 0;color:#596c51}
+@media(max-width:600px){.cs-messages>.cs-draft-plan{margin-bottom:14px}.cs-messages>.cs-draft-plan .cs-tool{padding:13px}}
