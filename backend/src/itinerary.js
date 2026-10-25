@@ -20,7 +20,7 @@ const minutes = (time) => Number(time.slice(0,2)) * 60 + Number(time.slice(3));
 const time = (value) => `${String(Math.floor(value / 60)).padStart(2,'0')}:${String(value % 60).padStart(2,'0')}`;
 
 export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
-  object(body, ['title','area','locationId','currencyMode','timing','date','party','people','budget','currency','startTime','endTime','pace','activities','pins','excludeIds','maxPriceLevel'], 'planning field');
+  object(body, ['title','area','locationId','currencyMode','timing','date','party','people','budget','currency','startTime','endTime','pace','activities','pins','excludeIds','maxPriceLevel','experience'], 'planning field');
   const area = allowMissingLocation&&body.area===''?'':parseArea(body.area);
   const locationId=body.locationId?parseLocationId(body.locationId):undefined;
   const currencyMode=body.currencyMode??(body.currency?'custom':'local');
@@ -65,7 +65,9 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
   Object.values(pins).forEach((id) => text(id,160,'a kept place ID'));
   if (new Set(Object.values(pins)).size !== Object.values(pins).length) throw new InputError('Keep a different place for each stop.');
   const constraints = parseRequest({ constraints: { excludeIds: body.excludeIds ?? [], ...(body.maxPriceLevel !== undefined ? { maxPriceLevel: body.maxPriceLevel } : {}) } }).constraints;
-  const request = { title: text((typeof body.title==='string'&&!body.title.trim()||body.title==null ? null : body.title) || (activities.length ? `${activities.map(item=>({coffee:'Coffee',activity:'Something fun',dinner:'Dinner',drinks:'Drinks'}[item])).join(' & ')}${area?' in '+area.split(',')[0]:''}` : children ? 'Family day' : adults > 2 ? 'A day together' : 'A day out'),80,'a title'), area,...(locationId?{locationId}:{}),currencyMode, timing:{...timing}, date, party:{ adults, children }, people:profiles, budget, currency, startTime, endTime, pace, activities, pins:{...pins}, excludeIds:constraints.excludeIds, ...(body.maxPriceLevel !== undefined ? { maxPriceLevel:body.maxPriceLevel } : {}) };
+  const experienceInput=body.experience===undefined?null:object(body.experience,['cuisine','atmosphere','occasion','notes'],'experience');
+  const experience=experienceInput?Object.fromEntries(Object.entries(experienceInput).map(([key,value])=>[key,text(value,key==='notes'?220:80,key)])):{};
+  const request = { title: text((typeof body.title==='string'&&!body.title.trim()||body.title==null ? null : body.title) || (activities.length ? `${activities.map(item=>({coffee:'Coffee',activity:'Something fun',dinner:'Dinner',drinks:'Drinks'}[item])).join(' & ')}${area?' in '+area.split(',')[0]:''}` : children ? 'Family day' : adults > 2 ? 'A day together' : 'A day out'),80,'a title'), area,...(locationId?{locationId}:{}),currencyMode, timing:{...timing}, date, party:{ adults, children }, people:profiles, budget, currency, startTime, endTime, pace, activities, ...(Object.keys(experience).length?{experience}:{}), pins:{...pins}, excludeIds:constraints.excludeIds, ...(body.maxPriceLevel !== undefined ? { maxPriceLevel:body.maxPriceLevel } : {}) };
   makeSchedule(request); // Fail an impossible time window before any provider calls.
   return request;
 }
