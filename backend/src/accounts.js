@@ -136,6 +136,44 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
         const circle={id:randomUUID(),name:body.name.trim(),ownerId:user.id,members,inviteToken:opaque()};data.circles[circle.id]=circle;return circleView(data,circle,user);
       });
     },
+    async inviteByEmail(session,id,body){
+      fields(body,['email']);
+      const email=String(body.email||'').trim().toLowerCase();
+      if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)||email.length>254)throw new InputError('Enter a valid email address.');
+      if(!process.env.RESEND_API_KEY||!process.env.CIRCLE_INVITE_FROM)throw fail('Email invitations are not configured yet.',503);
+      const token=opaque();
+      const record=await store.transact(data=>{
+        const user=requireUser(data,session),circle=data.circles[id];
+        if(!circle||circle.ownerId!==user.id)throw fail('Only the circle organizer can invite.');
+        circle.emailInvites??={};
+        const pending=Object.values(circle.emailInvites).filter(item=>item.expiresAt>now());
+        if(pending.length>=10)throw fail('This circle has reached its pending invitation limit.',429);
+        const key=hash(token);
+        circle.emailInvites[key]={email,expiresAt:now()+7*86400000,createdAt:now()};
+        return {name:circle.name};
+      });
+      const url=`${origin}/#/circle/${encodeURIComponent(id)}?invite=${token}`;
+      try{
+        const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({from:process.env.CIRCLE_INVITE_FROM,to:[email],subject:'Invitation to join a circle on Unstressed',text:`You've been invited to join ${record.name} on Unstressed. Sign in with this email and accept: ${url}\\nThis invitation expires in seven days.`}),signal:AbortSignal.timeout(10000)});
+        if(!response.ok)throw Error('Email provider unavailable');
+      }catch(e){await store.transact(data=>{delete data.circles[id]?.emailInvites?.[hash(token)];});throw fail('Could not deliver the invitation. Try again.',502);}
+      return {sent:true};
+    },
+    async acceptEmailInvite(session,id,body){
+      fields(body,['token']);
+      return store.transact(data=>{
+        const user=requireUser(data,session),circle=data.circles[id];
+        const key=hash(body.token||''),pending=circle?.emailInvites?.[key];
+        if(!pending||pending.expiresAt<=now())throw fail('This invitation has expired or is unavailable.',404);
+        if(user.email.toLowerCase()!==pending.email)throw fail('Sign in with the email address that received the invitation.');
+        if(!circle.members.some(m=>m.userId===user.id)){
+          if(circle.members.length>=6)throw fail('This circle is full.',409);
+          circle.members.push({userId:user.id});
+        }
+        delete circle.emailInvites[key];
+        return circleView(data,circle,user);
+      });
+    },
     async invite(id,token){return store.read(data=>{const circle=data.circles[id];if(!circle||typeof token!=='string'||hash(circle.inviteToken)!==hash(token))throw fail('This circle invite is no longer available.',404);return {id:circle.id,name:circle.name,members:circle.members.map(m=>({id:m.userId||m.profile.id,name:m.userId?data.users[m.userId].profile.name:m.profile.name,claimable:!m.userId}))};});},
     async joinCircle(session,id,body){fields(body,['inviteToken','replaceId']);return store.transact(data=>{const user=requireUser(data,session),circle=data.circles[id];if(!circle||typeof body.inviteToken!=='string'||hash(circle.inviteToken)!==hash(body.inviteToken))throw fail('This circle invite is no longer available.',404);if(circle.members.some(m=>m.userId===user.id))return circleView(data,circle,user);if(myCircles(data,user).length>=12)throw new InputError('You can keep up to twelve circles.');
       const index=body.replaceId?circle.members.findIndex(m=>!m.userId&&m.profile.id===body.replaceId):-1;
@@ -162,6 +200,8 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       app.patch('/api/account/profile',limit(45),mutation(async(req,res)=>res.json({user:await this.updateProfile(session(req),req.body)})));
       app.patch('/api/account/planning-location',limit(20),mutation(async(req,res)=>res.json({user:await this.updatePlanningLocation(session(req),req.body,resolveLocation)})));
       app.post('/api/account/circles',limit(15),mutation(async(req,res)=>res.status(201).json(await this.createCircle(session(req),req.body))));
+      app.post('/api/account/circles/:id/email-invites',limit(5),mutation(async(req,res)=>res.status(202).json(await this.inviteByEmail(session(req),req.params.id,req.body))));
+      app.post('/api/account/circles/:id/email-invites/accept',limit(15),mutation(async(req,res)=>res.json(await this.acceptEmailInvite(session(req),req.params.id,req.body))));
       app.get('/api/circle-invites/:id',limit(30),route(async(req,res)=>res.json(await this.invite(req.params.id,req.get('x-circle-invite')))));
       app.post('/api/account/circles/:id/join',limit(15),mutation(async(req,res)=>res.json(await this.joinCircle(session(req),req.params.id,req.body))));
       app.patch('/api/account/circles/:id/members/:memberId',limit(45),mutation(async(req,res)=>res.json(await this.updateCirclePerson(session(req),req.params.id,req.params.memberId,req.body))));
