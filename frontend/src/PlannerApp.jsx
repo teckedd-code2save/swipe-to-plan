@@ -196,7 +196,11 @@ export default function PlannerApp() {
     keepPeople(result.request.people);
     const fromAutopilot=autopilotPending.current?.stage==='planning';
     if(fromAutopilot){autopilotPending.current=null;setAutopilotPhase('checking');}
-    if(!toolRef.current){resultReceipt(result,fromAutopilot?`Here’s the day for ${result.request.people.map(p=>p.name==='You'?'you':p.name).join(', ')}. ${result.request.people.some(p=>p.artists.length||p.vibes.length)?result.request.people.length===1?'I’ve used your tastes':'I’ve used the group’s tastes':'I’ve started with your area and activities'} within the ${formatMoney(result.request.budget,result.request.currency)} allowance. I’m checking the reported hours next.`:old?(result.request.party.adults+result.request.party.children===1?'I’ve updated your day.':'I’ve updated the day for everyone.'):'Here’s your day.');if(showWhenReady.current||!old){setPlanOpen(true);showWhenReady.current=false;}}
+    if(!toolRef.current){
+      const filled=result.stops.filter(stop=>stop.item).length;
+      resultReceipt(result,result.status==='partial'?`I found ${filled} of ${result.stops.length} stops. The missing parts are marked on your day.`:'Your day is ready.');
+      if(showWhenReady.current||!old){setPlanOpen(true);showWhenReady.current=false;}
+    }
   }
   useEffect(()=>{planner.current=createLatestPlanner({run:request=>api.itinerary(request,savingHeaders()),onStart:()=>setBusy(true),onIdle:()=>{setBusy(false);if(!autoTimer.current)setPending(false);},onError:e=>{setError(e.message);setRevisionFailed(true);setAutopilotPhase('');autopilotPending.current=null;},onResult:result=>{showPlan(result);replaceBrief(result.request);}});return()=>{clearTimeout(autoTimer.current);autoTimer.current=null;clearTimeout(profileTimer.current);planner.current.dispose();};},[]);
   useEffect(()=>{api.deck().then(setDeck).catch(e=>setError(e.message));},[]);
@@ -441,6 +445,8 @@ export default function PlannerApp() {
     if(nextStep==='timing'){replaceBrief(request);presentTool('timing');return false;}
     if(nextStep==='activities'){replaceBrief(request);presentTool('review','Choose what you’d like to do. I’ll find places once you select an activity.');return false;}
     planningPaused.current=false;setDraftChanged(false);localVersion.current++;
+    // The draft card must release control once a valid research run starts.
+    toolRef.current=null;setTool(null);
     clearTimeout(autoTimer.current);autoTimer.current=null;setError('');setRevisionFailed(false);
     if(shared.linked){try{await shared.updateBrief(request,revision);return true;}catch(e){setError(e.message);return false;}}
     planner.current.enqueue(withPeopleIds(request));return true;
