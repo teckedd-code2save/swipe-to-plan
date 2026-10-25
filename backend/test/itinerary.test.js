@@ -185,3 +185,13 @@ test('a user-chosen outing title survives result construction',async()=>{
   assert.equal(plan.request.title,'My birthday surprise');
 });
 
+test('outing titles survive empty searches and recover from legacy status titles when a venue is found',async()=>{
+  const request=parseItinerary({title:'Friday drinks with friends',activities:['drinks']});
+  const empty=await buildItinerary(engine([]),request);
+  assert.equal(empty.request.title,'Friday drinks with friends');
+  const recovered=await buildItinerary(engine([venue('bar',['bar'])]),parseItinerary({...empty.request,title:'Places still to find in Accra'}));
+  assert.equal(recovered.status,'complete');assert.equal(recovered.request.title,'Drinks in Accra');
+  const unfinished=await buildItinerary(engine([]),parseItinerary({activities:['drinks'],title:''}));
+  assert.equal(unfinished.request.title,'Drinks in Accra');
+});
+
