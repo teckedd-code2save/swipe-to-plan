@@ -11,6 +11,7 @@ function intentEvidence(tags, intent) {
   if (intent === "any") return categories;
   // Serving coffee alone does not make a fast-food restaurant a café.
   if (intent === "coffee") return categories.filter(t=>/(?:^|_)(cafe|coffee_shop|coffeehouse|tea_house|tearoom|tea_room|espresso_bar)(?:$|_)/.test(t.id.split(":").at(-1)));
+  if(intent==='drinks')return categories.filter(t=>/(?:^|_)(bar|pub|lounge|nightclub|night_club)(?:$|_)/.test(t.id.split(':').at(-1)));
   const allowed = {
     dinner: /(?:restaurant|bistro|eatery|pizzeria|steakhouse|dinner|dining)/,
     drinks: /(?:bar|pub|lounge|nightclub|night_club|cocktail|beer|wine|alcohol)/,
@@ -172,12 +173,13 @@ export function createDiscovery({ provider, now = Date.now }) {
     const signalIds = [...new Set(resolved.map((s) => s.entityId))].sort();
     const tagSignals=provider.resolveTasteTags?await provider.resolveTasteTags(request.taste.vibes):[];
     const includeActivity=intents.includes('activity');
-    const key = JSON.stringify([request.location.area,request.location.id, signalIds,...(provider.resolveTasteTags?[tagSignals,includeActivity]:[])]);
+    const includeDrinks=intents.includes('drinks');
+    const key = JSON.stringify([request.location.area,request.location.id, signalIds,...(provider.resolveTasteTags?[tagSignals,includeActivity,includeDrinks]:[])]);
     let entry = cache.get(key);
     const cached = !!entry && now() - entry.at < 600000;
     if (!cached) {
       let places;
-      try { places = await provider.discover({ signalIds, area: request.location.area,locationId:request.location.id,tagSignals,includeActivity }); }
+      try { places = await provider.discover({ signalIds, area: request.location.area,locationId:request.location.id,tagSignals,includeActivity,includeDrinks }); }
       catch (e) { throw e instanceof ProviderError ? e : new ProviderError(); }
       if (!Array.isArray(places)) throw new ProviderError("provider_response_invalid");
       entry = { places, locality:places.locality||null, at: now() };
@@ -249,3 +251,4 @@ export function mergeGroup(people, limit = 8) {
   ];
   return { items, summary };
 }
+
