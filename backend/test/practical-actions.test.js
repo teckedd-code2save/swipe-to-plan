@@ -33,3 +33,9 @@ test('suggestions depend on activities, party and currency, not one global budge
 });
 
 test('complete plans never receive an incomplete-day receipt',()=>{assert.equal(partialPlanSummary({stops:[stop('one')]}),null);});
+
+test('nearby suggestions take priority over restarting an empty area search',()=>{
+  const plan={request:{people:[{}]},stops:[{intent:'drinks',item:null,reason:'no_eligible_places'}],nearbySuggestions:[{intent:'drinks',item:{id:'qloo:near'}}]};
+  const steps=nextPlanSteps(plan);
+  assert.equal(steps.actions[0].id,'shortlist');
+});
