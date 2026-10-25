@@ -146,7 +146,7 @@ function resultTitle(request,stops){
   // Never overwrite a deliberate, distinctive title. Only replace titles
   // generated from generic activities, especially when some stops go unfilled.
   const generic=/^(?:coffee|dinner|drinks|something fun|a meal|a discovery|a day out|family day|a day together|a little day|one place|good company)(?:[ &+a-z ]*)?(?: in .+)?$/i;
-  if(!generic.test(request.title))return request.title;
+  if(!generic.test(request.title)&&!/^a little day\b/i.test(request.title))return request.title;
   const names={coffee:'Coffee',activity:'A discovery',dinner:'A meal',drinks:'Drinks'};
   const intents=[...new Set(filled.map(stop=>stop.intent))];
   const cuisine=request.experience?.cuisine;
