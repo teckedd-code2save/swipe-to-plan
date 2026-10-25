@@ -56,19 +56,21 @@ export function PlaceDetails({stop,plan,checks,onClose,onSwap,canSwap,initialVie
   const [view,setView]=useState(initialView);
   const filled=plan.stops.filter(s=>s.item);
   const dialog=useRef(null),[imageFailed,setImageFailed]=useState(false),[draft,setDraft]=useState(()=>enquiry(plan,stop)),[copyState,setCopyState]=useState('');
-  const report=checkedStop(checks,stop),place=report?.place||stop.item,allowance=plan.budget.allocations.find(a=>a.stopId===stop.id||!a.stopId&&a.intent===stop.intent);
+  const existingReport=checkedStop(checks,stop),[detail,setDetail]=useState(null);
+  useEffect(()=>{if(existingReport?.place||stop.id!=='shortlist-place')return;const abort=new AbortController();api.place(stop.item.entityId,abort.signal).then(place=>{if(!abort.signal.aborted)setDetail(place);}).catch(()=>{});return()=>abort.abort();},[stop.item.entityId,existingReport?.place]);
+  const report=existingReport||(detail?{place:detail,hours:{status:'unknown',summary:'Choose a visit time to check reported opening hours.'},menu:{highlights:detail.highlights||[],link:detail.links?.menu||null}}:null),place=report?.place||stop.item,allowance=plan.budget.allocations.find(a=>a.stopId===stop.id||!a.stopId&&a.intent===stop.intent);
   useEffect(()=>{const element=dialog.current,trigger=document.activeElement;element.showModal();return()=>{element.close();if(trigger?.isConnected)trigger.focus({preventScroll:true});};},[]);
   async function copy(){try{await navigator.clipboard.writeText(draft);setCopyState('Copied. Ready to send yourself.');}catch{setCopyState('Select and copy the enquiry below.');}}
   return <dialog className="pl-dialog pg-dialog" ref={dialog} onCancel={onClose} aria-labelledby="place-details-title">
     <div className="pg-dialog-top"><span>{ACTIVITY_NAMES[stop.intent]} · {stop.start&&stop.end?`${stop.start}–${stop.end}`:"Time to choose"}</span><button type="button" className="pl-dialog-close" aria-label="Close place details" onClick={onClose}>Close<Icon name="close" size={18}/></button></div>
-    {filled.length>1&&<label className="pg-stop-picker">Place in your day<select aria-label="Place to review" value={stop.item.entityId} onChange={e=>onSelect?.(e.target.value,view)}>{filled.map(s=><option key={s.id} value={s.item.entityId}>{s.start||'Time to choose'} · {s.item.name}</option>)}</select></label>}
+    {filled.length>1&&stop.id!=='shortlist-place'&&<label className="pg-stop-picker">Place in your day<select aria-label="Place to review" value={stop.item.entityId} onChange={e=>onSelect?.(e.target.value,view)}>{filled.map(s=><option key={s.id} value={s.item.entityId}>{s.start||'Time to choose'} · {s.item.name}</option>)}</select></label>}
     <nav className="pg-detail-tabs" aria-label="Place details sections">{[['overview','Overview'],['practical','Hours & menu'],['route','Getting there']].map(([id,label])=><button type="button" key={id} aria-pressed={view===id} onClick={()=>setView(id)}>{label}</button>)}</nav>
     <div className="pg-dialog-scroll" key={view}>
       {view==='overview'&&<div className={`pg-photo ${!place.image||imageFailed?'empty':''}`}>{place.image&&!imageFailed?<img src={place.image} alt={place.name} onError={()=>setImageFailed(true)}/>:<Icon name={stop.intent} size={56}/>}<span>YOUR KIND OF PLACE</span></div>}
       <div className="pg-detail-body"><div className="pg-place-heading"><h2 id="place-details-title">{place.name}</h2><p><Icon name="pin" size={16}/>{place.address}</p></div>
         {view==='overview'&&place.description&&<p className="pg-description">{place.description}</p>}
         {view==='overview'&&!!place.tagNames?.length&&<div className="pg-tags">{place.tagNames.map(tag=><span key={tag}>{tag}</span>)}</div>}
-        {view==='route'?<RouteGuide plan={plan} checks={checks} initialStopId={stop.id} onTiming={onTiming}/>:<>
+        {view==='route'?<RouteGuide plan={stop.id==='shortlist-place'?{...plan,stops:[stop]}:plan} checks={checks} initialStopId={stop.id} onTiming={onTiming}/>:<>
         <VenueLinks place={place}/>
         {checks.status==='error'&&<p className="pg-note" role="alert">Details couldn’t load. <button className="pg-link" onClick={checks.refresh}>Try again</button></p>}
         {stop.item?.experienceFit&&<section className="pg-detail-section pg-experience-fit"><span className="pg-eyebrow">HOW IT FITS YOUR REQUEST</span>
