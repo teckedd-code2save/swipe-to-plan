@@ -414,6 +414,8 @@ export default function PlannerApp() {
     if(needsTiming(request)){pendingRun.stage='timing';setAutopilotPhase('timing');presentTool('timing');return;}
     pendingRun.stage='planning';setAutopilotPhase('planning');toolRef.current=null;setTool(null);showWhenReady.current=true;
     planningPaused.current=false;setDraftChanged(false);localVersion.current++;
+    // A draft tool must not suppress the ready itinerary when research completes.
+    toolRef.current=null;setTool(null);
     clearTimeout(autoTimer.current);autoTimer.current=null;planner.current.invalidate();setError('');
     append('assistant',`I’m planning for ${request.people.map(p=>p.name==='You'?'you':p.name).join(', ')}: ${dateLabel(request.date)}, ${timingLabel(request)}, with ${formatMoney(request.budget,request.currency)} for the group. You can adjust these details after the plan.`);
     if(shared.linked){try{await shared.autopilot(request,pendingRun.revision);}catch(e){autopilotPending.current=null;setAutopilotPhase('');setRevisionFailed(true);throw e;}}
