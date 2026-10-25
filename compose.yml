@@ -1,0 +1,34 @@
+# Production entrypoint for /opt/unstressed/compose.yml.
+# Keep the build context at the checkout root; deploy/compose.yml is directory-relative.
+name: unstressed
+services:
+  web:
+    image: ${UNSTRESSED_IMAGE:-ghcr.io/teckedd-code2save/unstressed}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: unstressed-web
+    restart: unless-stopped
+    init: true
+    env_file:
+      - /opt/unstressed/.env
+    ports:
+      - "127.0.0.1:13000:4000"
+    volumes:
+      - /opt/unstressed/data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 640m
+    pids_limit: 100
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks: [unstressed]
+networks:
+  unstressed:
+    name: unstressed
+    external: true
