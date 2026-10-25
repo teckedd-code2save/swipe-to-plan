@@ -58,3 +58,18 @@ test('changing from dining to drinks retrieves a fresh category-specific pool',a
   await discovery.byIntents(request,['drinks']);
   assert.deepEqual(seen,[false,true]);
 });
+
+test('nearby suggestions use a bounded point query in metres, with separate proximity provenance',async()=>{
+  const id='12345678-1234-1234-1234-123456789ABC',requests=[];
+  const client=createQlooClient({getKey:()=> 'test',fetchImpl:async url=>{
+    requests.push(url);
+    if(url.pathname==='/entities')return {ok:true,json:async()=>({results:{entities:[{entity_id:id,name:'Selected Area',types:['urn:entity:locality'],location:{lat:5.6,lon:-.2},properties:{place:'suburb'}}]}})};
+    return {ok:true,json:async()=>({results:{entities:[]}})};
+  }});
+  const result=await client.discover({signalIds:[],locationId:id,area:'Selected Area',radiusKm:20});
+  const query=requests.find(u=>u.pathname==='/v2/insights');
+  assert.equal(query.searchParams.get('filter.location'),'POINT(-0.2 5.6)');
+  assert.equal(query.searchParams.get('filter.location.radius'),'20000');
+  assert.equal(result.locality.scope,'nearby');
+  assert.deepEqual(result.locality.center,{latitude:5.6,longitude:-.2});
+});
