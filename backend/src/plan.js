@@ -76,6 +76,7 @@ export function shapePlace(p, source, retrievedAt) {
       phone: typeof pr.phone === "string" && /^\+?[0-9 ()-]{6,20}$/.test(pr.phone.trim()) ? `tel:${pr.phone.replace(/[ ()-]/g, "")}` : null,
     },
     tagNames: tagsOf(p).filter((t) => /^urn:tag:(category|genre|cuisine|setting|culinary_style|ambience|amenity|beverage_offering):/.test(t.id)).map((t) => safeString(t.name, 80)).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).slice(0, 6),
+    cuisineTags: tagsOf(p).filter(t=>/^urn:tag:(cuisine|culinary_style):/.test(t.id)).map(t=>safeString(t.name,80)).filter(Boolean).slice(0,12),
     facts: {
       price: { level: priceLevel, status: priceLevel === null ? "unknown" : "provider_reported", sourceField: priceLevel === null ? null : "properties.price_level" },
       hours: { status: "unverified" }, availability: { status: "unknown" },
