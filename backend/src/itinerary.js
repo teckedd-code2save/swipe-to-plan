@@ -142,20 +142,21 @@ function buildTasteMap(request, members, stops) {
 
 function resultTitle(request,stops){
   const filled=stops.filter(stop=>stop.item);
-  if(!filled.length)return `Places still to find in ${request.area.split(',')[0]}`;
-  // Never overwrite a deliberate, distinctive title. Only replace titles
-  // generated from generic activities, especially when some stops go unfilled.
-  const generic=/^(?:coffee|dinner|drinks|something fun|a meal|a discovery|a day out|family day|a day together|a little day|one place|good company)(?:[ &+a-z ]*)?(?: in .+)?$/i;
-  if(!generic.test(request.title)&&!/^a little day\b/i.test(request.title))return request.title;
-  // Name a returned cafe as a place, rather than turn its retrieval category
-  // into a claim that the person requested coffee.
+  const area=request.area.split(',')[0];
+  const defaultNames={coffee:'Coffee',activity:'Something fun',dinner:'Dinner',drinks:'Drinks'};
+  const generated=request.activities.map(intent=>defaultNames[intent]).join(' & ');
+  const defaults=new Set(['','A day out','Family day','A day together','A little day',generated,`${generated} in ${area}`]);
+  const staleStatus=request.title.startsWith('Places still to find in ');
+  // Search status belongs to the result state, never the outing's identity.
+  // Preserve meaningful user/model titles across empty results and revisions.
+  if(!staleStatus&&!defaults.has(request.title))return request.title;
   if(filled.length===1&&filled[0].intent==='coffee')return filled[0].item.name.slice(0,80);
-  const names={coffee:'Coffee',activity:'A discovery',dinner:'A meal',drinks:'Drinks'};
-  const intents=[...new Set(filled.map(stop=>stop.intent))];
+  const names={coffee:'Cafés',activity:'Time out',dinner:'A meal',drinks:'Drinks'};
+  const intents=filled.length?[...new Set(filled.map(stop=>stop.intent))]:request.activities;
   const cuisine=request.experience?.cuisine;
   const hasCuisineSignal=intents.includes('dinner')&&filled.some(stop=>stop.intent==='dinner'&&stop.item?.experienceFit?.cuisine?.status==='provider_text_signal');
   const terms=intents.map(intent=>intent==='dinner'&&hasCuisineSignal?`${cuisine} food`:names[intent]);
-  return `${terms.join(' & ')} in ${request.area.split(',')[0]}`.slice(0,80);
+  return `${terms.join(' & ')||'Your outing'} in ${area}`.slice(0,80);
 }
 
 export async function buildItinerary(discovery, request) {
