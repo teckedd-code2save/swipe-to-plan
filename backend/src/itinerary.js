@@ -140,6 +140,21 @@ function buildTasteMap(request, members, stops) {
   return { nodes,edges,legend:'Solid paths are provider-reported contributions or matched place tags. Dotted paths are search inputs without individual contribution evidence. Contributions are not probabilities.' };
 }
 
+function resultTitle(request,stops){
+  const filled=stops.filter(stop=>stop.item);
+  if(!filled.length)return `Places still to find in ${request.area.split(',')[0]}`;
+  // Never overwrite a deliberate, distinctive title. Only replace titles
+  // generated from generic activities, especially when some stops go unfilled.
+  const generic=/^(?:coffee|dinner|drinks|something fun|a meal|a discovery|a day out|family day|a day together|a little day|one place|good company)(?:[ &+a-z ]*)?(?: in .+)?$/i;
+  if(!generic.test(request.title))return request.title;
+  const names={coffee:'Coffee',activity:'A discovery',dinner:'A meal',drinks:'Drinks'};
+  const intents=[...new Set(filled.map(stop=>stop.intent))];
+  const cuisine=request.experience?.cuisine;
+  const hasCuisineSignal=intents.includes('dinner')&&filled.some(stop=>stop.intent==='dinner'&&stop.item?.experienceFit?.cuisine?.status==='provider_text_signal');
+  const terms=intents.map(intent=>intent==='dinner'&&hasCuisineSignal?`${cuisine} food`:names[intent]);
+  return `${terms.join(' & ')} in ${request.area.split(',')[0]}`.slice(0,80);
+}
+
 export async function buildItinerary(discovery, request) {
   if(!request.activities.length)throw new InputError('Choose what you’d like to do before finding places.');
   if(!request.timing.dateConfirmed||!request.timing.timeConfirmed)throw new InputError('Choose when you want to go before planning.');
@@ -183,7 +198,7 @@ export async function buildItinerary(discovery, request) {
   const provider = members[0][0].provenance.provider;
   const unresolved = members.flatMap((results,index) => results[0].taste.unresolved.map((entry) => ({...entry,person:request.people[index].name})));
   return {
-    version:'1.0',status:filled.length===stops.length?'complete':'partial',request,stops,tasteMap,
+    version:'1.0',status:filled.length===stops.length?'complete':'partial',request:{...request,title:resultTitle(request,stops)},stops,tasteMap,
     budget:allocateBudget(request,filled.map((stop)=>stop.intent)),
     people:request.people.map((person,index)=>({id:person.id || `person-${index}`,name:person.name,taste:members[index][0].taste})),
     provenance:{provider,retrievedAt:members[0][0].provenance.retrievedAt,...(members[0][0].provenance.locality?{locality:members[0][0].provenance.locality}:{})},
