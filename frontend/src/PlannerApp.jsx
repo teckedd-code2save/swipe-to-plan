@@ -422,7 +422,7 @@ export default function PlannerApp() {
       track('checks_opened');
       if(placeChecks.status==='error')placeChecks.refresh();
       append('user','Check the hours and menus for our day.');
-      append('assistant',nextSteps.note+' Open any place for its available menu links, contact details and an enquiry draft.');
+      append('assistant',nextSteps.note);
       setTab('checklist');setPlanOpen(true);
     }else if(action.id==='location')askLocation();
     else if(action.id==='tastes')openTaste(owner?action.personId:undefined);
