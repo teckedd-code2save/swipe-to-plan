@@ -12,6 +12,14 @@ Cloudflare DNS is managed through Ground Control. The domain has a DNS-only A re
 
 The initial release and model update passed the GitHub checks and public HTTPS smoke test. Production uses `gemini-3.5-flash-lite`; direct launch checks of the earlier default, `gemini-3.1-flash-lite`, returned timeouts and HTTP 503. The replacement was checked with actual planning and participant tools, not just a text greeting.
 
+## Production Compose layout
+
+`compose.yml` at the repository root is the single production Compose entrypoint. Its `build.context: .` resolves to the checkout containing the root `Dockerfile`. The release workflow copies this exact file to `/opt/unstressed/compose.yml`; Ground Control must use that path with source root `/opt/unstressed`. Do not copy a nested Compose file with `context: ..` into the root: doing so changes its build context to `/opt`.
+
+`docker-compose.yml` is only the local development database. Production releases must explicitly select `compose.yml`. Runtime paths, loopback ports, data mounts and isolation remain in the production file.
+
+For an external build, Ground Control must resolve Compose-relative paths first, verify the context and Dockerfile belong to the source checkout, then map them into the sandbox clone. A nested Compose file is valid when its original directory is preserved.
+
 ## Ground Control builds
 
 Do not retry `deployment.source.deploy` while its Compose build inherits a digest-pinned `UNSTRESSED_IMAGE`: Docker cannot use a digest reference as an output build tag. A digest is appropriate for running a previously built image, not naming a new build.
