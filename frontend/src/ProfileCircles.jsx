@@ -15,12 +15,12 @@ export default function ProfileCircles({account,onClose}){
     <div className="pl-dialog-body">
       <p>Manage your people here, separately from any plan. People join only after accepting an email invitation.</p>
       {account.circles.map(circle=><section key={circle.id} className="cs-profile-circle">
-        <h3>{circle.name}</h3><p>{circle.people.map(person=>person.name).join(' · ')}</p>
+        <details className="cs-profile-circle-details"><summary><strong>{circle.name}</strong><small>{circle.people.length} members · Expand to manage</small></summary><p>{circle.people.map(person=>person.name).join(' · ')}</p>
         <form onSubmit={e=>{e.preventDefault();perform(async()=>{await account.inviteCircleByEmail(circle.id,email[circle.id]);setEmail(previous=>({...previous,[circle.id]:''}));setNotice('Invitation sent. Membership begins on acceptance.');});}}>
           <label>Invite by email<input type="email" required value={email[circle.id]||''} onChange={e=>setEmail(v=>({...v,[circle.id]:e.target.value}))} placeholder="friend@example.com"/></label>
           <button type="submit" disabled={busy||!email[circle.id]?.trim()}>Send invite</button>
         </form>
-        <button type="button" disabled={busy} onClick={()=>perform(async()=>{await account.removeCircle(circle.id);setNotice(circle.owner?'Circle deleted.':'You left the circle.');})}>{circle.owner?'Delete circle':'Leave circle'}</button>
+        <button type="button" disabled={busy} onClick={()=>perform(async()=>{await account.removeCircle(circle.id);setNotice(circle.owner?'Circle deleted.':'You left the circle.');})}>{circle.owner?'Delete circle':'Leave circle'}</button></details>
       </section>)}
       {!account.circles.length&&<p>No circles yet. Create one to get started.</p>}
       <form className="cs-profile-create" onSubmit={e=>{e.preventDefault();perform(async()=>{await account.createCircle({name,people:[account.user.profile]});setName('');setNotice('Circle created. Invite a member using its email form.');});}}>
