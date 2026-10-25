@@ -142,11 +142,12 @@ test('legacy outings also preserve pinned stops and distinct assignments', async
 });
 
 
-test('undecided activities never invent coffee or query places', async () => {
+test('an open discovery suggests a non-food direction without inventing coffee or tastes', async () => {
   for(const body of [{},{party:{children:1}},{activities:[]}]) {
-    const draft=parseBrief(body);
+    const draft=parseBrief({...body,timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}});
     assert.deepEqual(draft.activities,[]);
-    await assert.rejects(buildItinerary({byIntents:()=>assert.fail('No discovery before an activity choice')},draft),/Choose what/);
+    const result=await buildItinerary(engine([venue('park',['park'])]),draft);
+    assert.deepEqual(result.request.activities,['activity']);assert.equal(result.phase,'discovery');assert.equal(result.stops[0].item.entityId,'park');assert.equal(result.stops[0].start,null);assert.deepEqual(result.request.people,draft.people);
   }
 });
 
@@ -195,3 +196,13 @@ test('outing titles survive empty searches and recover from legacy status titles
   assert.equal(unfinished.request.title,'Drinks in Accra');
 });
 
+
+test('an expired visit window preserves relevant places without claiming a scheduled visit',async()=>{
+  const request=parseItinerary({date:'2001-01-01',activities:['drinks'],startTime:'18:00',endTime:'21:00',timing:{dateConfirmed:true,timeConfirmed:true,mode:'fixed'}});
+  const result=await buildItinerary(engine([venue('bar',['bar'])]),request);
+  assert.equal(result.phase,'needs_timing');
+  assert.equal(result.stops[0].item.name,'Place bar');
+  assert.equal(result.stops[0].start,null);
+  assert.equal(result.stops[0].timeStatus,'needs_time');
+  assert.equal(result.request.date,'2001-01-01');
+});
