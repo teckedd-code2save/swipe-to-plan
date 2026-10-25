@@ -21,7 +21,7 @@ export default function ChatStudio({brief,plan,chat,tool,renderTool,message,onMe
   useEffect(()=>{if(!menu)return;function close(e){if(e.key==='Escape'||e.type==='pointerdown'&&!menuRoot.current?.contains(e.target))setMenu(false);}document.addEventListener('pointerdown',close);document.addEventListener('keydown',close);return()=>{document.removeEventListener('pointerdown',close);document.removeEventListener('keydown',close);};},[menu]);
   useEffect(()=>{if(plan&&plan!==lastPlan.current){lastPlan.current=plan;setUnseen(true);}},[plan]);
   useEffect(()=>{if(planOpen)setUnseen(false);},[planOpen]);
-  useEffect(()=>{if(!tool&&!modal&&!busy&&!guest&&message.trim())input.current?.focus({preventScroll:true});},[tool,modal,busy,guest]);
+  useEffect(()=>{if(!tool&&!modal&&!busy&&!guest&&!planOpen)input.current?.focus({preventScroll:true});},[tool,modal,busy,guest,planOpen]);
   function action(kind){setMenu(false);onTool(kind);}
   function submit(e){e?.preventDefault();if(message.trim()&&!busy){onSend(message);input.current?.focus();}}
   function panelKeys(e){if(!modal)return;if(e.key==='Escape'){e.preventDefault();onClosePlan();}if(e.key==='Tab'){const items=[...panel.current.querySelectorAll('button:not(:disabled),a[href],input:not(:disabled),summary,[tabindex="0"]')].filter(el=>el.getClientRects().length);if(e.shiftKey&&document.activeElement===items[0]){e.preventDefault();items.at(-1)?.focus();}else if(!e.shiftKey&&document.activeElement===items.at(-1)){e.preventDefault();items[0]?.focus();}}}
