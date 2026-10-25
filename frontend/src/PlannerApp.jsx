@@ -405,7 +405,7 @@ export default function PlannerApp() {
     autopilotRef.current=enabled;setAutopilot(enabled);autopilotPending.current=null;setAutopilotPhase('');
     // A pending model response must not restart a workflow after the mode changes.
     localVersion.current++;
-    append('assistant',enabled?'Autopilot is on. Tell me what you have in mind and who’s coming. I’ll use your tastes to shape the plan and check the details; you can steer me anytime.':'Autopilot is off. Your tastes and draft are still here; we’ll shape the next steps together.');
+    append('assistant',enabled?'Autopilot is on. Tell me what you have in mind. I’ll use your tastes to shape the plan and check the details; you can steer me anytime.':'Autopilot is off. Your tastes and draft are still here; we’ll shape the next steps together.');
     setPlanOpen(false);
   }
   async function continueAutopilot(request){
