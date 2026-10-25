@@ -112,15 +112,16 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
       cache.set(key, { at: now(), value });
       return value;
     },
-    async discover({ signalIds, area,locationId,tagSignals=[],includeActivity=false,includeDrinks=false }) {
+    async discover({ signalIds, area,locationId,tagSignals=[],includeActivity=false,includeDrinks=false,radiusKm=0 }) {
       const chosen=locationId?await getLocation(locationId):null;
+      if(radiusKm&&(!chosen?.center||radiusKm!==20))throw new ProviderError('provider_response_invalid');
       const parameters={
         "filter.type": "urn:entity:place", "signal.interests.entities": signalIds.join(","),
         'signal.interests.tags':[...new Set(tagSignals.flatMap(s=>s.tagIds))].join(','),
         "feature.explainability": true,
-        ...(chosen?{'filter.location':chosen.id}:{'filter.location.query':locationQuery(area)}), "filter.location.radius":0, take: 50,
+        ...(radiusKm?{'filter.location':`POINT(${chosen.center.longitude} ${chosen.center.latitude})`}:chosen?{'filter.location':chosen.id}:{'filter.location.query':locationQuery(area)}), "filter.location.radius":radiusKm*1000, take: 50,
       };
-      const retrieve=async params=>{const items=await call('/v2/insights',params,chosen?undefined:area);if(chosen)items.locality={...chosen,query:area,method:'qloo_locality_filter',radius:0};return items;};
+      const retrieve=async params=>{const items=await call('/v2/insights',params,chosen?undefined:area);if(chosen)items.locality={...chosen,query:area,method:'qloo_locality_filter',radius:radiusKm*1000,...(radiusKm?{scope:'nearby',center:chosen.center,radiusKm}:{} )};return items;};
       if(!includeActivity&&!includeDrinks)return retrieve(parameters);
       // Retrieve the requested venue types as well as the taste-led pool, so a
       // dining-heavy result cannot hide eligible bars or discovery venues.
