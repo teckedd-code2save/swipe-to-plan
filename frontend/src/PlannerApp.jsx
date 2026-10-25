@@ -252,6 +252,7 @@ export default function PlannerApp() {
     if(sharedRef.current.linked)queueMember(person);else schedule(next,`${person.name}’s tastes are now part of the day.`);
   }
   async function addPerson(person,{assistantText,offerTastes=true}={}){
+    if(!account.user){setAccountAction('circles');setAccountOpen(true);setError('Sign in and invite someone into a circle before adding them to this plan.');return;}
     if(account.user){
       const connected=connections.find(p=>p.id===person.id);
       if(!connected){setPeopleQuery(person.name||'');presentTool('people','Let’s invite them into your circle first. Their account joins when they accept.');return;}
@@ -392,6 +393,7 @@ export default function PlannerApp() {
     setPlanOpen(false);
   }
   async function continueAutopilot(request){
+    if(!Number.isInteger(request.budget)||request.budget<1){replaceBrief(request);setAutopilotPhase('');setEditor(true);setError('Choose a group budget before Autopilot searches.');return;}
     if(!autopilotRef.current||!autopilotPending.current)return;
     if(!owner)throw Error('Only the organizer can use Autopilot for this day.');
     const pendingRun=autopilotPending.current;
@@ -418,6 +420,7 @@ export default function PlannerApp() {
 
   function accept(result, text) {locationConfirmed.current=true;showPlan(result,text);replaceBrief(result.request);setTab('itinerary');}
   async function build(request, description, revision) {
+    if(!Number.isInteger(request.budget)||request.budget<1){replaceBrief(request);setError('Set a group budget before searching for your day.');setEditor(true);return false;}
     if(!locationConfirmed.current&&!shared.linked){askLocation(request);return false;}
     if(needsTiming(request)){replaceBrief(request);presentTool('timing');return false;}
     if(!request.activities.length){replaceBrief(request);presentTool('review','Choose what you’d like to do. I’ll only find places for those moments.');return false;}
