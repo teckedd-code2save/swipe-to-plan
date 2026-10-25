@@ -15,8 +15,9 @@ export default function PlanReview({brief,deck,hasPlan,confirmed,busy,onActiviti
     <button className={`cs-review-row ${!favorites?'needs-tastes':''}`} onClick={()=>onTool('tastes')}><Icon name="music" size={19}/><span><strong>{favorites?`${favorites} ${favorites===1?'favorite':'favorites'} in the mix`:'What would make this your kind of day?'}</strong><small>{favorites?labels.slice(0,3).join(' · '):'Add food, activities, music and mood'}</small></span><Icon name="plus" size={15}/></button>
     <button className="cs-review-row" onClick={()=>onTool('location')}><Icon name="pin" size={19}/><span><strong>{confirmed?brief.area:'Choose a planning area'}</strong><small>{confirmed?'Area confirmed · change anytime':'I’ll find real places around your chosen area'}</small></span><Icon name="arrowUpRight" size={14}/></button>
     <button className="cs-review-row" onClick={()=>onTool('timing')}><Icon name="calendar" size={19}/><span><strong>Date & time</strong><small>{brief.timing?.dateConfirmed!==false?dateLabel(brief.date):'Choose a day'} · {timingLabel(brief)}</small></span><span className="cs-review-edit">Edit</span></button>
-    <button className="cs-review-row" onClick={onDetails}><Icon name="wallet" size={19}/><span><strong>{brief.budget==null?'Budget open to suggestions':`${formatMoney(brief.budget,brief.currency)} group allowance`}</strong><small>Activities, budget and other details</small></span><span className="cs-review-edit">Edit</span></button>
+    <button className="cs-review-row" onClick={onDetails}><Icon name="wallet" size={19}/><span><strong>{brief.budget==null?'No budget set':`${formatMoney(brief.budget,brief.currency)} ${brief.party.adults+brief.party.children===1?'your allowance':'total allowance'}`}</strong><small>Activities, budget and other details</small></span><span className="cs-review-edit">Edit</span></button>
     <p className="cs-review-note">{favorites?'I’ll use everyone’s tastes to find the places.':'You can add tastes first, or ask me to start with the area and activities.'}</p>
     
   </section>;
 }
+
