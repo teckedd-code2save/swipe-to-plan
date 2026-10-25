@@ -1,0 +1,17 @@
+import {useState} from 'react';
+import {TasteAction} from './ChatActions.jsx';
+import {formatMoney} from './money.js';
+import {Icon} from './PlannerIcons.jsx';
+
+// Each surface has a separate agent action and only the controls for that decision.
+export function TasteCardsAction({focus='mood',cardIds=[],...props}) {
+  return <TasteAction {...props} focus={focus} suggestedIds={cardIds}/>;
+}
+export function BudgetAction({brief,onApply,onDone,editable=true}) {
+  const [amount,setAmount]=useState(brief.budget??''),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  return <section className="cs-tool" aria-label="Choose a spending limit"><div className="cs-tool-head"><span><Icon name="wallet" size={18}/>Spending limit</span><button onClick={onDone}>Back to chat</button></div><p>{brief.party.adults+brief.party.children===1?'Your total allowance':'Total for everyone'} · {brief.currency}. Optional; this is not a venue quote.</p><form className="cs-inline-form" onSubmit={async e=>{e.preventDefault();setBusy(true);setError('');try{await onApply(amount===''?null:Number(amount));}catch(e){setError(e.message);}finally{setBusy(false);}}}><input aria-label="Total spending limit" type="number" min="1" max="10000000" placeholder="Leave unset" value={amount} disabled={!editable||busy} onChange={e=>setAmount(e.target.value)}/><button disabled={!editable||busy}>{busy?'Saving…':'Use this limit'}</button></form>{error&&<p role="alert">{error}</p>}</section>;
+}
+export function ComparePlacesAction({plan,checks,onDone,onTool,onDetails}) {
+  const filled=plan?.stops.filter(s=>s.item)||[];
+  return <section className="cs-tool" aria-label="Compare menus, times and allowances"><div className="cs-tool-head"><span><Icon name="clock" size={18}/>Compare the options</span><button onClick={onDone}>Back to chat</button></div>{!filled.length?<p>There are no matched places to compare yet. Tell me what you want to find.</p>:<><p>{plan.request.budget==null?'No spending limit set.':`Total allowance: ${formatMoney(plan.request.budget,plan.request.currency)}.`} Reported hours and menu details may need confirmation. Allowances do not prove affordability.</p>{filled.map(stop=>{const report=checks.data?.stops.find(s=>s.entityId===stop.item.entityId&&s.start===stop.start);const place=report?.place||stop.item;const allowance=plan.budget.allocations.find(a=>a.intent===stop.intent)?.amount;return <article className="cs-taste-picked" key={stop.id}><h3>{place.name}</h3><p>{stop.start}–{stop.end} · {report?.hours?.summary||(checks.status==='loading'?'Checking reported hours…':'Hours not confirmed')}</p><p>{report?.menu?.highlights?.length?report.menu.highlights.join(' · '):'Menu items not available in current evidence.'}</p><p>{allowance==null?'No allowance assigned':`Stop allowance: ${formatMoney(allowance,plan.request.currency)}`} · {place.facts?.price?.level?['','Lower','Mid','Higher','Premium'][place.facts.price.level]+' relative price band':'Prices to confirm'}</p>{place.links?.menu&&<a href={place.links.menu} target="_blank" rel="noreferrer">Open menu</a>} <button onClick={()=>onDetails(stop)}>Details & hours</button></article>;})}<p>Menu prices, serving times and availability are not verified by these checks.</p></>}<div className="cs-starters"><button onClick={()=>onTool('timing')}>Change time</button><button onClick={()=>onTool('budget')}>Set budget</button><button onClick={()=>onTool('location')}>Change location</button></div></section>;
+}
