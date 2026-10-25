@@ -149,3 +149,20 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 /* Single contextual action belongs to chat, not the draft editor. */
 .cs-send:has(.cs-plan-submit-label){width:auto;min-width:86px;border-radius:18px;padding:0 11px;display:flex;align-items:center;justify-content:center;gap:7px}
 .cs-plan-submit-label{font-size:11px;font-weight:600;white-space:nowrap}
+
+/* Gesture-driven card fan: retain the deck's original art and colors. */
+.deck-gesture-hint{text-align:center;font-size:11px;color:#79866d;margin:8px 0 13px}
+.deck-spread{max-height:min(58dvh,520px);overflow-y:auto;overscroll-behavior:contain;padding:0 8px 34px;scrollbar-width:thin;touch-action:pan-y}
+.deck-spread-search{display:block;position:sticky;top:0;z-index:20;background:var(--cs-paper,#faf9f5);padding:8px 1px 12px;color:#708263;font-size:11px}
+.deck-spread-search input{display:block;width:100%;min-width:0;margin-top:5px;border:1px solid #dbe0d1;border-radius:10px;padding:10px 12px;background:#fff;color:#35442e;font-size:14px}
+.deck-spread .deck-fan-card{position:relative!important;inset:auto!important;display:flex;flex-direction:column;justify-content:space-between;width:100%;height:clamp(175px,32dvh,255px)!important;min-height:175px!important;max-width:100%;margin:0 0 0!important;padding:16px 20px;border-radius:17px;transform:none!important;box-shadow:0 8px 24px #20301924!important;overflow:hidden;isolation:isolate}
+.deck-spread .deck-fan-card+.deck-fan-card{margin-top:-25px!important}
+.deck-spread .deck-fan-card .card-topline{position:relative;z-index:1}
+.deck-spread .deck-fan-card .taste-card-copy{position:relative!important;inset:auto!important;z-index:1;margin-top:auto;margin-bottom:32px}
+.deck-spread .deck-fan-card .taste-card-copy h2{font-size:clamp(24px,5vw,38px)!important;line-height:1.08}
+.deck-spread .deck-fan-card .taste-card-copy p{line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.deck-fan-actions{position:absolute;z-index:5;bottom:9px;right:12px;display:flex;gap:8px}
+.deck-fan-actions button{display:flex;align-items:center;gap:5px;background:#ffffffeb!important;color:#415a38!important;border-radius:17px;padding:7px 12px!important;font-size:11px;font-weight:600}
+.deck-no-match{padding:20px 10px;text-align:center;font-size:12px}
+@media(max-width:600px){.deck-spread{max-height:52dvh;padding:0 2px 25px}.deck-spread .deck-fan-card{height:190px!important;min-height:190px!important;padding:14px 15px}.deck-spread .deck-fan-card+.deck-fan-card{margin-top:-20px!important}.deck-gesture-hint{font-size:10px}}
+@media(prefers-reduced-motion:reduce){.deck-spread .deck-fan-card{transition:none!important}}
