@@ -161,3 +161,24 @@ test('new plans use activity-specific names and reject explicit unset budgets',(
   assert.match(coffee.title,/Coffee/);
   assert.notEqual(dinner.title,coffee.title);
 });
+
+test('a request for local Ghanaian food prioritizes evidence over generic pizza',async()=>{
+  const pizza=venue('pizza',['restaurant']);pizza.name='Pizza Corner';pizza.properties.short_description='Pizza, pasta and Italian classics';
+  const ghanaian=venue('banku',['restaurant']);ghanaian.name='Banku Kitchen';ghanaian.properties.short_description='Ghanaian dishes including banku and fufu';
+  const request=parseItinerary({activities:['dinner'],title:'',experience:{cuisine:'Ghanaian'}});
+  const plan=await buildItinerary(engine([pizza,ghanaian]),request);
+  assert.equal(plan.stops[0].item.entityId,'banku');
+  assert.equal(plan.stops[0].item.experienceFit.cuisine.status,'provider_text_signal');
+  assert.match(plan.request.title,/Ghanaian food/i);
+});
+test('unsupported cuisine stays explicitly unverified, never promoted as a confirmed match',async()=>{
+  const pizza=venue('pizza',['restaurant']);pizza.name='Pizza Corner';
+  const plan=await buildItinerary(engine([pizza]),parseItinerary({activities:['dinner'],experience:{cuisine:'Ghanaian'}}));
+  assert.equal(plan.stops[0].item.experienceFit.cuisine.status,'unverified');
+  assert.ok(plan.warnings.some(w=>w.includes("couldn't verify Ghanaian cuisine")));
+});
+test('a user's distinctive outing title survives result construction',async()=>{
+  const restaurant=venue('meal',['restaurant']);
+  const plan=await buildItinerary(engine([restaurant]),parseItinerary({title:'My birthday surprise',activities:['dinner']}));
+  assert.equal(plan.request.title,'My birthday surprise');
+});
