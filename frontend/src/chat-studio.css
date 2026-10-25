@@ -223,3 +223,8 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 .deck-spread .deck-fan-actions button{padding:6px 8px!important;font-size:10px!important}
 .deck-spread .deck-fan-card:focus-within,.deck-spread .deck-fan-card:hover{z-index:12}
 @media(max-width:600px){.deck-spread .deck-fan-actions{top:8px;right:8px}}
+
+
+/* Make the return to conversation visible, including on touch screens. */
+.cs-composer:focus-within{border-color:#617b51;box-shadow:0 0 0 3px #617b5126}
+.cs-composer textarea{caret-color:#405d32}
