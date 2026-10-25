@@ -11,7 +11,7 @@ const cues={
   mexican:['mexican','taco','quesadilla','burrito'],
 };
 function words(place){
-  return [place.name,place.description,...(place.tagNames||[])].filter(Boolean).map(normalize);
+  return [place.name,place.description,...(place.cuisineTags||[]),...(place.tagNames||[])].filter(Boolean).map(normalize);
 }
 function isMentioned(values,term){
   const query=normalize(term).trim();
