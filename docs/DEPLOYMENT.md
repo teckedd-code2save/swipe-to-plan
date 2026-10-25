@@ -12,6 +12,12 @@ Cloudflare DNS is managed through Ground Control. The domain has a DNS-only A re
 
 The initial release and model update passed the GitHub checks and public HTTPS smoke test. Production uses `gemini-3.5-flash-lite`; direct launch checks of the earlier default, `gemini-3.1-flash-lite`, returned timeouts and HTTP 503. The replacement was checked with actual planning and participant tools, not just a text greeting.
 
+## Ground Control builds
+
+Do not retry `deployment.source.deploy` while its Compose build inherits a digest-pinned `UNSTRESSED_IMAGE`: Docker cannot use a digest reference as an output build tag. A digest is appropriate for running a previously built image, not naming a new build.
+
+The normal release path is the GitHub workflow above, which builds with the exact commit SHA as its tag and preserves the candidate health check, data backup and rollback. If Ground Control is needed instead, use `deployment.build_publish` for an exact commit, inspect its verified result, then `deployment.release` for that successful build operation. Do not run both release paths concurrently. Keep runtime digest pinning; do not replace the running image with a mutable tag merely to make a source build pass.
+
 ## Runtime configuration
 
 The only application secret file on the server is `/opt/unstressed/.env` (root-owned, mode 600). It holds the Qloo, model and Google OAuth credentials plus these deployment values:
