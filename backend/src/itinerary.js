@@ -9,7 +9,7 @@ export const ACTIVITIES = ['coffee', 'activity', 'dinner', 'drinks'];
 const DEFAULT_MINUTES = { coffee: 45, activity: 90, dinner: 75, drinks: 60 };
 const MIN_MINUTES = { coffee: 30, activity: 45, dinner: 45, drinks: 30 };
 const WEIGHTS = { coffee: 1, activity: 2, dinner: 3, drinks: 2 };
-const LABELS = { coffee: 'A slow beginning', activity: 'A little discovery', dinner: 'Gather around the table', drinks: 'Stay a little longer' };
+const LABELS = { coffee: 'A place to pause', activity: 'A little discovery', dinner: 'Gather around the table', drinks: 'Stay a little longer' };
 const object = (value, keys, label) => {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some((key) => !keys.includes(key))) throw new InputError(`Unsupported ${label}.`);
   return value;
@@ -147,6 +147,9 @@ function resultTitle(request,stops){
   // generated from generic activities, especially when some stops go unfilled.
   const generic=/^(?:coffee|dinner|drinks|something fun|a meal|a discovery|a day out|family day|a day together|a little day|one place|good company)(?:[ &+a-z ]*)?(?: in .+)?$/i;
   if(!generic.test(request.title)&&!/^a little day\b/i.test(request.title))return request.title;
+  // Name a returned cafe as a place, rather than turn its retrieval category
+  // into a claim that the person requested coffee.
+  if(filled.length===1&&filled[0].intent==='coffee')return filled[0].item.name.slice(0,80);
   const names={coffee:'Coffee',activity:'A discovery',dinner:'A meal',drinks:'Drinks'};
   const intents=[...new Set(filled.map(stop=>stop.intent))];
   const cuisine=request.experience?.cuisine;
