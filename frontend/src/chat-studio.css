@@ -242,3 +242,5 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
  .cs-day-content .cs-next-steps.compact{margin-top:20px;display:block;padding:12px;border:1px solid #e2e5d8;border-radius:10px}
  .cs-day-content .cs-next-buttons{margin-top:8px}
 }
+
+.cs-result-next-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}.cs-day-footer{flex-wrap:wrap}.cs-result-next-actions button:first-child{background:#4d6247;color:#fff}
