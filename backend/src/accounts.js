@@ -144,7 +144,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       const token=opaque();
       const record=await store.transact(data=>{
         const user=requireUser(data,session),circle=data.circles[id];
-        if(!circle||circle.ownerId!==user.id)throw fail('Only the circle organizer can invite.');
+        if(!circle||!circle.members.some(member=>member.userId===user.id))throw fail('Only existing circle members can invite.');
         circle.emailInvites??={};
         const pending=Object.values(circle.emailInvites).filter(item=>item.expiresAt>now());
         if(pending.length>=10)throw fail('This circle has reached its pending invitation limit.',429);
