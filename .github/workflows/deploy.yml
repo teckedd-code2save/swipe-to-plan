@@ -45,7 +45,7 @@ jobs:
           set -euo pipefail
           remote="$DEPLOY_USER@$DEPLOY_HOST"
           docker save "ghcr.io/teckedd-code2save/unstressed:$GITHUB_SHA" | gzip -1 | ssh -i ~/.ssh/unstressed "$remote" 'gunzip | docker load'
-          scp -i ~/.ssh/unstressed deploy/compose.yml deploy/release.sh "$remote:/opt/unstressed/"
+          scp -i ~/.ssh/unstressed compose.yml deploy/release.sh "$remote:/opt/unstressed/"
           ssh -i ~/.ssh/unstressed "$remote" "bash /opt/unstressed/release.sh ghcr.io/teckedd-code2save/unstressed:$GITHUB_SHA"
       - name: Check public service
         run: curl --retry 5 --retry-delay 5 --retry-all-errors --fail --max-time 20 https://unstressed.serendepify.com/api/health
