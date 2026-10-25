@@ -14,6 +14,8 @@ COPY backend/prisma ./prisma
 RUN npm ci --omit=dev && npm cache clean --force
 COPY backend/src ./src
 COPY backend/test ./test
+# Backend regression tests reuse browser-independent planning helpers.
+COPY frontend/src /build/frontend/src
 RUN npm test
 
 FROM node:22-bookworm-slim AS runner
