@@ -3,6 +3,7 @@ import { parseArea, InputError, parseRequest } from './contract.js';
 import { byId,matchesTasteTag } from './deck.js';
 import { mergeGroup } from './plan.js';
 import { schedulePlaces } from './scheduling.js';
+import {rerankForExperience} from './experience.js';
 
 export const ACTIVITIES = ['coffee', 'activity', 'dinner', 'drinks'];
 const DEFAULT_MINUTES = { coffee: 45, activity: 90, dinner: 75, drinks: 60 };
@@ -159,11 +160,18 @@ export async function buildItinerary(discovery, request) {
   // budget and participation remain included, without a generic search drowning
   // out another member's explicit preferences or creating false taste evidence.
   const members=request.people.map((_,index)=>fetched.find(m=>m.index===index)?.results||request.activities.map(()=>({ranked:[],taste:{mode:'discovery',resolved:[],unresolved:[],vibes:[]},provenance:fetched[0].results[0].provenance,fetched:0})));
-  const ranked = request.activities.map((intent,index) => fetched.length === 1 ? fetched[0].results[index].ranked : mergeGroup(fetched.map(({results,index:i}) => ({...results[index],id:request.people[i].id || `person-${i}`,name:request.people[i].name})),50).items);
+  const ranked = request.activities.map((intent,index) => rerankForExperience(fetched.length === 1 ? fetched[0].results[index].ranked : mergeGroup(fetched.map(({results,index:i}) => ({...results[index],id:request.people[i].id || `person-${i}`,name:request.people[i].name})),50).items,request.experience,intent));
   const reserved = new Set(Object.values(request.pins));
-  const pools = ranked.map((items,index) => request.pins[request.activities[index]] ? items.filter((item) => item.id===request.pins[request.activities[index]]) : items.filter((item) => !reserved.has(item.id)).slice(0,8));
+  const makePools=(limit)=>ranked.map((items,index) => request.pins[request.activities[index]] ? items.filter((item) => item.id===request.pins[request.activities[index]]) : items.filter((item) => !reserved.has(item.id)).slice(0,limit));
+  const pools=makePools(8);
   const timeZone=members[0][0].provenance.locality?.timeZone||(['Accra','Osu','East Legon','Cantonments','Labone','Airport Residential'].includes(request.area)?'Africa/Accra':null);
-  const fitted=await schedulePlaces(pools,schedule,request,{details:discovery.placeDetails,timeZone,now:discovery.now?.()});
+  let fitted=await schedulePlaces(pools,schedule,request,{details:discovery.placeDetails,timeZone,now:discovery.now?.()});
+  // Expand only when an initial shortlist cannot fill the outing. Preserve hard
+  // constraints, pinned venues, and the previous result if the retry is no better.
+  if(fitted.stops.some(stop=>!stop.item)&&fitted.stops.some(stop=>stop.reason!=='time_in_past')&&ranked.some((items,index)=>items.length>pools[index].length)){
+    const expanded=await schedulePlaces(makePools(14),schedule,request,{details:discovery.placeDetails,timeZone,now:discovery.now?.()});
+    if(expanded.stops.filter(stop=>stop.item).length>fitted.stops.filter(stop=>stop.item).length)fitted=expanded;
+  }
   const selected=fitted.stops.map(s=>s.item);
   const stops = fitted.stops.map((slot,index) => ({...slot,id:`stop-${index}`,label:LABELS[slot.intent],item:selected[index],status:selected[index]?'matched':'unfilled',alternatives:ranked[index].filter((item) => !selected.some((chosen) => chosen?.id===item.id)).slice(0,2),...(selected[index]?{}:{reason:slot.reason|| (request.pins[slot.intent]?'kept_place_unavailable':pools[index].length?'no_distinct_place':'no_eligible_places')})}));
   const filled = stops.filter((stop) => stop.item);
@@ -183,6 +191,7 @@ export async function buildItinerary(discovery, request) {
     links:{directions:provider!=='demo'&&filled.length>=1?directions.href:null},
     checks:[{label:'Distinct stops',status:'passed'},{label:'Time window',status:'passed'},{label:'Budget allocated',status:'passed'},{label:'Opening hours',status:filled.length&&filled.every(s=>s.hours?.status==='fits_reported_hours')?'checked':'unverified'},{label:'Travel time',status:'unverified'},...(request.party.children?[{label:'Child suitability',status:'unverified'}]:[])],
     activity:[{label:'Preferences resolved',detail:`${members.reduce((sum,r)=>sum+r[0].taste.resolved.length,0)} artist signals across ${members.length} taste profile${members.length===1?'':'s'}`},{label:'Qloo places considered',detail:`${members.reduce((sum,r)=>sum+r[0].fetched,0)} candidate appearances before activity and area checks`},{label:'A day assembled',detail:`${filled.length} of ${stops.length} stops filled; no filters widened`},{label:'Budget and time checked',detail:'Spending allowances and suggested time slots calculated'}],
-    warnings:[...fitted.notes,...(provider==='demo'?['Sample plan with synthetic places.']:[]),...(unresolved.length?[`Unresolved artists: ${unresolved.map((entry)=>`${entry.requested} (${entry.person})`).join(', ')}.`]:[]),...(filled.length<stops.length?['Some stops could not be filled without changing your preferences.']:[]),'Suggested times do not verify opening hours. Travel buffers are not route estimates.','Budget figures are allowances, not venue quotes. Confirm prices and availability before going.',...(request.party.children?['Check child suitability directly with the venues.']:[])],
+    warnings:[...fitted.notes,...(provider==='demo'?['Sample plan with synthetic places.']:[]),...(unresolved.length?[`Unresolved artists: ${unresolved.map((entry)=>`${entry.requested} (${entry.person})`).join(', ')}.`]:[]),...(filled.length<stops.length?['Some stops could not be filled without changing your preferences.']:[]),
+      ...(request.experience?.cuisine&&request.activities.includes('dinner')&&!stops.some(stop=>stop.intent==='dinner'&&stop.item?.experienceFit?.cuisine?.status==='provider_text_signal')?[`I couldn't verify ${request.experience.cuisine} cuisine among the available places. The current alternatives may not meet that request.`]:[]),'Suggested times do not verify opening hours. Travel buffers are not route estimates.','Budget figures are allowances, not venue quotes. Confirm prices and availability before going.',...(request.party.children?['Check child suitability directly with the venues.']:[])],
   };
 }
