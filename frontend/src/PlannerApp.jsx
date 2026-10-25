@@ -466,7 +466,7 @@ export default function PlannerApp() {
         if(result.circleId){const circle=circles.find(c=>c.id===result.circleId);activeCircle.current=circle?{id:circle.id,people:circlePeople(circle,contacts)}:null;}
         autopilotPending.current={stage:result.needsLocation?'location':'planning',revision};
         if(result.needsLocation){setAutopilotPhase('location');askLocation(result.request,result.nearby?'':result.request.area,'plan',result.assistantMessage,result.nearby);}
-        else {if(result.assistantMessage)append('assistant',result.assistantMessage);await continueAutopilot(result.request);}
+        else {await continueAutopilot(result.request);}
       }else if(result.status==='action'){
         if(result.action==='invite_person'){setPeopleQuery(result.name);presentTool('people',result.assistantMessage||`Let’s invite ${result.name} into a circle. They’ll join with their own account and tastes.`);}
         if(result.action==='choose_activities'){replaceBrief(result.request);presentTool('review','Choose what you’d like to do. One place or a little mix—it’s up to you.');}
@@ -485,7 +485,7 @@ export default function PlannerApp() {
         else {setTab(result.panel==='budget'?'budget':result.panel==='checks'?'checklist':'itinerary');setPlanOpen(true);append('assistant',result.assistantMessage||(planRef.current?(result.panel==='checks'?'I’m comparing your times with reported hours and gathering the venue details. You’ll see what still needs confirming.':'Here’s the current day.'):'Tell me the outing you have in mind, and we can shape it together.'));}
       }else if(result.status==='needs_input')append('assistant',result.question);
       else if(result.status==='reply')append('assistant',result.text);
-      else if(result.status==='ready'){if(!owner)throw Error('Only the organizer can change the trip details.');if(result.assistantMessage)append('assistant',result.assistantMessage);replaceBrief(result.request);showWhenReady.current=true;await build(result.request,undefined,revision);}else throw Error('The planning response was not understood. Please retry your request.');
+      else if(result.status==='ready'){if(!owner)throw Error('Only the organizer can change the trip details.');replaceBrief(result.request);showWhenReady.current=true;await build(result.request,undefined,revision);}else throw Error('The planning response was not understood. Please retry your request.');
     }catch(e){setError(e.message);setRevisionFailed(true);setMessage(sent);setAutopilotPhase('');autopilotPending.current=null;}
     finally{working.current=false;setBusy(false);}
   }
