@@ -50,9 +50,8 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
   });
   if (new Set(profiles.filter(p=>p.id).map(p=>p.id)).size !== profiles.filter(p=>p.id).length) throw new InputError('Taste profile IDs must be distinct.');
   const activities = body.activities ?? [];
-  const suggestedBudget = Math.max(100,Math.ceil((activities.reduce((sum,activity)=>sum+({coffee:90,activity:170,dinner:220,drinks:110}[activity]||0),0)||220)*(adults+children*.6)*1.2/50)*50);
-  const budgetSuggested = body.budget == null;
-  const budget = integer(budgetSuggested?suggestedBudget:body.budget,1,10000000,'Group budget');
+  // An omitted allowance remains unknown through parsing, revisions and saving.
+  const budget = body.budget == null ? null : integer(body.budget,1,10000000,'Budget');
   const currency=body.currency??'GHS';
   if(typeof currency!=='string'||!Intl.supportedValuesOf('currency').includes(currency))throw new InputError('Choose a valid three-letter currency code, such as USD, EUR or GHS.');
   const startTime = clock(body.startTime ?? '11:00'), endTime = clock(body.endTime ?? '18:00');
@@ -93,6 +92,7 @@ export function makeSchedule(request) {
 
 export function allocateBudget(request, filledIntents) {
   const influences=request.people.map((person,index)=>({personId:person.id||`person-${index}`,name:person.name,style:person.spending?.style||'balanced',priority:person.spending?.priority||'even',explicit:!!person.spending}));
+  if(request.budget==null)return {currency:request.currency||'GHS',total:null,reserve:null,transport:null,allocations:request.activities.map(intent=>({intent,amount:null,perPerson:null,assigned:filledIntents.includes(intent)})),influences,basis:'not_set',quotedTotal:null,note:'No budget was specified. Check venue prices before deciding what to spend.'};
   const reserveRates={mindful:.2,balanced:.1,treat:.05};
   const reserve = Math.round(request.budget * influences.reduce((sum,p)=>sum+reserveRates[p.style],0)/influences.length), transport = Math.round(request.budget * .15);
   const available = request.budget-reserve-transport;
@@ -204,9 +204,10 @@ export async function buildItinerary(discovery, request) {
     provenance:{provider,retrievedAt:members[0][0].provenance.retrievedAt,...(members[0][0].provenance.locality?{locality:members[0][0].provenance.locality}:{})},
     timeZone,timingNotes:fitted.notes,
     links:{directions:provider!=='demo'&&filled.length>=1?directions.href:null},
-    checks:[{label:'Distinct stops',status:'passed'},{label:'Time window',status:'passed'},{label:'Budget allocated',status:'passed'},{label:'Opening hours',status:filled.length&&filled.every(s=>s.hours?.status==='fits_reported_hours')?'checked':'unverified'},{label:'Travel time',status:'unverified'},...(request.party.children?[{label:'Child suitability',status:'unverified'}]:[])],
-    activity:[{label:'Preferences resolved',detail:`${members.reduce((sum,r)=>sum+r[0].taste.resolved.length,0)} artist signals across ${members.length} taste profile${members.length===1?'':'s'}`},{label:'Qloo places considered',detail:`${members.reduce((sum,r)=>sum+r[0].fetched,0)} candidate appearances before activity and area checks`},{label:'A day assembled',detail:`${filled.length} of ${stops.length} stops filled; no filters widened`},{label:'Budget and time checked',detail:'Spending allowances and suggested time slots calculated'}],
+    checks:[{label:'Distinct stops',status:'passed'},{label:'Time window',status:'passed'},{label:'Budget allocated',status:request.budget==null?'not_set':'passed'},{label:'Opening hours',status:filled.length&&filled.every(s=>s.hours?.status==='fits_reported_hours')?'checked':'unverified'},{label:'Travel time',status:'unverified'},...(request.party.children?[{label:'Child suitability',status:'unverified'}]:[])],
+    activity:[{label:'Preferences resolved',detail:`${members.reduce((sum,r)=>sum+r[0].taste.resolved.length,0)} artist signals across ${members.length} taste profile${members.length===1?'':'s'}`},{label:'Qloo places considered',detail:`${members.reduce((sum,r)=>sum+r[0].fetched,0)} candidate appearances before activity and area checks`},{label:'A day assembled',detail:`${filled.length} of ${stops.length} stops filled; no filters widened`},{label:'Budget and time checked',detail:request.budget==null?'Suggested time slots calculated; no budget specified':'Spending allowances and suggested time slots calculated'}],
     warnings:[...fitted.notes,...(provider==='demo'?['Sample plan with synthetic places.']:[]),...(unresolved.length?[`Unresolved artists: ${unresolved.map((entry)=>`${entry.requested} (${entry.person})`).join(', ')}.`]:[]),...(filled.length<stops.length?['Some stops could not be filled without changing your preferences.']:[]),
       ...(request.experience?.cuisine&&request.activities.includes('dinner')&&!stops.some(stop=>stop.intent==='dinner'&&stop.item?.experienceFit?.cuisine?.status==='provider_text_signal')?[`I couldn't verify ${request.experience.cuisine} cuisine among the available places. The current alternatives may not meet that request.`]:[]),'Suggested times do not verify opening hours. Travel buffers are not route estimates.','Budget figures are allowances, not venue quotes. Confirm prices and availability before going.',...(request.party.children?['Check child suitability directly with the venues.']:[])],
   };
 }
+
