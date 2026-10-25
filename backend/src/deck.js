@@ -58,14 +58,16 @@ export const DECK = [
   vibe('books','Books & browsing','Follow your curiosity down an aisle','📚','(^|[:_])(bookstore|bookshop|library)($|[:_])','activity'),
 ];
 
-const tagQueries={african:'african',ghanaian:'ghanaian',seafood:'seafood',italian:'italian',asian:'asian',plant:'vegetarian',grill:'barbecue',bakery:'bakery',art:'art gallery',nature:'park',history:'museum',beach:'beach',markets:'market',books:'bookstore'};
+const tagQueries={bar:'bar',club:'nightclub',african:'african',ghanaian:'ghanaian',seafood:'seafood',italian:'italian',asian:'asian',plant:'vegetarian',grill:'barbecue',bakery:'bakery',art:'art gallery',nature:'park',history:'museum',beach:'beach',markets:'market',books:'bookstore'};
 for(const card of DECK)if(tagQueries[card.id.slice(2)])card.tagQuery=tagQueries[card.id.slice(2)];
 
 export const byId = Object.fromEntries(DECK.map((c) => [c.id, c]));
 export function matchesTasteTag(card,id){
   if(!card?.rx||!card.rx.test(id))return false;
+  if(['v-bar','v-club'].includes(card.id))return /^urn:tag:(category|genre):(place|qloo):/.test(id);
   if(card.group==='activity')return /^urn:tag:(category|genre):(place|qloo):[^:]+$/.test(id);
   if(card.group==='food')return /^urn:tag:(category|genre|cuisine|culinary_style):(place|qloo):/.test(id)&&!/:hotel:/.test(id);
   return true;
 }
 export const publicDeck = () => DECK.map(({ re, rx, query, tagQuery, ...c }) => c);
+
