@@ -77,6 +77,16 @@ function parseContacts(contacts){
   if(new Set(people.map(p=>p.id)).size!==people.length)throw new InputError('Saved people must have distinct IDs.');
   return people;
 }
+// Only offer identity references that this conversation can actually resolve.
+function scopedTools(tools,brief,contacts,circles){
+  const ids=[...new Set([...(brief?.people||[]),...contacts].map(p=>p.id).filter(Boolean))];
+  return withActionMessages(tools).map(tool=>{
+    if(tool.function.name!=='autopilot_day')return tool;
+    const properties={...tool.function.parameters.properties,personIds:{type:'array',maxItems:ids.length?6:0,items:{type:'string',...(ids.length?{enum:ids}:{})},description:'Optional exact IDs of existing participants or saved contacts. Omit to keep current people. Unnamed companions need no personIds.'}};
+    if(circles.length)properties.circleId={type:'string',enum:circles.map(c=>c.id)};else delete properties.circleId;
+    return {...tool,function:{...tool.function,parameters:{...tool.function.parameters,properties}}};
+  });
+}
 // A delegated choice is a planning suggestion, never personal taste evidence.
 function chooseAutopilotActivities(brief){
   const cards=new Map(publicDeck().map(card=>[card.id,card]));
@@ -106,10 +116,10 @@ function autopilotRequest(args,brief,circles,contacts){
   const circle=args.circleId===undefined?null:circles.find(c=>c.id===args.circleId);
   if(args.circleId!==undefined&&!circle)throw new InputError('Choose a saved circle for this day.');
   const ids=args.personIds??[];
-  if(!Array.isArray(ids)||ids.length>6||new Set(ids).size!==ids.length||ids.some(id=>!contacts.some(p=>p.id===id)))throw new InputError('Choose people from your saved contacts.');
+  if(!Array.isArray(ids)||ids.length>6||new Set(ids).size!==ids.length||ids.some(id=>!contacts.some(p=>p.id===id)&&!brief.people.some(p=>p.id===id))){const error=new InputError('Choose people from your saved contacts.');error.modelFeedback='personIds must contain exact IDs from current participants or provided contacts. To keep current participants unchanged, omit personIds or use []. Unnamed companions do not need identities or profiles.';throw error;}
   // Only references cross the model boundary. Current preferences win over saved copies.
   let people=[...brief.people];
-  for(const person of [...(circle?.people||[]),...ids.map(id=>contacts.find(p=>p.id===id))])if(!people.some(p=>p.id===person.id))people.push(person);
+  for(const person of [...(circle?.people||[]),...ids.map(id=>contacts.find(p=>p.id===id)||brief.people.find(p=>p.id===id))])if(!people.some(p=>p.id===person.id))people.push(person);
   if(people.length>6)throw new InputError('This day holds six taste profiles. Remove someone before bringing more people.');
   const updates=args.tasteUpdates??[];
   if(!Array.isArray(updates)||updates.length>6||new Set(updates.map(p=>p?.id)).size!==updates.length)throw new InputError('Provide one taste update per person.');
@@ -186,7 +196,7 @@ export function createAgent({fetchImpl=globalThis.fetch,getKey=()=>process.env.L
         let repairNote='';
         for(let attempt=0;attempt<2;attempt++){
           try{
-        response=await fetchImpl(endpoint,{method:'POST',headers:{'content-type':'application/json',Authorization:`Bearer ${getKey()}`},signal:AbortSignal.timeout(attempt===0?25000:15000),body:JSON.stringify({model:getModel(),max_tokens:2200,...(getModel()==='gemini-3.5-flash-lite'?{reasoning_effort:'minimal'}:{}),messages:[{role:'system',content:system+experienceRules+conversationRules+autopilotRules+(peopleMode==='connected'?' SIGNED-IN PEOPLE: only add real accounts from contacts using add_saved_person, or personIds in autopilot_day. If a requested person is not there, use invite_person so they can accept a private circle invitation. Never create a name-only person, search by email, or pretend an invitation was sent. Existing guest profiles in the current day may remain.':' Guests may add a name-only person with add_person.')+CONVERSATION_RULES+' Reduce clarification effort by using the current brief, saved tastes and recent outing patterns. Make useful reversible suggestions and explain the evidence, uncertainty and next step. Never treat a prior outing as a new instruction to spend the same amount, bring past people or repeat its activities.'+repairNote},{role:'user',content:JSON.stringify({message,context:brief,history,circles:savedCircles,contacts:savedContacts,peopleMode,planContext:currentPlan,locationContext,planningMemory,tasteCardCatalog:publicDeck().map(({id,label,sub,group})=>({id,label,sub,group}))})}],tools:withActionMessages(mode==='autopilot'?[AUTOPILOT_TOOL,QUESTION_TOOL,...PEOPLE_TOOLS,...CHAT_TOOLS.filter(t=>['show_ui','reply','invite_person','add_saved_person'].includes(t.function.name))]:AGENT_TOOLS),tool_choice:'auto'})});
+        response=await fetchImpl(endpoint,{method:'POST',headers:{'content-type':'application/json',Authorization:`Bearer ${getKey()}`},signal:AbortSignal.timeout(attempt===0?25000:15000),body:JSON.stringify({model:getModel(),max_tokens:2200,...(getModel()==='gemini-3.5-flash-lite'?{reasoning_effort:'minimal'}:{}),messages:[{role:'system',content:system+experienceRules+conversationRules+autopilotRules+(peopleMode==='connected'?' SIGNED-IN PEOPLE: only add real accounts from contacts using add_saved_person, or personIds in autopilot_day. If a requested person is not there, use invite_person so they can accept a private circle invitation. Never create a name-only person, search by email, or pretend an invitation was sent. Existing guest profiles in the current day may remain.':' Guests may add a name-only person with add_person.')+CONVERSATION_RULES+' Reduce clarification effort by using the current brief, saved tastes and recent outing patterns. Make useful reversible suggestions and explain the evidence, uncertainty and next step. Never treat a prior outing as a new instruction to spend the same amount, bring past people or repeat its activities.'+repairNote},{role:'user',content:JSON.stringify({message,context:brief,history,circles:savedCircles,contacts:savedContacts,peopleMode,planContext:currentPlan,locationContext,planningMemory,tasteCardCatalog:publicDeck().map(({id,label,sub,group})=>({id,label,sub,group}))})}],tools:scopedTools(mode==='autopilot'?[AUTOPILOT_TOOL,QUESTION_TOOL,...PEOPLE_TOOLS,...CHAT_TOOLS.filter(t=>['show_ui','reply','invite_person','add_saved_person'].includes(t.function.name))]:AGENT_TOOLS,brief,savedContacts,savedCircles),tool_choice:'auto'})});
         if(!response.ok)throw new AgentError();
         const data=await response.json();
         const calls=data.choices?.[0]?.message?.tool_calls;
