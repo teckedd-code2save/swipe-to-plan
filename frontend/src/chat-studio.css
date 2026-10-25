@@ -228,3 +228,17 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 /* Make the return to conversation visible, including on touch screens. */
 .cs-composer:focus-within{border-color:#617b51;box-shadow:0 0 0 3px #617b5126}
 .cs-composer textarea{caret-color:#405d32}
+
+/* The result is one scroll surface: foldables must not trap the venue below fixed notices. */
+@media screen and (max-width:1000px){
+ .day-open .cs-day-panel{display:block;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+ .cs-day-header{padding:16px 18px 10px}
+ .cs-day-header h2{font-size:clamp(22px,3.8vw,28px);line-height:1.15;margin:4px 0 6px;overflow-wrap:anywhere}
+ .cs-day-header p{line-height:1.4;max-width:52ch}
+ .cs-day-panel .cs-day-tabs{position:sticky;top:0;z-index:2;background:#f5f6ee;padding:0 18px;gap:20px;overflow-x:auto}
+ .cs-day-content{overflow:visible;min-height:0;padding:16px 18px 20px}
+ .cs-day-footer{position:sticky;bottom:0;z-index:2;background:#f5f6eef5;padding:10px 18px max(10px,env(safe-area-inset-bottom))}
+ .cs-route{padding:10px 18px}
+ .cs-day-content .cs-next-steps.compact{margin-top:20px;display:block;padding:12px;border:1px solid #e2e5d8;border-radius:10px}
+ .cs-day-content .cs-next-buttons{margin-top:8px}
+}
