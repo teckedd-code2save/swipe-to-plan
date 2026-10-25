@@ -234,3 +234,29 @@ test('shared-day account copies require participant access, are idempotent, and 
   const req={headers:{cookie:`outing-session=${a.session}`},get:name=>({...headers,'x-unstressed-plan-id':day.id,'x-unstressed-plan-revision':'9'})[name],is:()=>true};
   assert.notEqual((await f.accounts.planTarget(req)).id,day.id);
 });
+
+test('email circle invitations are recipient-bound and require explicit acceptance',async()=>{
+  const oldFetch=globalThis.fetch,oldKey=process.env.RESEND_API_KEY,oldFrom=process.env.CIRCLE_INVITE_FROM;
+  process.env.RESEND_API_KEY='test-resend-key';process.env.CIRCLE_INVITE_FROM='Invites <invites@example.test>';
+  let emailText='';
+  globalThis.fetch=async(_url,options)=>{emailText=JSON.parse(options.body).text;return {ok:true};};
+  try{
+    const f=fixture(),a=await f.login('Alice'),alice=(await f.accounts.current(a.session)).user;
+    const circle=await f.accounts.createCircle(a.session,{name:'Sunday people',people:[alice.profile]});
+    assert.deepEqual((await f.accounts.current(a.session)).circles[0].accountIds,[alice.id]);
+    assert.deepEqual(await f.accounts.inviteByEmail(a.session,circle.id,{email:'other@example.test'}),{sent:true});
+    const token=emailText.match(/[?]invite=([A-Za-z0-9_-]+)/)?.[1];
+    assert.ok(token);
+    assert.equal((await f.accounts.current(a.session)).circles[0].people.length,1);
+    await assert.rejects(f.accounts.acceptEmailInvite(a.session,circle.id,{token}),e=>e.status===403);
+    f.override({email:'other@example.test'});const b=await f.login('Bob');
+    const joined=await f.accounts.acceptEmailInvite(b.session,circle.id,{token});
+    assert.equal(joined.people.length,2);
+    assert.equal((await f.accounts.current(a.session)).circles[0].people.length,2);
+    await assert.rejects(f.accounts.acceptEmailInvite(b.session,circle.id,{token}),e=>e.status===404);
+  }finally{
+    globalThis.fetch=oldFetch;
+    if(oldKey===undefined)delete process.env.RESEND_API_KEY;else process.env.RESEND_API_KEY=oldKey;
+    if(oldFrom===undefined)delete process.env.CIRCLE_INVITE_FROM;else process.env.CIRCLE_INVITE_FROM=oldFrom;
+  }
+});
