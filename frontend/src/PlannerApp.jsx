@@ -289,6 +289,7 @@ export default function PlannerApp() {
     await account.inviteCircleByEmail(circle.id,email);
     invitedCircles.current.set(circle.id,[...circle.accountIds]);
     setNotice('Email invitation sent. They will appear after accepting.');
+    return circle.id;
   }
   async function removeCircle(id){if(account.user)await account.removeCircle(id);else setCircles(writeCircles(circles.filter(c=>c.id!==id)));if(activeCircle.current?.id===id)activeCircle.current=null;}
   async function removePerson(id){
