@@ -136,3 +136,6 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 .cs-pc-empty strong{font:19px Georgia,serif}.cs-pc-empty p{max-width:250px;margin:0;font-size:12px;line-height:1.55}
 .cs-pc-feedback{padding:9px 0;color:#456b38;font-size:12px}
 @media(max-width:600px){.cs-profile-circles{max-height:90dvh}.cs-pc-header{padding:18px 18px 10px}.cs-pc-body{padding:8px 17px 20px}}
+
+.cs-draft-summary{display:inline;color:var(--cs-muted);font-weight:400;margin-left:8px;font-size:11px}
+@media(max-width:600px){.cs-draft-summary{display:block;margin:4px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
