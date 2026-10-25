@@ -394,7 +394,6 @@ export default function PlannerApp() {
     setPlanOpen(false);
   }
   async function continueAutopilot(request){
-    if(!Number.isInteger(request.budget)||request.budget<1){replaceBrief(request);setAutopilotPhase('');setEditor(true);setError('Choose a group budget before Autopilot searches.');return;}
     if(!autopilotRef.current||!autopilotPending.current)return;
     if(!owner)throw Error('Only the organizer can use Autopilot for this day.');
     const pendingRun=autopilotPending.current;
@@ -421,7 +420,6 @@ export default function PlannerApp() {
 
   function accept(result, text) {locationConfirmed.current=true;showPlan(result,text);replaceBrief(result.request);setTab('itinerary');}
   async function build(request, description, revision) {
-    if(!Number.isInteger(request.budget)||request.budget<1){replaceBrief(request);setError('Set a group budget before searching for your day.');setEditor(true);return false;}
     if(!locationConfirmed.current&&!shared.linked){askLocation(request);return false;}
     if(needsTiming(request)){replaceBrief(request);presentTool('timing');return false;}
     if(!request.activities.length){replaceBrief(request);presentTool('review','Choose what you’d like to do. I’ll only find places for those moments.');return false;}
@@ -506,7 +504,7 @@ export default function PlannerApp() {
     planningPaused.current=true;setDraftChanged(!!planRef.current);
     replaceBrief({...briefRef.current,activities,pins:Object.fromEntries(Object.entries(briefRef.current.pins||{}).filter(([intent])=>activities.includes(intent)))});
   }
-  async function planFromReview(){if(!Number.isInteger(briefRef.current.budget)||briefRef.current.budget<1){setEditor(true);setError('Set your group budget in Plan details before searching.');return;}if(autopilotRef.current&&autopilotPending.current?.stage==='activities'){await continueAutopilot(briefRef.current,true);return;}if(!locationConfirmed.current&&!shared.linked){askLocation(briefRef.current);return;}showWhenReady.current=true;finishTool();await build(briefRef.current);}
+  async function planFromReview(){if(autopilotRef.current&&autopilotPending.current?.stage==='activities'){await continueAutopilot(briefRef.current,true);return;}if(!locationConfirmed.current&&!shared.linked){askLocation(briefRef.current);return;}showWhenReady.current=true;finishTool();await build(briefRef.current);}
   function renderTool(){if(tool?.kind==='timing')return <TimingAction key={tool.id} brief={brief} timeZone={planningZone.current||plan?.timeZone} onApply={applyTiming} onClose={finishTool}/>;if(tool?.kind==='review')return <PlanReview brief={brief} deck={deck} hasPlan={!!plan} confirmed={locationConfirmed.current||shared.linked} busy={groupUpdating} onActivities={owner?chooseActivities:undefined} onPlan={planFromReview} onTool={chooseTool} onDetails={openDetails} onDone={finishTool}/>;if(tool?.kind==='location')return <LocationAction key={tool.id} brief={locationDraft.current||brief} preferred={preferred} query={locationPrompt.query} scope={locationPrompt.scope} nearMe={locationPrompt.nearMe} signedIn={!!account.user} onDone={finishTool} onApply={applyLocation} onForget={forgetLocation}/>;if(tool?.kind==='profile'&&account.user)return <TasteAction personal person={account.user.profile} people={[account.user.profile]} deck={deck} onChange={p=>account.changeProfile(p).catch(e=>setError(e.message))} onDone={finishTool} editable/>;if(tool?.kind==='tastes'&&activePerson)return <TasteAction autopilot={autopilotPending.current?.stage==='tastes'} key={activePerson.id} person={activePerson} people={brief.people} deck={deck} onPerson={openTaste} onChange={editTaste} onDone={()=>finishTool()} drafting={!plan||planningPaused.current} editable={owner||shared.day?.access.memberId===activePerson.id}/>;
     if(tool?.kind==='circles')return <CirclesAction circles={circles} contacts={contacts} people={brief.people} onApply={applyCircle} onSave={saveCircle} onRemove={removeCircle} onDone={finishTool} owner={owner} accountUser={account.user} onInvite={copyCircleInvite} onEmailInvite={sendCircleEmailInvite} onSignIn={()=>{setAccountAction('circles');setAccountOpen(true);}}/>;
     if(tool?.kind==='people')return <PeopleAction key={tool.id} accountUser={account.user} circles={account.circles} connections={connections} onInvite={prepareCircleInvite} onEmailInvite={sendCircleEmailInvite} initialQuery={peopleQuery} people={brief.people} contacts={contacts} owner={owner} memberId={shared.day?.access.memberId} onTaste={openTaste} onAdd={addPerson} onRemove={removePerson} onShare={()=>presentTool('share')} onDone={()=>finishTool()}/>;
