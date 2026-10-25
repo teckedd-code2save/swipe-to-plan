@@ -92,3 +92,7 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 .cs-quick-actions .cs-circle-indicator:hover,.cs-quick-actions .cs-circle-indicator[aria-pressed=true]{background:transparent!important;border:0!important;color:var(--cs-green)!important}
 .cs-quick-actions .cs-circle-indicator .gs-circle-faces{display:inline-flex;align-items:center}.cs-quick-actions .cs-circle-indicator .gs-circle-faces i{width:22px;height:22px;font-size:9px}
 @media(max-width:600px){.cs-quick-actions .cs-circle-indicator{flex:0 0 auto!important;padding:5px 2px!important}}
+
+/* Keep taste and optional selected-circle context together at composer start. */
+.cs-quick-actions button:last-child{margin-left:0!important}
+.cs-quick-actions{justify-content:flex-start}
