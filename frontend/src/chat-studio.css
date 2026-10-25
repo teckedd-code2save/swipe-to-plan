@@ -217,3 +217,9 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 .pl-experience-note svg{flex:0 0 auto;margin-top:2px}
 .pg-experience-fit p{font-size:12px;line-height:1.6;margin:7px 0;color:#596c51}
 @media(max-width:600px){.cs-messages>.cs-draft-plan{margin-bottom:14px}.cs-messages>.cs-draft-plan .cs-tool{padding:13px}}
+
+/* Keep each card's vote controls visible above the fan overlap. */
+.deck-spread .deck-fan-actions{top:9px;right:10px;bottom:auto;gap:5px}
+.deck-spread .deck-fan-actions button{padding:6px 8px!important;font-size:10px!important}
+.deck-spread .deck-fan-card:focus-within,.deck-spread .deck-fan-card:hover{z-index:12}
+@media(max-width:600px){.deck-spread .deck-fan-actions{top:8px;right:8px}}
