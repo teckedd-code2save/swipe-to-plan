@@ -168,13 +168,15 @@ export default function PlannerApp() {
     if(needsTiming(next)){presentTool('timing');return;}
     const hasFavorites=next.people.some(p=>p.artists.length||p.vibes.length);
     const note=`${selected.name} it is.${scope==='default'?' I’ll offer this area next time.':''}`;
-    presentTool('review',`${note} ${hasFavorites?'Your tastes and people are here. Review the plan when you’re ready.':'We can start with your area and activities. Add tastes below if you’d like to make the picks more personal.'}`);
+    if(next.activities.length){showWhenReady.current=true;await build(next);return;}
+    presentTool('review',`${note} ${hasFavorites?'Your tastes and people are here. Choose what to do next.':'Choose an activity, and I’ll find places. You can add tastes anytime.'}`);
   }
   async function applyTiming(request){
     replaceBrief(request);
     if(autopilotRef.current&&autopilotPending.current){await continueAutopilot(request);return;}
     if(planRef.current&&!planningPaused.current){toolRef.current=null;setTool(null);showWhenReady.current=true;await build(request);return;}
-    presentTool('review',request.people.some(p=>p.artists.length||p.vibes.length)?'Your timing and tastes are here. Let’s check the plan.':'Your timing is set. We can start with the outing you asked for, or you can add tastes below.');
+    if(request.activities.length){toolRef.current=null;setTool(null);showWhenReady.current=true;await build(request);return;}
+    presentTool('review',request.people.some(p=>p.artists.length||p.vibes.length)?'Your timing and tastes are here. Choose what you’d like to do.':'Your timing is set. Choose an activity, and I’ll find places.');
   }
   async function forgetLocation(){if(account.user)await account.changePlanningLocation(null);else{localStorage.removeItem('unstressed.planning-area');setGuestLocation(null);}setNotice('Saved planning area removed. This plan keeps its area.');}
   function finishTool(){
@@ -182,7 +184,7 @@ export default function PlannerApp() {
     if(!tastes)return;
     if(autopilotRef.current&&autopilotPending.current?.stage==='tastes'){continueAutopilot(briefRef.current,true).catch(e=>{setError(e.message);setAutopilotPhase('');});return;}
     if(needsTiming(briefRef.current)){presentTool('timing');return;}
-    if(!planRef.current||planningPaused.current){presentTool('review','Your tastes are in. Let’s make sure the plan feels right.');}
+    if(!planRef.current||planningPaused.current){if(briefRef.current.activities.length){showWhenReady.current=true;build(briefRef.current).catch(e=>setError(e.message));}else presentTool('review','Your tastes are in. Choose an activity to find places.');}
     else if(groupUpdating){showWhenReady.current=true;append('assistant','Your favorites are in. I’m updating the day.');}
     else {resultReceipt(planRef.current,'Your favorites are part of this day.');setPlanOpen(true);}
   }
@@ -515,6 +517,10 @@ export default function PlannerApp() {
     clearTimeout(autoTimer.current);autoTimer.current=null;planner.current.invalidate();setPending(false);localVersion.current++;
     planningPaused.current=true;setDraftChanged(!!planRef.current);
     replaceBrief({...briefRef.current,activities,pins:Object.fromEntries(Object.entries(briefRef.current.pins||{}).filter(([intent])=>activities.includes(intent)))});
+    if(activities.length){
+      // Wait for a brief pause so selecting multiple chips results in one search.
+      autoTimer.current=setTimeout(()=>{autoTimer.current=null;if(!owner||working.current)return;showWhenReady.current=true;build(briefRef.current).catch(e=>setError(e.message));},950);
+    }
   }
   async function planFromReview(){if(autopilotRef.current&&autopilotPending.current?.stage==='activities'){await continueAutopilot(briefRef.current,true);return;}if(!locationConfirmed.current&&!shared.linked){askLocation(briefRef.current);return;}showWhenReady.current=true;finishTool();await build(briefRef.current);}
   function renderTool(){if(tool?.kind==='timing')return <TimingAction key={tool.id} brief={brief} timeZone={planningZone.current||plan?.timeZone} onApply={applyTiming} onClose={finishTool}/>;if(tool?.kind==='review')return <PlanReview brief={brief} deck={deck} hasPlan={!!plan} confirmed={locationConfirmed.current||shared.linked} busy={groupUpdating} onActivities={owner?chooseActivities:undefined} onPlan={planFromReview} onTool={chooseTool} onDetails={openDetails} onDone={finishTool}/>;if(tool?.kind==='location')return <LocationAction key={tool.id} brief={locationDraft.current||brief} preferred={preferred} query={locationPrompt.query} scope={locationPrompt.scope} nearMe={locationPrompt.nearMe} signedIn={!!account.user} onDone={finishTool} onApply={applyLocation} onForget={forgetLocation}/>;if(tool?.kind==='profile'&&account.user)return <TasteAction personal person={account.user.profile} people={[account.user.profile]} deck={deck} onChange={p=>account.changeProfile(p).catch(e=>setError(e.message))} onDone={finishTool} editable/>;if(tool?.kind==='tastes'&&activePerson)return <TasteAction autopilot={autopilotPending.current?.stage==='tastes'} key={activePerson.id} person={activePerson} people={brief.people} deck={deck} onPerson={openTaste} onChange={editTaste} onDone={()=>finishTool()} drafting={!plan||planningPaused.current} editable={owner||shared.day?.access.memberId===activePerson.id}/>;
