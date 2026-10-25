@@ -295,3 +295,18 @@ test('route problems open travel alternatives without changing the plan',async()
   const result=await agent.interpret({message:'Maps could not find transit directions',context});
   assert.equal(result.status,'show_ui');assert.equal(result.panel,'routes');assert.equal(JSON.stringify(context),before);
 });
+
+test('Autopilot can reference a current participant without requiring a saved contact or adding anyone',async()=>{
+  let payload;
+  const context=parseBrief({people:[{id:'current-you',name:'You'}],activities:[],timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}});
+  const agent=createAgent({getKey:()=> 'test',fetchImpl:async(_,options)=>{
+    payload=JSON.parse(options.body);
+    return response('autopilot_day',{personIds:['current-you'],changes:{activities:['drinks']},cardIds:['v-bar']});
+  }});
+  const result=await agent.interpret({message:'Drinks with friends',context,mode:'autopilot',contacts:[],locationContext:{confirmed:true}});
+  assert.deepEqual(result.request.people,context.people);
+  const properties=payload.tools.find(t=>t.function.name==='autopilot_day').function.parameters.properties;
+  assert.deepEqual(properties.personIds.items.enum,['current-you']);
+  assert.equal(properties.circleId,undefined);
+  assert.deepEqual(result.tasteCards,['v-bar']);
+});
