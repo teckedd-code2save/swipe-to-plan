@@ -26,3 +26,35 @@ test('food and activity changes invalidate discovery caches while budget-only ch
   await discovery.byIntents(b,['coffee','dinner']);assert.equal(count,2);
   await discovery.byIntents(b,['activity','dinner']);assert.equal(count,3);
 });
+
+
+test('drinks retrieval adds a Qloo bar/nightclub pool and does not use full-bar offerings as cocktail-bar taste evidence',async()=>{
+  const requests=[];
+  const client=createQlooClient({getKey:()=> 'test',fetchImpl:async url=>{
+    requests.push(url);
+    if(url.pathname==='/v2/tags')return {ok:true,json:async()=>({results:{tags:[
+      {id:'urn:tag:category:place:bar'},
+      {id:'urn:tag:genre:place:nightclub'},
+      {id:'urn:tag:beverage_offering:place:full_bar'}
+    ]}})};
+    return {ok:true,json:async()=>({results:{entities:[]}})};
+  }});
+  const tags=await client.resolveTasteTags(['v-bar']);
+  assert.deepEqual(tags[0].tagIds,['urn:tag:category:place:bar']);
+  await client.discover({signalIds:[],area:'Accra',includeDrinks:true,tagSignals:tags});
+  const filtered=requests.find(u=>u.searchParams.has('filter.tags'));
+  assert.ok(filtered);
+  assert.equal(filtered.searchParams.get('operator.filter.tags'),'union');
+  assert.ok(filtered.searchParams.get('filter.tags').includes('urn:tag:genre:place:nightclub'));
+  assert.ok(!filtered.searchParams.get('filter.tags').includes('full_bar'));
+});
+
+test('changing from dining to drinks retrieves a fresh category-specific pool',async()=>{
+  const seen=[];
+  const discovery=createDiscovery({provider:{name:'qloo',resolveTasteTags:async()=>[],discover:async args=>{seen.push(args.includeDrinks);return [];}}});
+  const request=parseRequest();
+  await discovery.byIntents(request,['dinner']);
+  await discovery.byIntents(request,['drinks']);
+  await discovery.byIntents(request,['drinks']);
+  assert.deepEqual(seen,[false,true]);
+});
