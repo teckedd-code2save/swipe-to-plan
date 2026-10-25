@@ -1,5 +1,5 @@
 # Production entrypoint for /opt/unstressed/compose.yml.
-# Keep the build context at the checkout root; deploy/compose.yml is directory-relative.
+# Canonical production Compose file: build context is the repository root.
 name: unstressed
 services:
   web:
