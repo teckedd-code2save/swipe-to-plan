@@ -155,7 +155,7 @@ function resultTitle(request,stops){
   const area=request.area.split(',')[0];
   const defaultNames={coffee:'Coffee',activity:'Something fun',dinner:'Dinner',drinks:'Drinks'};
   const generated=request.activities.map(intent=>defaultNames[intent]).join(' & ');
-  const defaults=new Set(['','A day out','Family day','A day together','A little day',generated,`${generated} in ${area}`]);
+  const defaults=new Set(['','A day out','Family day','A day together','A little day','A little day, beautifully spent','One place, well chosen','Your day','Your outing',generated,`${generated} in ${area}`]);
   const staleStatus=request.title.startsWith('Places still to find in ');
   // Search status belongs to the result state, never the outing's identity.
   // Preserve meaningful user/model titles across empty results and revisions.
