@@ -232,3 +232,23 @@ test('an open draft stays undecided through location, timing and circle changes'
   assert.equal(meal.status,'ready');
   assert.deepEqual(meal.request.activities,['dinner']);
 });
+
+test('an additive food request keeps existing stops and explicit cuisine through revision',async()=>{
+  const context=parseItinerary({area:'Kasoa, Ghana',title:'Coffee in Kasoa',activities:['coffee'],people:[{id:'owner',name:'Owner',artists:['SZA'],vibes:[]}]});
+  const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('revise_day',{activities:['coffee','dinner'],experience:{cuisine:'Ghanaian',atmosphere:'romantic'}})});
+  const result=await agent.interpret({message:'I want some local Ghanaian foods too, somewhere romantic',context});
+  assert.equal(result.status,'ready');
+  assert.deepEqual(result.request.activities,['coffee','dinner']);
+  assert.equal(result.request.experience.cuisine,'Ghanaian');
+  assert.equal(result.request.experience.atmosphere,'romantic');
+  assert.deepEqual(result.request.people,context.people);
+  assert.match(result.request.title,/Dinner/);
+});
+test('unrelated timing changes preserve stored cuisine requirements',async()=>{
+  const context=parseItinerary({area:'Kasoa, Ghana',activities:['dinner'],experience:{cuisine:'Ghanaian'}});
+  const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('revise_day',{timePreference:'evening'})});
+  const result=await agent.interpret({message:'Make it this evening',context});
+  assert.equal(result.request.experience.cuisine,'Ghanaian');
+  assert.equal(result.request.startTime,'17:00');
+  assert.equal(result.request.endTime,'22:00');
+});
