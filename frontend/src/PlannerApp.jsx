@@ -453,7 +453,7 @@ export default function PlannerApp() {
     }else if(action.id==='budget'){setTab('budget');setPlanOpen(true);
     }else if(action.id==='keep_found'){
       const found=planRef.current?.stops.filter(s=>s.item)||[];if(!found.length)return;
-      const request={...briefRef.current,activities:found.map(s=>s.intent),pins:Object.fromEntries(found.map(s=>[s.intent,s.item.id]))};
+      const request={...briefRef.current,activities:[...new Set(found.map(s=>s.intent))],...(briefRef.current.route?{route:found.map(s=>({intent:s.intent,placeId:s.item.id})),pins:{}}:{pins:Object.fromEntries(found.map(s=>[s.intent,s.item.id]))})};
       showWhenReady.current=true;build(request).catch(e=>setError(e.message));
     }else if(action.id==='retry'){showWhenReady.current=true;build(briefRef.current).catch(e=>setError(e.message));}
     else if(action.id==='tomorrow'){const request={...briefRef.current,date:localDate(planningZone.current||planRef.current?.timeZone,1),timing:{...briefRef.current.timing,dateConfirmed:true}};showWhenReady.current=true;build(request).catch(e=>setError(e.message));}
