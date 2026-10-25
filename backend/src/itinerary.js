@@ -22,7 +22,7 @@ const minutes = (time) => Number(time.slice(0,2)) * 60 + Number(time.slice(3));
 const time = (value) => `${String(Math.floor(value / 60)).padStart(2,'0')}:${String(value % 60).padStart(2,'0')}`;
 
 export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
-  object(body, ['title','area','locationId','currencyMode','timing','date','party','people','budget','currency','startTime','endTime','pace','activities','pins','excludeIds','maxPriceLevel','experience'], 'planning field');
+  object(body, ['title','area','locationId','currencyMode','timing','date','party','people','budget','currency','startTime','endTime','pace','activities','pins','excludeIds','maxPriceLevel','experience','route','searchRadiusKm'], 'planning field');
   const area = allowMissingLocation&&body.area===''?'':parseArea(body.area);
   const locationId=body.locationId?parseLocationId(body.locationId):undefined;
   const currencyMode=body.currencyMode??(body.currency?'custom':'local');
@@ -63,14 +63,22 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
   // An unfinished brief has no activities until the person chooses them.
   if (!Array.isArray(activities) || activities.length > 3 || activities.some((item) => !ACTIVITIES.includes(item)) || new Set(activities).size !== activities.length) {const error=new InputError('Choose up to three different outing categories.');error.modelFeedback='activities must be an array using only coffee, activity, dinner, drinks, without duplicates. Bars, cocktails and nightlife use drinks. These are retrieval categories, not a repeated sequence of venues; preserve the sequence in experience.notes.';throw error;}
   if (children && activities.includes('drinks')) throw new InputError('Choose coffee, discovery or a meal for a family outing with children.');
+  const searchRadiusKm=body.searchRadiusKm??0;
+  if(![0,20].includes(searchRadiusKm))throw new InputError('Choose the selected area or nearby suggestions within 20 km.');
+  let route;
+  if(body.route!==undefined){
+    if(!Array.isArray(body.route)||!body.route.length||body.route.length>3)throw new InputError('Choose one to three places for this outing.');
+    route=body.route.map(stop=>{object(stop,['intent','placeId'],'route stop');if(!activities.includes(stop.intent))throw new InputError('Route stops must use the selected outing categories.');return {intent:stop.intent,placeId:text(stop.placeId,160,'a selected place')};});
+    if(new Set(route.map(s=>s.placeId)).size!==route.length)throw new InputError('Choose different places for each stop.');
+  }
   const pins = object(body.pins ?? {}, activities, 'kept stops');
   Object.values(pins).forEach((id) => text(id,160,'a kept place ID'));
   if (new Set(Object.values(pins)).size !== Object.values(pins).length) throw new InputError('Keep a different place for each stop.');
   const constraints = parseRequest({ constraints: { excludeIds: body.excludeIds ?? [], ...(body.maxPriceLevel !== undefined ? { maxPriceLevel: body.maxPriceLevel } : {}) } }).constraints;
   const experienceInput=body.experience===undefined?null:object(body.experience,['cuisine','atmosphere','occasion','notes'],'experience');
   const experience=experienceInput?Object.fromEntries(Object.entries(experienceInput).map(([key,value])=>[key,text(value,key==='notes'?220:80,key)])):{};
-  const request = { title: text((typeof body.title==='string'&&!body.title.trim()||body.title==null ? null : body.title) || (activities.length ? `${activities.map(item=>({coffee:'Coffee',activity:'Something fun',dinner:'Dinner',drinks:'Drinks'}[item])).join(' & ')}${area?' in '+area.split(',')[0]:''}` : children ? 'Family day' : adults > 2 ? 'A day together' : 'A day out'),80,'a title'), area,...(locationId?{locationId}:{}),currencyMode, timing:{...timing}, date, party:{ adults, children }, people:profiles, budget, currency, startTime, endTime, pace, activities, ...(Object.keys(experience).length?{experience}:{}), pins:{...pins}, excludeIds:constraints.excludeIds, ...(body.maxPriceLevel !== undefined ? { maxPriceLevel:body.maxPriceLevel } : {}) };
-  if(request.timing.dateConfirmed&&request.timing.timeConfirmed)makeSchedule(request); // Only chosen timing constrains scheduling.
+  const request = { title: text((typeof body.title==='string'&&!body.title.trim()||body.title==null ? null : body.title) || (activities.length ? `${activities.map(item=>({coffee:'Coffee',activity:'Something fun',dinner:'Dinner',drinks:'Drinks'}[item])).join(' & ')}${area?' in '+area.split(',')[0]:''}` : children ? 'Family day' : adults > 2 ? 'A day together' : 'A day out'),80,'a title'), area,...(route?{route}:{}),...(searchRadiusKm?{searchRadiusKm}:{}),...(locationId?{locationId}:{}),currencyMode, timing:{...timing}, date, party:{ adults, children }, people:profiles, budget, currency, startTime, endTime, pace, activities, ...(Object.keys(experience).length?{experience}:{}), pins:{...pins}, excludeIds:constraints.excludeIds, ...(body.maxPriceLevel !== undefined ? { maxPriceLevel:body.maxPriceLevel } : {}) };
+  if(request.timing.dateConfirmed&&request.timing.timeConfirmed)makeSchedule({...request,activities:route?.map(s=>s.intent)||activities}); // Only chosen timing constrains scheduling.
   return request;
 }
 
@@ -147,7 +155,7 @@ function resultTitle(request,stops){
   const area=request.area.split(',')[0];
   const defaultNames={coffee:'Coffee',activity:'Something fun',dinner:'Dinner',drinks:'Drinks'};
   const generated=request.activities.map(intent=>defaultNames[intent]).join(' & ');
-  const defaults=new Set(['','A day out','Family day','A day together','A little day','A little day, beautifully spent','One place, well chosen','Your day','Your outing',generated,`${generated} in ${area}`]);
+  const defaults=new Set(['','A day out','Family day','A day together','A little day',generated,`${generated} in ${area}`]);
   const staleStatus=request.title.startsWith('Places still to find in ');
   // Search status belongs to the result state, never the outing's identity.
   // Preserve meaningful user/model titles across empty results and revisions.
@@ -158,7 +166,7 @@ function resultTitle(request,stops){
   const cuisine=request.experience?.cuisine;
   const hasCuisineSignal=intents.includes('dinner')&&filled.some(stop=>stop.intent==='dinner'&&stop.item?.experienceFit?.cuisine?.status==='provider_text_signal');
   const terms=intents.map(intent=>intent==='dinner'&&hasCuisineSignal?`${cuisine} food`:names[intent]);
-  return `${terms.join(' & ')||'Your outing'} in ${area}`.slice(0,80);
+  return `${terms.join(' & ')||'Your outing'} ${request.searchRadiusKm?'around':'in'} ${area}`.slice(0,80);
 }
 
 export async function buildItinerary(discovery, request) {
@@ -171,23 +179,27 @@ export async function buildItinerary(discovery, request) {
     if(request.currencyMode==='local'&&!location.currency)throw new InputError('Choose a budget currency for this area.');
     request={...request,area:location.label,currency:request.currencyMode==='local'?location.currency:request.currency};
   }
-  const schedule = exploring?request.activities.map(intent=>({intent,start:null,end:null,durationMinutes:DEFAULT_MINUTES[intent],bufferAfterMinutes:0,status:'unscheduled'})):makeSchedule(request);
+  const intents=request.route?.map(s=>s.intent)||request.activities;
+  const planningRequest={...request,activities:intents};
+  const schedule = exploring?intents.map(intent=>({intent,start:null,end:null,durationMinutes:DEFAULT_MINUTES[intent],bufferAfterMinutes:0,status:'unscheduled'})):makeSchedule(planningRequest);
   const voters=request.people.map((person,index)=>({person,index})).filter(({person})=>person.artists.length||person.vibes.length);
   const participating=voters.length?voters:request.people.map((person,index)=>({person,index}));
   const fetched = await Promise.all(participating.map(async({person,index}) => {
     const constraints = { excludeHotels:true,excludeIds:request.excludeIds,excludeTags:request.party.children ? ['nightclub','night_club','dance_club','adult_entertainment'] : [],...(request.maxPriceLevel?{maxPriceLevel:request.maxPriceLevel}:{}) };
-    return {index,results:await discovery.byIntents(parseRequest({location:{area:request.area,...(request.locationId?{id:request.locationId}:{})},taste:{artists:person.artists,vibes:person.vibes},constraints}),request.activities)};
+    return {index,results:await discovery.byIntents(parseRequest({location:{area:request.area,...(request.locationId?{id:request.locationId}:{})},taste:{artists:person.artists,vibes:person.vibes},constraints}),request.activities,{radiusKm:request.searchRadiusKm||0})};
   }));
   // A person without food/music/activity tastes has no ranking vote yet. Their
   // budget and participation remain included, without a generic search drowning
   // out another member's explicit preferences or creating false taste evidence.
-  const members=request.people.map((_,index)=>fetched.find(m=>m.index===index)?.results||request.activities.map(()=>({ranked:[],taste:{mode:'discovery',resolved:[],unresolved:[],vibes:[]},provenance:fetched[0].results[0].provenance,fetched:0})));
-  const ranked = request.activities.map((intent,index) => rerankForExperience(fetched.length === 1 ? fetched[0].results[index].ranked : mergeGroup(fetched.map(({results,index:i}) => ({...results[index],id:request.people[i].id || `person-${i}`,name:request.people[i].name})),50).items,request.experience,intent));
-  const reserved = new Set(Object.values(request.pins));
-  const makePools=(limit)=>ranked.map((items,index) => request.pins[request.activities[index]] ? items.filter((item) => item.id===request.pins[request.activities[index]]) : items.filter((item) => !reserved.has(item.id)).slice(0,limit));
+  const uniqueMembers=request.people.map((_,index)=>fetched.find(m=>m.index===index)?.results||request.activities.map(()=>({ranked:[],taste:{mode:'discovery',resolved:[],unresolved:[],vibes:[]},provenance:fetched[0].results[0].provenance,fetched:0})));
+  const members=uniqueMembers.map(results=>intents.map(intent=>results[request.activities.indexOf(intent)]));
+  const ranked = intents.map((intent,index) => rerankForExperience(fetched.length === 1 ? fetched[0].results[request.activities.indexOf(intent)].ranked : mergeGroup(fetched.map(({results,index:i}) => ({...results[request.activities.indexOf(intent)],id:request.people[i].id || `person-${i}`,name:request.people[i].name})),50).items,request.experience,intent));
+  const desired=index=>request.route?.[index]?.placeId||request.pins[intents[index]];
+  const reserved = new Set(request.route?request.route.map(s=>s.placeId):Object.values(request.pins));
+  const makePools=(limit)=>ranked.map((items,index) => desired(index) ? items.filter((item) => item.id===desired(index)) : items.filter((item) => !reserved.has(item.id)).slice(0,limit));
   const pools=makePools(8);
   const timeZone=members[0][0].provenance.locality?.timeZone||(['Accra','Osu','East Legon','Cantonments','Labone','Airport Residential'].includes(request.area)?'Africa/Accra':null);
-  const fit=p=>exploring?Promise.resolve(discoverPlaces(p,schedule)):schedulePlaces(p,schedule,request,{details:discovery.placeDetails,timeZone,now:discovery.now?.()});
+  const fit=p=>exploring?Promise.resolve(discoverPlaces(p,schedule)):schedulePlaces(p,schedule,planningRequest,{details:discovery.placeDetails,timeZone,now:discovery.now?.()});
   let fitted=await fit(pools);
   // Expand only when an initial shortlist cannot fill the outing. Preserve hard
   // constraints, pinned venues, and the previous result if the retry is no better.
@@ -203,18 +215,31 @@ export async function buildItinerary(discovery, request) {
     fitted={...fitted,stops:fitted.stops.map((stop,i)=>{if(stop.item||!fallback.stops[i].item)return stop;needsTiming=true;return {...stop,item:fallback.stops[i].item,start:null,end:null,bufferAfterMinutes:0,timeStatus:'needs_time'};})};
   }
   const selected=fitted.stops.map(s=>s.item);
-  const stops = fitted.stops.map((slot,index) => ({...slot,id:`stop-${index}`,label:LABELS[slot.intent],item:selected[index],status:selected[index]?'matched':'unfilled',alternatives:ranked[index].filter((item) => !selected.some((chosen) => chosen?.id===item.id)).slice(0,2),...(selected[index]?{}:{reason:slot.reason|| (request.pins[slot.intent]?'kept_place_unavailable':pools[index].length?'no_distinct_place':'no_eligible_places')})}));
+  const stops = fitted.stops.map((slot,index) => ({...slot,id:`stop-${index}`,label:LABELS[slot.intent],item:selected[index],status:selected[index]?'matched':'unfilled',alternatives:ranked[index].filter((item) => !selected.some((chosen) => chosen?.id===item.id)).slice(0,2),...(selected[index]?{}:{reason:slot.reason|| (desired(index)?'kept_place_unavailable':pools[index].length?'no_distinct_place':'no_eligible_places')})}));
   const filled = stops.filter((stop) => stop.item);
   const tasteMap = buildTasteMap(request,members,stops);
   stops.forEach((stop) => {stop.connections=tasteMap.edges.filter((edge) => edge.to===stop.id);});
   const directions = new URL('https://www.google.com/maps/dir/');
   const query = (item) => item.coordinates ? `${item.coordinates.lat},${item.coordinates.lng}` : `${item.name} ${item.address}`;
   if (filled.length >= 1) {directions.searchParams.set('api','1');if(filled.length>=2)directions.searchParams.set('origin',query(filled[0].item));directions.searchParams.set('destination',query(filled.at(-1).item));if(filled.length>2)directions.searchParams.set('waypoints',filled.slice(1,-1).map((stop)=>query(stop.item)).join('|'));}
+  const shortlist=[...new Map(ranked.flatMap((items,index)=>items.slice(0,8).map(item=>[item.id,{intent:intents[index],item}]))).values()].slice(0,12);
+  let nearbySuggestions=[],nearbyStatus='not_needed';
+  if(!filled.length&&!request.searchRadiusKm&&request.locationId&&discovery.location){
+    nearbyStatus='empty';
+    try{
+      const nearby=await Promise.all(participating.map(async({person,index})=>({index,results:await discovery.byIntents(parseRequest({location:{area:request.area,id:request.locationId},taste:{artists:person.artists,vibes:person.vibes},constraints:{excludeHotels:true,excludeIds:request.excludeIds,excludeTags:request.party.children?['nightclub','night_club','dance_club','adult_entertainment']:[],...(request.maxPriceLevel?{maxPriceLevel:request.maxPriceLevel}:{})}}),request.activities,{radiusKm:20})})));
+      nearbySuggestions=[...new Map(request.activities.flatMap((intent,i)=>{
+        const items=nearby.length===1?nearby[0].results[i].ranked:mergeGroup(nearby.map(({results,index})=>({...results[i],id:request.people[index].id||`person-${index}`,name:request.people[index].name})),20).items;
+        return rerankForExperience(items,request.experience,intent).slice(0,8).map(item=>[item.id,{intent,item}]);
+      })).values()].slice(0,8);nearbyStatus=nearbySuggestions.length?'ready':'empty';
+    }catch{nearbyStatus='unavailable';}
+  }
   const provider = members[0][0].provenance.provider;
   const unresolved = members.flatMap((results,index) => results[0].taste.unresolved.map((entry) => ({...entry,person:request.people[index].name})));
+  const budget=allocateBudget(planningRequest,filled.map(stop=>stop.intent));
   return {
-    version:'1.0',phase:exploring?'discovery':needsTiming?'needs_timing':'scheduled',activityBasis,status:filled.length===stops.length&&!needsTiming?'complete':'partial',request:{...request,title:resultTitle(request,stops)},stops,tasteMap,
-    budget:allocateBudget(request,filled.map((stop)=>stop.intent)),
+    version:'1.0',shortlist,nearbySuggestions,nearbyStatus,searchScope:request.searchRadiusKm?{kind:'nearby',radiusKm:request.searchRadiusKm,area:request.area}:{kind:'area',area:request.area},phase:exploring?'discovery':needsTiming?'needs_timing':'scheduled',activityBasis,status:filled.length===stops.length&&!needsTiming?'complete':'partial',request:{...request,title:resultTitle(request,stops)},stops,tasteMap,
+    budget:{...budget,allocations:budget.allocations.map((a,index)=>({...a,stopId:`stop-${index}`}))},
     people:request.people.map((person,index)=>({id:person.id || `person-${index}`,name:person.name,taste:members[index][0].taste})),
     provenance:{provider,retrievedAt:members[0][0].provenance.retrievedAt,...(members[0][0].provenance.locality?{locality:members[0][0].provenance.locality}:{})},
     timeZone,timingNotes:fitted.notes,
