@@ -9,6 +9,19 @@ export function localNow(timeZone, now=Date.now()) {
   return {date:`${get('year')}-${get('month')}-${get('day')}`,minutes:Number(get('hour'))*60+Number(get('minute'))};
 }
 
+// Pick useful distinct places before dates or times are chosen. No opening-hour
+// promise and no placeholder timetable is attached to a discovery result.
+export function discoverPlaces(pools,schedule){
+  let best=null;
+  function visit(index,used,stops,score){
+    if(index===schedule.length){if(!best||score>best.score)best={stops,score};return;}
+    const base={...schedule[index],start:null,end:null,bufferAfterMinutes:0};
+    for(const [rank,item]of pools[index].entries())if(!used.has(item.id)){const next=new Set(used);next.add(item.id);visit(index+1,next,[...stops,{...base,item}],score+10000-rank);}
+    visit(index+1,used,[...stops,{...base,item:null,reason:pools[index].length?'no_distinct_place':'no_eligible_places'}],score);
+  }
+  visit(0,new Set(),[],0);return {stops:best.stops,notes:[]};
+}
+
 // Keep ranking/taste evidence intact; only choose a place and time that can fit.
 // Unknown hours stay visibly unverified. Known conflicts are never hidden.
 export async function schedulePlaces(pools, schedule, request, {details, timeZone, now=Date.now()}={}) {
@@ -61,3 +74,4 @@ export async function schedulePlaces(pools, schedule, request, {details, timeZon
   const stops=best.stops.map((s,i)=>({...s,bufferAfterMinutes:s.item&&best.stops.slice(i+1).some(next=>next.item)?s.bufferAfterMinutes:0}));
   return {stops,notes:[...(shifted?['I adjusted the stop times within your chosen window, allowing for the time now and any reported opening hours.']:[])]};
 }
+
