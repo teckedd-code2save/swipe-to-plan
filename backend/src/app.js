@@ -81,7 +81,21 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   app.get("/api/agent/tools", (_req,res) => res.json({tools:withActionMessages([...AGENT_TOOLS,AUTOPILOT_TOOL]),modes:['guided','autopilot'],transport:{plan_day:{method:'POST',path:'/api/itineraries'}},capabilities:'/api/schema'}));
   app.post("/api/itineraries", limit(20), route(async(req,res)=>{
     const target=await accounts.planTarget(req);
-    res.json(await accounts.keepPlan(target,await buildItinerary(discovery,parseItinerary(req.body))));
+    const request=parseItinerary(req.body);
+    if(req.get('accept')?.includes('application/x-ndjson')){
+      res.status(200).set({'Content-Type':'application/x-ndjson','Cache-Control':'no-cache','X-Accel-Buffering':'no'});res.flushHeaders();
+      try{
+        const early=await buildItinerary({...discovery,reviewCandidates:undefined},{...request,timing:{...request.timing,dateConfirmed:false,timeConfirmed:false}});
+        early.request={...early.request,timing:request.timing};if(request.timing.dateConfirmed&&request.timing.timeConfirmed)early.phase='checking';early.qualityReview={status:'pending',basis:'provider_discovery',providerFactsVerified:false};
+        if(res.destroyed)return;
+        res.write(JSON.stringify({type:'discovery',plan:early})+'\n');
+        const reviewed=await buildItinerary(discovery,request);if(res.destroyed)return;
+        const final=await accounts.keepPlan(target,reviewed);
+        res.end(JSON.stringify({type:'complete',plan:final})+'\n');
+      }catch(error){if(res.destroyed)return;res.end(JSON.stringify({type:'error',error:error.status&&error.status<500?error.message:'The review could not finish. Your places are still here.'})+'\n');}
+      return;
+    }
+    res.json(await accounts.keepPlan(target,await buildItinerary(discovery,request)));
   }));
   app.post("/api/agent", limit(10), route(async(req,res)=>{
     strictFields(req.body,['message','context','history','circles','contacts','planContext','locationContext','mode']);
@@ -94,7 +108,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     if(['needs_input','action','show_ui','reply','autopilot'].includes(interpretation.status))return res.json(interpretation);
     const plan=await buildItinerary(discovery,interpretation.request);
     const user=await accounts.identity(req);if(visitorId(req))await metrics.record('plan_created',{userId:user?.id,visitor:visitorId(req)}).catch(()=>{});
-    res.json({...await accounts.keepPlan(target,plan),...(interpretation.assistantMessage?{assistantMessage:interpretation.assistantMessage}:{}),...(interpretation.tasteCards?{tasteCards:interpretation.tasteCards}:{}),agent:{model:interpretation.model,action:'plan_day'}});
+    res.json({...await accounts.keepPlan(target,plan),...(interpretation.assistantMessage?{assistantMessage:interpretation.assistantMessage}:{}),...(interpretation.tasteCards?{tasteCards:interpretation.tasteCards}:{}),...(interpretation.cardPrompts?{cardPrompts:interpretation.cardPrompts}:{}),agent:{model:interpretation.model,action:'plan_day'}});
   }));
   const credential = req => (req.get('authorization') || '').replace(/^Bearer /, '');
   app.post('/api/account/plans/from-day/:id',limit(30),route(async(req,res)=>{

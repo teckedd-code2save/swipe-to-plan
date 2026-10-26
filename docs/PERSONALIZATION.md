@@ -17,3 +17,9 @@ Circle email delivery requires RESEND_API_KEY and a verified CIRCLE_INVITE_FROM 
 Explicit atmosphere and cuisine can also resolve to exact matching Qloo tags of the appropriate namespace. A configured agent reviews a bounded retrieved pool for relevance before itinerary assignment, using allowlisted provider IDs and descriptions. This can remove clearly conflicting results, such as an industrial market for a quiet outing. Its judgment does not verify quietness or any venue fact. Explicit selected routes/pins remain the user's choices. Failed reviews retain the original pool with an unavailable status, not a fabricated zero-result claim. Identical reviews are cached for five minutes.
 
 Named weekdays are selected through the typed weekday tool field; code resolves the upcoming destination-local calendar date. A new date confirmation cannot silently confirm an inherited placeholder.
+
+## Results-first studio
+
+The studio requests an NDJSON itinerary stream. Qloo-derived places publish as a provisional discovery event before the bounded relevance review and scheduling complete. The final event replaces that preview and is the only version persisted to the account. Interrupted reviews leave the discovered places visible with an error; newer edits abort superseded requests and ignore their late previews. Existing JSON clients remain supported.
+
+No budget acceptance card or default route checklist appears after discovery. Optional suggested allowances are labelled planning estimates, distinct from a user-specified spending limit. Route editing is an explicit secondary action. Contextual cards retain canonical preference/artist identities while using request-specific display prompts. Expanded cards scroll with the conversation and provide explicit controls at both ends to return to the single-card view. Research references live in Notes and sources.

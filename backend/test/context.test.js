@@ -64,3 +64,16 @@ test('named weekdays resolve from the destination date across month/year boundar
  assert.equal(nextWeekdayDate('2026-12-31','monday'),'2027-01-04');
  assert.throws(()=>nextWeekdayDate('2026-10-26','someday'));
 });
+
+import {parseCardPrompts} from '../src/card-prompts.js';
+test('contextual prompts cannot add unsupported or unselected preferences',()=>{
+ assert.throws(()=>parseCardPrompts([{id:'v-bar',label:'A quiet garden',sub:'Not the selected topic'}],['v-nature']));
+ assert.throws(()=>parseCardPrompts([{id:'fake',label:'A place',sub:'Try it'}],['fake']));
+});
+test('open discovery searches varied venue settings even with saved cocktail preferences',async()=>{
+ const venues=[['park','park'],['bar','bar'],['cafe','cafe']].map(([id,tag])=>({entity_id:id,name:id,tags:[{id:`urn:tag:category:place:${tag}`,name:tag}],properties:{address:'Osu Accra Ghana'}}));
+ const discovery=createDiscovery({provider:{name:'qloo',discover:async()=>venues}});
+ const input=parseRequest({location:{area:'Osu'},taste:{vibes:['v-bar']}});
+ const focused=await discovery.byIntents(input,['activity']);const open=await discovery.byIntents(input,['activity'],{openDiscovery:true});
+ assert.deepEqual(focused[0].ranked.map(p=>p.entityId),['park']);assert.equal(open[0].ranked.length,3);assert.deepEqual(input.taste.vibes,['v-bar']);
+});

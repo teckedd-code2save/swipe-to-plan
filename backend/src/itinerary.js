@@ -1,3 +1,4 @@
+import {suggestBudget} from '../../shared/budget-suggestion.js';
 import {reviewCandidatePools} from './candidate-review.js';
 import {locationId as parseLocationId} from './locations.js';
 import { parseArea, InputError, parseRequest } from './contract.js';
@@ -76,8 +77,8 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
   Object.values(pins).forEach((id) => text(id,160,'a kept place ID'));
   if (new Set(Object.values(pins)).size !== Object.values(pins).length) throw new InputError('Keep a different place for each stop.');
   const constraints = parseRequest({ constraints: { excludeIds: body.excludeIds ?? [], ...(body.maxPriceLevel !== undefined ? { maxPriceLevel: body.maxPriceLevel } : {}) } }).constraints;
-  const experienceInput=body.experience===undefined?null:object(body.experience,['cuisine','atmosphere','occasion','notes'],'experience');
-  const experience=experienceInput?Object.fromEntries(Object.entries(experienceInput).map(([key,value])=>[key,text(value,key==='notes'?220:80,key)])):{};
+  const experienceInput=body.experience===undefined?null:object(body.experience,['cuisine','atmosphere','occasion','notes','explore'],'experience');
+  const experience=experienceInput?Object.fromEntries(Object.entries(experienceInput).map(([key,value])=>[key,key==='explore'?(typeof value==='boolean'?value:(()=>{throw new InputError('Choose a valid exploration mode.');})()):text(value,key==='notes'?220:80,key)])):{};
   const request = { title: text((typeof body.title==='string'&&!body.title.trim()||body.title==null ? null : body.title) || (activities.length ? `${activities.map(item=>({coffee:'Coffee',activity:'Something fun',dinner:'Dinner',drinks:'Drinks'}[item])).join(' & ')}${area?' in '+area.split(',')[0]:''}` : children ? 'Family day' : adults > 2 ? 'A day together' : 'A day out'),80,'a title'), area,...(route?{route}:{}),...(searchRadiusKm?{searchRadiusKm}:{}),...(locationId?{locationId}:{}),currencyMode, timing:{...timing}, date, party:{ adults, children }, people:profiles, budget, currency, startTime, endTime, pace, activities, ...(Object.keys(experience).length?{experience}:{}), pins:{...pins}, excludeIds:constraints.excludeIds, ...(body.maxPriceLevel !== undefined ? { maxPriceLevel:body.maxPriceLevel } : {}) };
   if(request.timing.dateConfirmed&&request.timing.timeConfirmed)makeSchedule({...request,activities:route?.map(s=>s.intent)||activities}); // Only chosen timing constrains scheduling.
   return request;
@@ -187,7 +188,7 @@ export async function buildItinerary(discovery, request) {
   const participating=voters.length?voters:request.people.map((person,index)=>({person,index}));
   const fetched = await Promise.all(participating.map(async({person,index}) => {
     const constraints = { excludeHotels:true,excludeIds:request.excludeIds,excludeTags:request.party.children ? ['nightclub','night_club','dance_club','adult_entertainment'] : [],...(request.maxPriceLevel?{maxPriceLevel:request.maxPriceLevel}:{}) };
-    return {index,results:await discovery.byIntents(parseRequest({location:{area:request.area,...(request.locationId?{id:request.locationId}:{})},taste:{artists:person.artists,vibes:person.vibes,context:person.context},constraints}),request.activities,{radiusKm:request.searchRadiusKm||0,experience:request.experience})};
+    return {index,results:await discovery.byIntents(parseRequest({location:{area:request.area,...(request.locationId?{id:request.locationId}:{})},taste:{artists:person.artists,vibes:person.vibes,context:person.context},constraints}),request.activities,{radiusKm:request.searchRadiusKm||0,experience:request.experience,openDiscovery:request.experience?.explore===true&&request.activities.length===1&&!request.route})};
   }));
   // A person without food/music/activity tastes has no ranking vote yet. Their
   // budget and participation remain included, without a generic search drowning
@@ -233,7 +234,7 @@ export async function buildItinerary(discovery, request) {
   if(!filled.length&&!request.searchRadiusKm&&request.locationId&&discovery.location){
     nearbyStatus='empty';
     try{
-      const nearby=await Promise.all(participating.map(async({person,index})=>({index,results:await discovery.byIntents(parseRequest({location:{area:request.area,id:request.locationId},taste:{artists:person.artists,vibes:person.vibes,context:person.context},constraints:{excludeHotels:true,excludeIds:request.excludeIds,excludeTags:request.party.children?['nightclub','night_club','dance_club','adult_entertainment']:[],...(request.maxPriceLevel?{maxPriceLevel:request.maxPriceLevel}:{})}}),request.activities,{radiusKm:20,experience:request.experience})})));
+      const nearby=await Promise.all(participating.map(async({person,index})=>({index,results:await discovery.byIntents(parseRequest({location:{area:request.area,id:request.locationId},taste:{artists:person.artists,vibes:person.vibes,context:person.context},constraints:{excludeHotels:true,excludeIds:request.excludeIds,excludeTags:request.party.children?['nightclub','night_club','dance_club','adult_entertainment']:[],...(request.maxPriceLevel?{maxPriceLevel:request.maxPriceLevel}:{})}}),request.activities,{radiusKm:20,experience:request.experience,openDiscovery:request.experience?.explore===true&&request.activities.length===1&&!request.route})})));
       let nearbyPools=request.activities.map((intent,i)=>{
         const items=nearby.length===1?nearby[0].results[i].ranked:mergeGroup(nearby.map(({results,index})=>({...results[i],id:request.people[index].id||`person-${index}`,name:request.people[index].name})),20).items;
         return rerankForExperience(items,request.experience,intent);
@@ -246,7 +247,7 @@ export async function buildItinerary(discovery, request) {
   const unresolved = members.flatMap((results,index) => results[0].taste.unresolved.map((entry) => ({...entry,person:request.people[index].name})));
   const budget=allocateBudget(planningRequest,filled.map(stop=>stop.intent));
   return {
-    version:'1.0',qualityReview,shortlist,nearbySuggestions,nearbyStatus,searchScope:request.searchRadiusKm?{kind:'nearby',radiusKm:request.searchRadiusKm,area:request.area}:{kind:'area',area:request.area},phase:exploring?'discovery':needsTiming?'needs_timing':'scheduled',activityBasis,status:filled.length===stops.length&&!needsTiming?'complete':'partial',request:{...request,title:resultTitle(request,stops)},stops,tasteMap,
+    version:'1.0',allowance:{amount:request.budget??suggestBudget(request),kind:request.budget==null?'suggested':'specified',pricesVerified:false},qualityReview,shortlist,nearbySuggestions,nearbyStatus,searchScope:request.searchRadiusKm?{kind:'nearby',radiusKm:request.searchRadiusKm,area:request.area}:{kind:'area',area:request.area},phase:exploring?'discovery':needsTiming?'needs_timing':'scheduled',activityBasis,status:filled.length===stops.length&&!needsTiming?'complete':'partial',request:{...request,title:resultTitle(request,stops)},stops,tasteMap,
     budget:{...budget,allocations:budget.allocations.map((a,index)=>({...a,stopId:`stop-${index}`}))},
     people:request.people.map((person,index)=>({id:person.id || `person-${index}`,name:person.name,taste:members[index][0].taste})),
     provenance:{provider,retrievedAt:members[0][0].provenance.retrievedAt,...(members[0][0].provenance.locality?{locality:members[0][0].provenance.locality}:{})},

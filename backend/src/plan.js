@@ -8,8 +8,8 @@ const VENUE = /(?:^|_)(restaurant|cafe|coffee_shop|coffeehouse|tea_house|tearoom
 function intentEvidence(tags, intent) {
   if (intent === "activity") return tags.filter((t) => /^urn:tag:(category|genre):(place|qloo):/.test(t.id) && /(?:^|_)(museum|gallery|art_gallery|park|garden|zoo|aquarium|cultural_center|landmark|tourist_attraction|beach|market|marketplace|bookstore|bookshop|library|monument|memorial)(?:$|_)/.test(t.id.split(":").at(-1)));
   const categories = tags.filter((t) => /^urn:tag:(category|genre):(place|qloo):/.test(t.id) && VENUE.test(t.id.split(":").at(-1)));
+  if (intent === "any") return [...categories,...intentEvidence(tags,"activity")];
   if (!categories.length) return [];
-  if (intent === "any") return categories;
   // Serving coffee alone does not make a fast-food restaurant a café.
   if (intent === "coffee") return categories.filter(t=>/(?:^|_)(cafe|coffee_shop|coffeehouse|tea_house|tearoom|tea_room|espresso_bar)(?:$|_)/.test(t.id.split(":").at(-1)));
   if(intent==='drinks')return categories.filter(t=>/(?:^|_)(bar|pub|lounge|nightclub|night_club)(?:$|_)/.test(t.id.split(':').at(-1)));
@@ -204,9 +204,9 @@ export function createDiscovery({ provider, now = Date.now, reviewCandidates }) 
     location:provider.getLocation,
     reviewCandidates,
     person,
-    async byIntents(request, intents, {radiusKm=0,experience}={}) {
+    async byIntents(request, intents, {radiusKm=0,experience,openDiscovery=false}={}) {
       const retrieved = await retrieve(request,intents,radiusKm,experience);
-      return intents.map((intent) => rank(retrieved, { ...request, intent }));
+      return intents.map((intent) => rank(retrieved, { ...request, intent:openDiscovery?"any":intent }));
     },
     async recommend(request) {
       const p = await person(request);

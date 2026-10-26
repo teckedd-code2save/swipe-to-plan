@@ -36,19 +36,19 @@ export function saveContacts(people) {
 
 // A late response can never replace the result for a newer brief. One network call
 // runs at a time and intermediate swipes collapse into the latest request.
-export function createLatestPlanner({run,onStart,onResult,onError,onIdle}) {
-  let pending=null, running=false, version=0, disposed=false;
+export function createLatestPlanner({run,onStart,onPreview,onResult,onError,onIdle}) {
+  let pending=null, running=false, version=0, disposed=false,controller=null;
   async function drain() {
     if(running||disposed)return;
     running=true;onStart?.();
     try {
       while(pending&&!disposed) {
         const job=pending;pending=null;
-        try {const result=await run(job.value);if(!disposed&&job.version===version)onResult(result,job.value);}
+        try {controller=new AbortController();const result=await run(job.value,{signal:controller.signal,onPreview:preview=>{if(!disposed&&job.version===version)onPreview?.(preview,job.value);}});if(!disposed&&job.version===version)onResult(result,job.value);}
         catch(error){if(!disposed&&job.version===version)onError(error);}
       }
     } finally {running=false;if(!disposed)onIdle?.();}
   }
-  return {enqueue(value){if(disposed)return;pending={value,version:++version};drain();},invalidate(){version++;pending=null;},dispose(){disposed=true;pending=null;}};
+  return {enqueue(value){if(disposed)return;pending={value,version:++version};controller?.abort();drain();},invalidate(){version++;pending=null;controller?.abort();},dispose(){disposed=true;pending=null;controller?.abort();}};
 }
 

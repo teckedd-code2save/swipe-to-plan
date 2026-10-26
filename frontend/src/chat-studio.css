@@ -151,21 +151,7 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 .cs-plan-submit-label{font-size:11px;font-weight:600;white-space:nowrap}
 
 /* Gesture-driven card fan: retain the deck's original art and colors. */
-.deck-gesture-hint{text-align:center;font-size:11px;color:#79866d;margin:8px 0 13px}
-.deck-spread{max-height:min(58dvh,520px);overflow-y:auto;overscroll-behavior:contain;padding:0 8px 34px;scrollbar-width:thin;touch-action:pan-y}
-.deck-spread-search{display:block;position:sticky;top:0;z-index:20;background:var(--cs-paper,#faf9f5);padding:8px 1px 12px;color:#708263;font-size:11px}
-.deck-spread-search input{display:block;width:100%;min-width:0;margin-top:5px;border:1px solid #dbe0d1;border-radius:10px;padding:10px 12px;background:#fff;color:#35442e;font-size:14px}
-.deck-spread .deck-fan-card{position:relative!important;inset:auto!important;display:flex;flex-direction:column;justify-content:space-between;width:100%;height:clamp(175px,32dvh,255px)!important;min-height:175px!important;max-width:100%;margin:0 0 0!important;padding:16px 20px;border-radius:17px;transform:none!important;box-shadow:0 8px 24px #20301924!important;overflow:hidden;isolation:isolate}
-.deck-spread .deck-fan-card+.deck-fan-card{margin-top:-25px!important}
-.deck-spread .deck-fan-card .card-topline{position:relative;z-index:1}
-.deck-spread .deck-fan-card .taste-card-copy{position:relative!important;inset:auto!important;z-index:1;margin-top:auto;margin-bottom:32px}
-.deck-spread .deck-fan-card .taste-card-copy h2{font-size:clamp(24px,5vw,38px)!important;line-height:1.08}
-.deck-spread .deck-fan-card .taste-card-copy p{line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.deck-fan-actions{position:absolute;z-index:5;bottom:9px;right:12px;display:flex;gap:8px}
-.deck-fan-actions button{display:flex;align-items:center;gap:5px;background:#ffffffeb!important;color:#415a38!important;border-radius:17px;padding:7px 12px!important;font-size:11px;font-weight:600}
 .deck-no-match{padding:20px 10px;text-align:center;font-size:12px}
-@media(max-width:600px){.deck-spread{max-height:52dvh;padding:0 2px 25px}.deck-spread .deck-fan-card{height:190px!important;min-height:190px!important;padding:14px 15px}.deck-spread .deck-fan-card+.deck-fan-card{margin-top:-20px!important}.deck-gesture-hint{font-size:10px}}
-@media(prefers-reduced-motion:reduce){.deck-spread .deck-fan-card{transition:none!important}}
 
 
 /* Taste Studio: important controls visible together, without three nested tabs. */
@@ -195,7 +181,6 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 .cs-taste-spending label{display:block;margin-top:13px;margin-bottom:7px}
 .cs-taste-spending select{width:100%;background:#fff;border:1px solid #dce3d3;border-radius:8px;padding:9px;color:#3e5238;font-size:12px}
 .cs-tastes-open .swipe-deck{width:100%}
-.cs-tastes-open .deck-gesture-hint{font-size:10px}
 .cs-tastes-open .cs-spend-note{margin-top:14px}
 @media(max-width:650px){
  .cs-messages .cs-tastes-open{padding:14px;width:100%}
@@ -219,10 +204,6 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 @media(max-width:600px){.cs-messages>.cs-draft-plan{margin-bottom:14px}.cs-messages>.cs-draft-plan .cs-tool{padding:13px}}
 
 /* Keep each card's vote controls visible above the fan overlap. */
-.deck-spread .deck-fan-actions{top:9px;right:10px;bottom:auto;gap:5px}
-.deck-spread .deck-fan-actions button{padding:6px 8px!important;font-size:10px!important}
-.deck-spread .deck-fan-card:focus-within,.deck-spread .deck-fan-card:hover{z-index:12}
-@media(max-width:600px){.deck-spread .deck-fan-actions{top:8px;right:8px}}
 
 
 /* Make the return to conversation visible, including on touch screens. */
@@ -257,3 +238,39 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 .cs-place-option .cs-starters{margin:10px 0 0 32px;align-items:center}
 .cs-place-shortlist>small{display:block;margin-top:14px;line-height:1.7}
 @media(max-width:600px){.cs-place-shortlist{margin-left:0}.cs-place-option p,.cs-place-option .cs-starters{margin-left:0}}
+
+/* Contextual discovery: native page scrolling and compact, independent choices. */
+.cs-context-note{margin:12px 0 18px;padding:0 2px;color:var(--cs-muted);font-size:12px;line-height:1.6}
+.cs-context-note summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:7px;padding:6px 0;color:var(--cs-muted)}
+.cs-context-note summary::before{content:'↗';font-size:15px}
+.cs-context-note p{max-width:58ch;margin:7px 0 10px}
+.cs-context-note button{font:inherit;color:var(--cs-ink);text-decoration:underline;text-underline-offset:4px;background:none;border:0;padding:5px 0}
+.cs-research-sources{margin:12px 0;font-size:12px;line-height:1.6}.cs-research-sources summary{cursor:pointer}.cs-research-sources a{text-decoration:underline;text-underline-offset:3px}
+.cs-place-shortlist.cs-tool{padding:20px 22px;max-width:none;border-radius:18px;background:#fffefb;box-shadow:none}
+.cs-place-shortlist .cs-tool-head{margin-bottom:6px}.cs-place-shortlist .cs-tool-head>span{font:22px/1.25 Georgia,serif;letter-spacing:-.35px;color:#34442f}
+.cs-place-shortlist .cs-place-option{padding:18px 0;border:0;border-bottom:1px solid #e9ece2;border-radius:0;background:none;margin:0;box-shadow:none}
+.cs-place-option>label{display:flex;gap:12px;align-items:flex-start}.cs-place-option>label>span{min-width:0}.cs-place-option strong{display:block;font-size:15px;line-height:1.4;font-weight:600;color:#34442f;overflow-wrap:anywhere}
+.cs-place-option small{display:block;font-size:11px;line-height:1.5;color:#7b8374;margin-top:5px;overflow-wrap:anywhere}
+.cs-place-shortlist .cs-place-option p{font-size:13px;line-height:1.65;color:#626b5b;margin:8px 0 10px;max-width:66ch}
+.cs-place-option .cs-starters{display:flex;align-items:center;gap:12px;margin:0;flex-wrap:wrap}
+.cs-place-option .cs-starters button{padding:5px 0;border:0;background:none;border-radius:0;box-shadow:none;min-height:34px;font-size:12px;color:#536649}
+.cs-current-pick{font-size:10px;color:#657b51;background:#edf2e6;border-radius:20px;padding:4px 8px}
+.cs-shortlist-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:16px}
+.cs-shortlist-actions button{display:inline-flex;align-items:center;gap:7px;min-height:40px;border:1px solid #dfe5d5;border-radius:10px;background:transparent;padding:8px 12px;color:#536649;font-size:12px}
+.cs-shortlist-actions button:first-child{background:#edf2e6;border-color:#edf2e6;color:#354d2d}.cs-shortlist-actions button:disabled{opacity:.5}
+.deck-view-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:4px 0 13px;font-size:11px;color:#7b8374}
+.deck-view-controls button{border:1px solid #dbe2d1;background:#f5f7ef;border-radius:20px;padding:8px 12px;font:inherit;color:#435c36;min-height:36px;white-space:nowrap}
+.cs-tastes .taste-card{touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.cs-tastes .deck-spread{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px;max-height:none;overflow:visible;overscroll-behavior:auto;padding:0 0 12px;touch-action:pan-y}
+.cs-tastes .deck-spread-search{position:static;grid-column:1/-1;z-index:auto;padding:0 0 4px;background:none}
+.cs-tastes .deck-spread .deck-fan-card{margin:0!important;min-height:260px!important;height:260px!important;box-shadow:none!important;transform:none!important;border-radius:15px;padding:18px!important}
+.cs-tastes .deck-spread .deck-fan-card+.deck-fan-card{margin-top:0!important}
+.cs-tastes .deck-spread .deck-fan-card .taste-card-copy{margin-top:auto;margin-bottom:42px;min-width:0}
+.cs-tastes .deck-spread .deck-fan-card .taste-card-copy h2{font-size:clamp(24px,3.8vw,33px)!important;line-height:1.12;overflow-wrap:anywhere}
+.cs-tastes .deck-spread .deck-fan-actions{top:auto;bottom:12px;right:14px}.cs-tastes .deck-spread .deck-fan-actions button{padding:8px 12px!important;min-height:36px}
+.cs-tastes .card-stack .taste-card-copy h2{font-size:clamp(26px,4.5vw,38px);line-height:1.08;overflow-wrap:anywhere}
+.cs-tastes .card-stack .taste-card-copy p{font-size:12px;line-height:1.45;max-width:40ch}
+@media(max-width:700px){.cs-place-shortlist.cs-tool{padding:16px;border-radius:15px}.cs-place-shortlist .cs-tool-head>span{font-size:21px}.cs-place-shortlist .cs-place-option p{font-size:13px}.deck-view-controls{font-size:11px}.cs-tastes .deck-spread{grid-template-columns:1fr}.cs-tastes .deck-spread .deck-fan-card{height:260px!important;min-height:260px!important}.cs-tastes .card-stack{height:220px}.cs-tastes .card-stack .taste-card{height:210px;padding:18px}.cs-tastes .card-stack .taste-card-copy{left:18px;right:18px;bottom:20px}}
+.cs-tastes .deck-gather{grid-column:1/-1;justify-self:center;min-height:40px;border:1px solid #dbe2d1;border-radius:20px;background:#f5f7ef;padding:9px 18px;color:#435c36;font-size:12px}
+
+.cs-tastes .card-stack{height:260px;min-width:0}.cs-tastes .card-stack .taste-card{height:250px;display:flex;flex-direction:column;justify-content:space-between;padding:18px}.cs-tastes .card-stack .taste-card-copy{position:relative;inset:auto;margin-top:auto}.cs-tastes .card-stack .taste-card-copy h2{font-size:clamp(26px,4vw,34px);line-height:1.12}.cs-tastes .card-stack .taste-card-copy p{font-size:12px;line-height:1.4}.cs-tastes .card-stack .stack-sheet{height:245px}

@@ -12,3 +12,10 @@ test('a request-specific swipe stack contains only suggested relevant cards acro
  const person={artists:[],vibes:[]},deck=[{id:'food',kind:'vibe',group:'food'},{id:'bar',kind:'vibe',group:'activity'},{id:'rooftop',kind:'vibe',group:'mood'}];
  assert.deepEqual(tailorTasteCards(deck,person,'request',['rooftop','bar']).map(c=>c.id),['rooftop','bar']);assert.deepEqual(person.vibes,[]);
 });
+
+import {contextualCardCopy} from '../src/taste-context.js';
+test('contextual copy changes the presentation without changing stored artist or preference identity',()=>{
+ const deck=[{id:'artist',kind:'artist',label:'Sade',sub:'Original'}];
+ const cards=contextualCardCopy(deck,[{id:'artist',label:'Something mellow for the evening?',sub:'Explore this sound for your outing.'}]);
+ assert.equal(cards[0].label,'Sade');assert.equal(cards[0].promptLabel,'Something mellow for the evening?');assert.equal(deck[0].promptLabel,undefined);
+});

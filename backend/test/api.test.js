@@ -186,3 +186,16 @@ test('nearby areas use a no-store POST and coarse coordinates without changing t
   assert.equal((await call('/api/locations/nearby',{latitude:200,longitude:0})).status,400);assert.equal(calls,1);
 });
 
+
+test('streamed discovery publishes places before candidate review resolves', {timeout:5000}, async t=>{
+ let releaseReview;const reviewStarted=new Promise(resolve=>{releaseReview=resolve;});let finishReview;
+ const agent={configured:()=>true,reviewCandidates:input=>new Promise(resolve=>{finishReview=()=>resolve(input.candidates.map(pool=>({index:pool.index,ids:pool.places.map(p=>p.id)})));releaseReview();})};
+ const server=createApp({provider:createDemoProvider(),rateLimit:false,agent}).listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>new Promise(resolve=>server.close(resolve)));
+ const events=[];let sawPreview;const preview=new Promise(resolve=>{sawPreview=resolve;});
+ const completed=new Promise((resolve,reject)=>{
+  const req=http.request({hostname:'127.0.0.1',port:server.address().port,path:'/api/itineraries',method:'POST',headers:{'Content-Type':'application/json',Accept:'application/x-ndjson'}},res=>{
+   assert.match(res.headers['content-type'],/application\/x-ndjson/);let buffer='';res.on('data',chunk=>{buffer+=chunk;let end;while((end=buffer.indexOf('\n'))>=0){const event=JSON.parse(buffer.slice(0,end));buffer=buffer.slice(end+1);events.push(event);if(event.type==='discovery')sawPreview(event.plan);}});res.on('end',resolve);
+  });req.on('error',reject);req.end(JSON.stringify({area:'Osu',activities:['coffee'],experience:{atmosphere:'quiet'},timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}}));
+ });
+ const early=await preview;assert.ok(early.shortlist.length);assert.equal(early.qualityReview.status,'pending');assert.equal(events.length,1);await reviewStarted;finishReview();await completed;assert.equal(events.at(-1).type,'complete');assert.equal(events.at(-1).plan.qualityReview.status,'reviewed');assert.equal(events.at(-1).plan.request.budget,null);assert.equal(events.at(-1).plan.allowance.kind,'suggested');
+});

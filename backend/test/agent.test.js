@@ -344,3 +344,10 @@ test('a new date confirmation without a concrete date repairs instead of schedul
  const result=await agent.interpret({message:'This Friday after work',context,mode:'autopilot',locationContext:{confirmed:true,timeZone:'Africa/Accra'}});
  assert.equal(calls,2);assert.equal(new Date(result.request.date+'T12:00:00Z').getUTCDay(),5);
 });
+
+test('a new open request starts discovery with contextual card copy, without waiting for a card or budget',async()=>{
+ const context=parseBrief({people:[{id:'you',name:'You',vibes:['v-bar']}],activities:[],budget:null,timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}});
+ const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('autopilot_day',{changes:{activities:['activity'],experience:{explore:true,notes:'Unwind after work'}},cardIds:['v-nature'],cardPrompts:[{id:'v-nature',label:'A little room to breathe?',sub:'Try an outdoor pause after work.'}]})});
+ const result=await agent.interpret({message:'I need to unwind after work',context,mode:'autopilot',locationContext:{confirmed:true}});
+ assert.equal(result.status,'autopilot');assert.equal(result.request.budget,null);assert.equal(result.request.experience.explore,true);assert.equal(result.cardPrompts[0].label,'A little room to breathe?');assert.deepEqual(result.request.people[0].vibes,['v-bar']);
+});

@@ -1,3 +1,4 @@
+import {readPlanStream} from './plan-stream.js';
 import {usageSession} from './usage.js';
 async function json(url, options = {}) {
   const response = await fetch(url, {signal:AbortSignal.timeout(25000),...options,headers:{"content-type":"application/json",...(!navigator.globalPrivacyControl?{"x-unstressed-session":usageSession()}:{}),...options.headers}});
@@ -35,8 +36,11 @@ export const api = {
   health: () => json("/api/health"), deck: () => json("/api/deck"),
   recommend: (body) => json("/api/recommend", {...post(body),signal:AbortSignal.timeout(45000)}),
   outing: (body) => json("/api/outings", {...post(body),signal:AbortSignal.timeout(45000)}),
-  itinerary: (body,headers) => json("/api/itineraries", {...post(body),headers,signal:AbortSignal.timeout(45000)}),
-  agent: (body,headers) => json("/api/agent", {...post(body),headers,signal:AbortSignal.timeout(110000)}),
+  itinerary: async(body,headers,{signal,onDiscovery}={}) => {
+    const response=await fetch('/api/itineraries',{...post(body),headers:{'content-type':'application/json',accept:'application/x-ndjson',...(!navigator.globalPrivacyControl?{'x-unstressed-session':usageSession()}:{}),...headers},signal:signal?AbortSignal.any([signal,AbortSignal.timeout(45000)]):AbortSignal.timeout(45000)});
+    return readPlanStream(response,onDiscovery);
+  },
+  agent: (body,headers,signal) => json("/api/agent", {...post(body),headers,signal:signal?AbortSignal.any([signal,AbortSignal.timeout(45000)]):AbortSignal.timeout(45000)}),
   createDay: request => json('/api/days',post({request})),
   day: (id,token) => json(`/api/days/${encodeURIComponent(id)}`,dayRequest(token)),
   addPerson: (id,token,person) => json(`/api/days/${encodeURIComponent(id)}/members`,dayRequest(token,'POST',person)),
