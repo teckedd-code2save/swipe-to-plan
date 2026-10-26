@@ -124,7 +124,8 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
       searchCache.set(key,{value,at:now()});return value;
     },
     async resolveExperienceTags(experience={}){
-      return (await Promise.all(['atmosphere','cuisine'].filter(field=>experience[field]).map(async field=>{
+      const requested=await this.resolveTasteTags(experience.searchTags||[]);
+      return [...requested,...(await Promise.all(['atmosphere','cuisine'].filter(field=>experience[field]).map(async field=>{
         const label=experience[field],key=`experience:${field}:${norm(label)}`;
         let hit=tagsCache.get(key);
         if(!hit||now()-hit.at>=86400000){
@@ -132,7 +133,7 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
           hit={at:now(),value};tagsCache.set(key,hit);try{await value;}catch(e){tagsCache.delete(key);throw e;}
         }
         return {preferenceId:`experience:${field}`,label,tagIds:await hit.value};
-      }))).filter(signal=>signal.tagIds.length);
+      }))).filter(signal=>signal.tagIds.length)];
     },
     async resolveTasteTags(ids){return (await Promise.all(ids.filter(id=>byId[id]?.tagQuery).map(async id=>({preferenceId:id,tagIds:await tasteTags(id)})))).filter(s=>s.tagIds.length);},
     async resolveArtist(name) {

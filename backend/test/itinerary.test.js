@@ -268,3 +268,10 @@ test('an inherited exploration flag cannot turn a later meal into a museum recom
  assert.ok(plan.shortlist.every(s=>s.item.entityId!=='museum'));
  assert.equal(plan.request.budget,80);assert.deepEqual(plan.request.party,{adults:2,children:3});
 });
+
+test('outing-specific search topics remain separate from personal preferences',()=>{
+ const before={people:[{id:'you',name:'You',vibes:[]}],activities:['activity'],experience:{searchTags:['v-cinema','v-games']}};
+ const brief=parseItinerary(before);
+ assert.deepEqual(brief.people[0].vibes,[]);assert.deepEqual(brief.experience.searchTags,['v-cinema','v-games']);
+ assert.throws(()=>parseItinerary({...before,experience:{searchTags:['invented-category']}}),/supported outing search/);
+});

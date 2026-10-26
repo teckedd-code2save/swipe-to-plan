@@ -87,3 +87,12 @@ test('dining requests retrieve a restaurant pool using provider-resolved categor
  assert.ok(calls.some(u=>u.searchParams.get('filter.tags')==='urn:tag:category:place:restaurant'));
  assert.ok(!calls.some(u=>u.searchParams.get('filter.tags')?.includes('amenity')));
 });
+
+test('explicit outing topics retrieve relevant categories without recording a saved taste',async()=>{
+ const calls=[];
+ const client=createQlooClient({getKey:()=> 'test',fetchImpl:async url=>{calls.push(url);return {ok:true,json:async()=>url.pathname==='/v2/tags'?{results:{tags:[{id:'urn:tag:category:place:movie_theater'}]}}:{results:{entities:[]}}};}});
+ const tags=await client.resolveExperienceTags({searchTags:['v-cinema']});
+ await client.discover({signalIds:[],area:'London',tagSignals:tags,includeActivity:true});
+ assert.deepEqual(tags,[{preferenceId:'v-cinema',tagIds:['urn:tag:category:place:movie_theater']}]);
+ assert.ok(calls.some(u=>u.searchParams.get('filter.tags')==='urn:tag:category:place:movie_theater'));
+});

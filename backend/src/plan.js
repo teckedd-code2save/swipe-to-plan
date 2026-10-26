@@ -6,7 +6,7 @@ import { ProviderError } from "./qloo.js";
 // Venue category evidence is required. Interest/decor tags cannot establish a venue type.
 const VENUE = /(?:^|_)(restaurant|cafe|coffee_shop|coffeehouse|tea_house|tearoom|tea_room|espresso_bar|bar|pub|lounge|nightclub|night_club|bistro|eatery|pizzeria|steakhouse)(?:$|_)/;
 function intentEvidence(tags, intent) {
-  if (["coffee","dinner","drinks"].includes(intent) && tags.some(t=>/^urn:tag:category:(place|qloo):(department_store|shopping_mall|outlet_mall|arena)$/.test(t.id))) return [];
+  if (["coffee","dinner","drinks"].includes(intent) && tags.some(t=>/^urn:tag:category:(place|qloo):(department_store|shopping_mall|outlet_mall|arena|library|museum|art_museum|art_gallery|monument|memorial|park|botanical_garden)$/.test(t.id))) return [];
   if (intent === "activity") return tags.filter((t) => /^urn:tag:(category|genre):(place|qloo):/.test(t.id) && /(?:^|_)(museum|gallery|art_gallery|park|garden|zoo|aquarium|cultural_center|landmark|tourist_attraction|beach|market|marketplace|bookstore|bookshop|library|monument|memorial|movie_theater|movie_theatre|cinema|theater|theatre|performing_arts_theater|performing_arts_theatre|comedy_club|bowling_alley|amusement_center|video_arcade|playground|amusement_park|children_museum|childrens_museum|wildlife_park|hiking_area|hiking_trail|nature_preserve|sports_complex|swimming_pool|tennis_court|recreation_center)(?:$|_)/.test(t.id.split(":").at(-1)));
   const categories = tags.filter((t) => /^urn:tag:(category|genre):(place|qloo):/.test(t.id) && VENUE.test(t.id.split(":").at(-1)));
   if (intent === "any") return [...categories,...intentEvidence(tags,"activity")];
