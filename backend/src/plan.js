@@ -98,6 +98,7 @@ export function rankPlaces(places, request, { source = "qloo", retrievedAt = new
   const feedbackIds = new Set(request.feedback.map((f) => f.candidateId));
   const dislikesNoise = request.feedback.some((f) => f.reason === "too_noisy");
   const selectedVibes = request.taste.vibes.map((id) => byId[id]);
+  const searchTopics=(request.searchTopics||[]).map(id=>byId[id]).filter(Boolean);
   const ranked = [];
   places.forEach((p, index) => {
     if (!p || typeof p.entity_id !== "string" || !p.entity_id || !safeString(p.name)) return reject("missing_identity");
@@ -120,6 +121,7 @@ export function rankPlaces(places, request, { source = "qloo", retrievedAt = new
       if (priceOf(p) > request.constraints.maxPriceLevel) return reject("over_price_limit");
     }
     const matched = selectedVibes.filter((v) => tags.some((t) => matchesTasteTag(v,t.id)));
+    const requestedMatch=searchTopics.some(v=>tags.some(t=>matchesTasteTag(v,t.id)));
     const noiseTags = tags.filter((t) => NOISY.has(slug(t.id)));
     const base = 1 - index / Math.max(places.length, 1);
     const boost = Math.min(0.15 * matched.length, 0.45);
@@ -138,8 +140,8 @@ export function rankPlaces(places, request, { source = "qloo", retrievedAt = new
     // Grounded venue-detail completeness is a small tiebreaker, not proof of
     // quality, price or opening hours. Relevance and direct taste evidence lead.
     const detailBonus=(item.description?0.03:0)+(item.links.menu?0.03:0)+(item.links.website?0.02:0)+(item.links.phone?0.01:0);
-    item.score = +Math.max(0, base + boost + detailBonus - penalty).toFixed(4);
-    item.scoreComponents = { providerOrder: +base.toFixed(4), vibeBoost: boost, detailBonus, noisePenalty: penalty };
+    item.score = +Math.max(0, base + boost + detailBonus + (requestedMatch?2:0) - penalty).toFixed(4);
+    item.scoreComponents = { providerOrder: +base.toFixed(4), vibeBoost: boost, requestTopicBoost:requestedMatch?2:0, detailBonus, noisePenalty: penalty };
     item.matchedVibes = matched.map((v) => v.label);
     item.why = explainCandidate(item);
     ranked.push(item);
@@ -208,7 +210,7 @@ export function createDiscovery({ provider, now = Date.now, reviewCandidates }) 
     person,
     async byIntents(request, intents, {radiusKm=0,experience,openDiscovery=false}={}) {
       const retrieved = await retrieve(request,intents,radiusKm,experience);
-      return intents.map((intent) => rank(retrieved, { ...request, intent:openDiscovery?"any":intent }));
+      return intents.map((intent) => rank(retrieved, { ...request, searchTopics:experience?.searchTags||[], intent:openDiscovery?"any":intent }));
     },
     async recommend(request) {
       const p = await person(request);

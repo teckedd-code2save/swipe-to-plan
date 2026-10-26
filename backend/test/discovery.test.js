@@ -233,3 +233,13 @@ test('cinema and bowling categories are eligible activity results',()=>{
  const ranked=rankPlaces([venue('film','movie_theater'),venue('bowl','bowling_alley')],{...request(),intent:'activity'}).ranked;
  assert.equal(ranked.length,2);
 });
+
+
+test('explicit outing topics reach the review shortlist before generic popular places',()=>{
+ const popular=Array.from({length:20},(_,i)=>venue('park-'+i,'park'));
+ const brief={...request(),intent:'activity',searchTopics:['v-cinema','v-games']};
+ const ranked=rankPlaces([...popular,venue('film','movie_theater'),venue('bowl','bowling_alley')],brief).ranked;
+ assert.deepEqual(ranked.slice(0,2).map(x=>x.entityId),['film','bowl']);
+ assert.deepEqual(ranked[0].matchedVibes,[]);
+ assert.equal(ranked[0].scoreComponents.requestTopicBoost,2);
+});

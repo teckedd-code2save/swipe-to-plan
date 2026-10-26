@@ -250,8 +250,10 @@ export function createAgent({fetchImpl=globalThis.fetch,getKey=()=>process.env.L
         }
         let tasteCards;
         if(tool.name!=='show_ui'&&args.cardIds!==undefined){
-          if(!Array.isArray(args.cardIds)||args.cardIds.length>8||args.cardIds.some(id=>!publicDeck().some(c=>c.id===id)))throw new InputError('Choose supported contextual taste card IDs.');
-          tasteCards=[...new Set(args.cardIds)];delete args.cardIds;
+          // Optional suggestions must never block the valid outing action.
+          // Keep only exact catalog IDs; do not guess or substitute a taste.
+          tasteCards=[...new Set((Array.isArray(args.cardIds)?args.cardIds:[]).filter(id=>publicDeck().some(c=>c.id===id)))].slice(0,8);delete args.cardIds;
+          if(Array.isArray(args.cardPrompts))args.cardPrompts=args.cardPrompts.filter(p=>tasteCards.includes(p?.id));
         }
         const cardPrompts=parseCardPrompts(args.cardPrompts,tasteCards||args.cardIds||[]);delete args.cardPrompts;
         const narrate=result=>{validateDisclosures(result.request?.people||(result.person?[result.person]:[]),brief?.people,message,history,audienceCatalog);return {...result,...(assistantMessage?{assistantMessage}:{}),...(tasteCards?.length?{tasteCards}:{}),...(cardPrompts.length?{cardPrompts}:{})};};

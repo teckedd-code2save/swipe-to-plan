@@ -391,3 +391,12 @@ test('a concern without an outing request still receives a conversational questi
  const result=await agent.interpret({message:'I am struggling with my research',mode:'autopilot'});
  assert.equal(result.status,'needs_input');assert.equal(result.request,undefined);
 });
+
+
+test('unsupported optional taste suggestions cannot block a valid family outing',async()=>{
+ const context=parseBrief({area:'London',people:[{id:'you',name:'You',vibes:[]}],activities:[],timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}});
+ let calls=0;
+ const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>{calls++;return response('autopilot_day',{changes:{activities:['activity'],party:{adults:2,children:2},budget:60,currency:'GBP',experience:{searchTags:['v-cinema']}},cardIds:['v-invented-family','v-cinema'],cardPrompts:[{id:'v-invented-family',label:'Play together',sub:'Invented optional card.'}]});}});
+ const result=await agent.interpret({message:'Cinema for two adults and two children, 60 pounds total',context,mode:'autopilot',locationContext:{confirmed:true}});
+ assert.equal(calls,1);assert.equal(result.status,'autopilot');assert.deepEqual(result.tasteCards,['v-cinema']);assert.deepEqual(result.request.party,{adults:2,children:2});assert.equal(result.request.budget,60);assert.deepEqual(result.request.people[0].vibes,[]);
+});
