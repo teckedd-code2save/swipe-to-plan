@@ -260,3 +260,11 @@ test('selected repeated-category stops can be scheduled with distinct time slots
   assert.equal(result.stops[1].bufferAfterMinutes,0);
   assert.equal(result.request.route.length,2);
 });
+
+test('an inherited exploration flag cannot turn a later meal into a museum recommendation',async()=>{
+ const request=parseItinerary({activities:['dinner'],party:{adults:2,children:3},budget:80,currency:'GBP',experience:{explore:true,notes:'One indoor meal for the family'},timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}});
+ const plan=await buildItinerary(engine([venue('museum',['museum']),venue('meal',['restaurant'])]),request);
+ assert.equal(plan.stops[0].item.entityId,'meal');
+ assert.ok(plan.shortlist.every(s=>s.item.entityId!=='museum'));
+ assert.equal(plan.request.budget,80);assert.deepEqual(plan.request.party,{adults:2,children:3});
+});
