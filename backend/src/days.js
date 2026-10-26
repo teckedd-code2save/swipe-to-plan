@@ -12,10 +12,10 @@ const checkFields = (body, allowed) => {
   if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !allowed.includes(key))) throw new InputError(`Supported fields: ${allowed.join(', ')}.`);
 };
 const profile = (input, id) => {
-  checkFields(input, ['id', 'name', 'artists', 'vibes', 'spending']);
+  checkFields(input, ['id', 'name', 'artists', 'vibes', 'spending', 'context']);
   return { ...parseItinerary({ party: { adults: 1 }, people: [input] }).people[0], id: id || input.id || randomUUID() };
 };
-const canonical = day => parseItinerary({ ...day.brief, people: day.members.map(({ id, name, artists, vibes, spending }) => ({ id, name, artists, vibes, ...(spending?{spending}:{}) })) });
+const canonical = day => parseItinerary({ ...day.brief, people: day.members.map(({ id, name, artists, vibes, spending, context }) => ({ id, name, artists, vibes, ...(context?{context}:{}), ...(spending?{spending}:{}) })) });
 const event = (day, type, name, detail, now) => {
   day.revision++;
   day.updatedAt = new Date(now()).toISOString();
@@ -158,7 +158,7 @@ export function createDays({ discovery, store = createDayStore(), now = Date.now
       });
     },
     async join(id, credential, body) {
-      checkFields(body, ['name', 'artists', 'vibes', 'spending']);
+      checkFields(body, ['name', 'artists', 'vibes', 'spending', 'context']);
       const person = profile(body);
       const memberToken = token();
       await change(id, credential, (day, permission) => {
@@ -176,7 +176,7 @@ export function createDays({ discovery, store = createDayStore(), now = Date.now
         if (permission.role !== 'owner' && permission.memberId !== personId) throw fail('You can only update your own tastes.', 403, 'day_forbidden');
         const member = day.members.find(p => p.id === personId);
         if (!member) throw fail('This person is no longer part of the day.');
-        const changed = JSON.stringify([member.name, member.artists, member.vibes,member.spending]) !== JSON.stringify([person.name, person.artists, person.vibes,person.spending]);
+        const changed = JSON.stringify([member.name, member.artists, member.vibes,member.spending,member.context]) !== JSON.stringify([person.name, person.artists, person.vibes,person.spending,person.context]);
         Object.assign(member, person, { joined: member.joined || permission.role === 'member', updatedAt: new Date(now()).toISOString() });
         if (changed) event(day, 'taste_changed', person.name, `${person.name} updated their tastes. Checking what fits the group now.`, now);
       });
@@ -215,7 +215,7 @@ export function createDays({ discovery, store = createDayStore(), now = Date.now
         const members=requested.people.map(person=>({...day.members.find(m=>m.id===person.id),...person,editToken:day.members.find(m=>m.id===person.id)?.editToken||token(),joined:day.members.find(m=>m.id===person.id)?.joined||false,updatedAt:new Date(now()).toISOString()}));
         const organizer=day.members[0].id;
         day.members=[members.find(p=>p.id===organizer),...members.filter(p=>p.id!==organizer)];
-        day.brief={...requested,people:day.members.map(({id,name,artists,vibes,spending})=>({id,name,artists,vibes,...(spending?{spending}:{})}))};
+        day.brief={...requested,people:day.members.map(({id,name,artists,vibes,spending,context})=>({id,name,artists,vibes,...(context?{context}:{}),...(spending?{spending}:{})}))};
         event(day,'autopilot','Organizer','Autopilot combined the group, tastes and trip details. Finding everyone’s day.',now);
       });
     },
@@ -224,3 +224,4 @@ export function createDays({ discovery, store = createDayStore(), now = Date.now
     settled: async id => { while (building.has(id)) await building.get(id); },
   };
 }
+

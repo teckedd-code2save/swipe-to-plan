@@ -1,3 +1,4 @@
+import {parseContext} from './context.js';
 import { byId } from "./deck.js";
 
 export const INTENTS = ["any", "dinner", "drinks", "coffee"];
@@ -33,7 +34,7 @@ export function parseRequest(body = {}) {
   if(location.id!==undefined&&(typeof location.id!=="string"||! /^[0-9a-f-]{36}$/i.test(location.id)))bad("Choose a valid location result.");
   const area = parseArea(location.area ?? body.area);
   if (body.area !== undefined && body.area !== area) bad("area and location.area must agree.");
-  const taste = object(body.taste ?? {}, "taste", ["artists", "vibes"]);
+  const taste = object(body.taste ?? {}, "taste", ["artists", "vibes", "context"]);
   const liked = strings(body.liked ?? [], "liked", 20, (id) => Object.hasOwn(byId, id));
   const cards = liked.map((id) => byId[id]);
   const artists = strings([...strings(taste.artists ?? [], "taste.artists", 16), ...cards.filter((c) => c.kind === "artist").map((c) => c.label)], "combined artists", 36);
@@ -58,7 +59,7 @@ export function parseRequest(body = {}) {
   }
   const limit = body.limit ?? 8;
   if (!Number.isInteger(limit) || limit < 1 || limit > 8) bad("limit must be an integer from 1 to 8.");
-  return { intent, location: { area,...(location.id?{id:location.id}:{}) }, taste: { artists, vibes }, constraints, feedback: [...feedback.values()], limit };
+  return { intent, location: { area,...(location.id?{id:location.id}:{}) }, taste: { artists, vibes, ...(parseContext(taste.context)?{context:parseContext(taste.context)}:{}) }, constraints, feedback: [...feedback.values()], limit };
 }
 
 export const API_SCHEMA = {
@@ -96,3 +97,4 @@ export const API_SCHEMA = {
   errors: { 400: "Invalid or unsupported input", 429: "Rate limit", 503: "Provider or database unavailable; never represented as zero matches" },
   limitations: ["Global locality queries use Qloo’s matched locality with radius zero; text checks are a fallback when locality metadata is unavailable.", "No live availability, booking, open-now guarantee, or verified current prices.", "Unknown request fields are rejected rather than silently ignored.", "Recommendations and typed itineraries do not call a language model. Only /api/agent uses an optional configured model to call the planning tool."],
 };
+

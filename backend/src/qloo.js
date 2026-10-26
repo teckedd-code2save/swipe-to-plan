@@ -1,5 +1,7 @@
 // Only the live entrypoint loads dotenv. Tests inject fetch/key and never read credentials.
 import {locationId as parseLocationId,locationOption,nearbyRequest,areaDistanceKm} from './locations.js';
+import {AUDIENCE_FAMILIES,validAudience} from './context.js';
+import {INTEREST_TYPES} from '../../shared/research-context.js';
 import {byId,matchesTasteTag} from './deck.js';
 import {find as findTimeZones} from 'geo-tz';
 const accraAreas=['Osu','East Legon','Cantonments','Labone','Airport Residential'];
@@ -12,12 +14,13 @@ export class ProviderError extends Error {
 }
 const norm = (s) => String(s ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 function entities(data) {
-  const items = Array.isArray(data) ? data : data?.results?.entities ?? data?.results?.tags ?? data?.results ?? data?.entities;
+  const items = Array.isArray(data) ? data : data?.results?.entities ?? data?.results?.tags ?? data?.results?.audiences ?? data?.results ?? data?.entities;
   if (!Array.isArray(items)) throw new ProviderError("provider_response_invalid");
   return items.filter((e) => e && typeof e === "object");
 }
 export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => process.env.QLOO_API_KEY, baseUrl = process.env.QLOO_API_URL || "https://hackathon.api.qloo.com", now = Date.now } = {}) {
   const cache = new Map();
+  let audienceCache;
   const tagsCache=new Map(), locationCache=new Map(), searchCache=new Map();
   async function call(path, params, area) {
     const key = getKey();
@@ -69,6 +72,30 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
   return {
     name: "qloo",
     getLocation,
+    async audienceCatalog(){
+      if(audienceCache&&now()-audienceCache.at<86400000)return audienceCache.value;
+      const value=Promise.all(AUDIENCE_FAMILIES.map(family=>call('/v2/audiences',{'filter.parents.types':`urn:audience:${family}`,take:50}))).then(groups=>groups.flat().filter(a=>validAudience(a.id)&&a.name&&!/political|religio/i.test(a.id)).map(a=>({id:a.id,name:a.name,family:a.id.split(':')[2]})));
+      audienceCache={at:now(),value};try{return await value;}catch(e){audienceCache=undefined;throw e;}
+    },
+    async resolveContext(context){
+      if(!context)return {audiences:[],interests:[],unresolved:[]};
+      const catalog=context.audiences?.length?await this.audienceCatalog():[];
+      const audiences=(context.audiences||[]).map(id=>catalog.find(a=>a.id===id)).filter(Boolean);
+      const interests=[],unresolved=[];
+      await Promise.all((context.interests||[]).map(async interest=>{
+        if(!INTEREST_TYPES.includes(interest.type))return;
+        const key=`${interest.type}:${norm(interest.name)}`;
+        let match=cache.get(key);
+        if(!match||now()-match.at>=86400000){
+          const rows=await call('/search',{query:interest.name,types:`urn:entity:${interest.type}`,take:5});
+          const exact=[...new Map(rows.filter(e=>norm(e.name)===norm(interest.name)&&(e.types||[e.type]).includes(`urn:entity:${interest.type}`)).map(e=>[e.entity_id||e.id,e])).values()];
+          match={at:now(),value:exact.length===1?{type:interest.type,name:exact[0].name,entityId:exact[0].entity_id||exact[0].id}:null};
+          if(cache.size>=256)cache.delete(cache.keys().next().value);cache.set(key,match);
+        }
+        if(match.value?.entityId)interests.push(match.value);else unresolved.push({type:interest.type,name:interest.name,reason:'no_unambiguous_exact_match'});
+      }));
+      return {audiences,interests,unresolved};
+    },
     async nearbyLocations(point,radiusKm=20){
       ({point,radiusKm}=nearbyRequest({...point,radiusKm}));
       const {latitude,longitude}=point;
@@ -112,12 +139,13 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
       cache.set(key, { at: now(), value });
       return value;
     },
-    async discover({ signalIds, area,locationId,tagSignals=[],includeActivity=false,includeDrinks=false,radiusKm=0 }) {
+    async discover({ signalIds, area,locationId,tagSignals=[],contextSignals,includeActivity=false,includeDrinks=false,radiusKm=0 }) {
       const chosen=locationId?await getLocation(locationId):null;
       if(radiusKm&&(!chosen?.center||radiusKm!==20))throw new ProviderError('provider_response_invalid');
       const parameters={
         "filter.type": "urn:entity:place", "signal.interests.entities": signalIds.join(","),
         'signal.interests.tags':[...new Set(tagSignals.flatMap(s=>s.tagIds))].join(','),
+        ...(contextSignals?.audiences?.length?{'signal.demographics.audiences':contextSignals.audiences.map(a=>a.id).join(','),'signal.demographics.audiences.weight':0.35}:{}),
         "feature.explainability": true,
         ...(radiusKm?{'filter.location':`POINT(${chosen.center.longitude} ${chosen.center.latitude})`}:chosen?{'filter.location':chosen.id}:{'filter.location.query':locationQuery(area)}), "filter.location.radius":radiusKm*1000, take: 50,
       };

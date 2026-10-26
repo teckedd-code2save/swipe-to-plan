@@ -173,16 +173,17 @@ export function createDiscovery({ provider, now = Date.now }) {
     }));
     const resolved = resolution.filter((s) => s.entityId);
     const unresolved = resolution.filter((s) => !s.entityId);
-    const signalIds = [...new Set(resolved.map((s) => s.entityId))].sort();
+    const contextSignals=provider.resolveContext?await provider.resolveContext(request.taste.context):undefined;
+    const signalIds = [...new Set([...resolved.map((s) => s.entityId),...(contextSignals?.interests||[]).map(s=>s.entityId)])].sort();
     const tagSignals=provider.resolveTasteTags?await provider.resolveTasteTags(request.taste.vibes):[];
     const includeActivity=intents.includes('activity');
     const includeDrinks=intents.includes('drinks');
-    const key = JSON.stringify([request.location.area,request.location.id, signalIds,...(provider.resolveTasteTags?[tagSignals,includeActivity,includeDrinks,radiusKm]:[])]);
+    const key = JSON.stringify([request.location.area,request.location.id, signalIds,contextSignals?.audiences,...(provider.resolveTasteTags?[tagSignals,includeActivity,includeDrinks,radiusKm]:[])]);
     let entry = cache.get(key);
     const cached = !!entry && now() - entry.at < 600000;
     if (!cached) {
       let places;
-      try { places = await provider.discover({ signalIds, area: request.location.area,locationId:request.location.id,tagSignals,includeActivity,includeDrinks,radiusKm }); }
+      try { places = await provider.discover({ signalIds, area: request.location.area,locationId:request.location.id,tagSignals,contextSignals,includeActivity,includeDrinks,radiusKm }); }
       catch (e) { throw e instanceof ProviderError ? e : new ProviderError(); }
       if (!Array.isArray(places)) throw new ProviderError("provider_response_invalid");
       entry = { places, locality:places.locality||null, at: now() };
@@ -190,7 +191,7 @@ export function createDiscovery({ provider, now = Date.now }) {
       cache.set(key, entry);
     }
     const provenance = { provider: provider.name, retrievedAt: new Date(entry.at).toISOString(), cached,...(entry.locality?{locality:entry.locality}:{}), cacheAgeMs: Math.max(0, now() - entry.at) };
-    return { places: entry.places, taste: { mode: resolved.length ? "artist_affinity" : request.taste.vibes.length ? "vibe_refinement" : "discovery", resolved, unresolved, vibes: request.taste.vibes,...(tagSignals.length?{tagSignals}:{}) }, provenance, fetched: entry.places.length };
+    return { places: entry.places, taste: { mode: resolved.length ? "artist_affinity" : request.taste.vibes.length ? "vibe_refinement" : "discovery", resolved, unresolved, ...(contextSignals?{contextSignals}:{}), vibes: request.taste.vibes,...(tagSignals.length?{tagSignals}:{}) }, provenance, fetched: entry.places.length };
   }
   function rank(retrieved, request) {
     const { places, ...metadata } = retrieved;

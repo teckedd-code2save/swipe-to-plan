@@ -31,6 +31,7 @@ COPY --from=backend /build/backend/node_modules ./node_modules
 COPY --chown=node:node backend/package*.json ./
 COPY --chown=node:node backend/prisma ./prisma
 COPY --chown=node:node backend/src ./src
+COPY --chown=node:node shared /app/shared
 COPY --from=frontend /build/frontend/dist /app/frontend/dist
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=4000 ACCOUNT_DATA_FILE=/data/accounts.json DAY_DATA_FILE=/data/days.json
 USER node

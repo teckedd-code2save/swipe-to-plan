@@ -87,11 +87,12 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     strictFields(req.body,['message','context','history','circles','contacts','planContext','locationContext','mode']);
     if(!agent)throw new AgentError('agent_not_configured');
     const target=await accounts.planTarget(req);
-    const interpretation=await agent.interpret({...req.body,...await accounts.planningPeople(req)});
+    const audienceCatalog=provider.audienceCatalog?await provider.audienceCatalog().catch(()=>[]):[];
+    const interpretation=await agent.interpret({...req.body,...await accounts.planningPeople(req),audienceCatalog});
     if(['needs_input','action','show_ui','reply','autopilot'].includes(interpretation.status))return res.json(interpretation);
     const plan=await buildItinerary(discovery,interpretation.request);
     const user=await accounts.identity(req);if(visitorId(req))await metrics.record('plan_created',{userId:user?.id,visitor:visitorId(req)}).catch(()=>{});
-    res.json({...await accounts.keepPlan(target,plan),...(interpretation.assistantMessage?{assistantMessage:interpretation.assistantMessage}:{}),agent:{model:interpretation.model,action:'plan_day'}});
+    res.json({...await accounts.keepPlan(target,plan),...(interpretation.assistantMessage?{assistantMessage:interpretation.assistantMessage}:{}),...(interpretation.tasteCards?{tasteCards:interpretation.tasteCards}:{}),agent:{model:interpretation.model,action:'plan_day'}});
   }));
   const credential = req => (req.get('authorization') || '').replace(/^Bearer /, '');
   app.post('/api/account/plans/from-day/:id',limit(30),route(async(req,res)=>{
@@ -183,3 +184,4 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   }
   return app;
 }
+

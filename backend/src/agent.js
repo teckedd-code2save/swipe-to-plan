@@ -1,4 +1,6 @@
 import {CONVERSATION_RULES,withActionMessages} from './agent-conversation.js';
+import {validateDisclosures} from './context.js';
+import {CONTEXT_RESEARCH,INTEREST_TYPES} from '../../shared/research-context.js';
 import {localNow} from './scheduling.js';
 import { InputError } from './contract.js';
 import { publicDeck } from './deck.js';
@@ -22,9 +24,11 @@ export const PLAN_TOOL = {
 };
 const QUESTION_TOOL = {type:'function',function:{name:'ask_question',description:'Ask one useful question to understand the desired outing experience when a concern or request is ambiguous, or when a requirement cannot be supported or conflicts with the brief. Acknowledge the context and offer a relevant planning direction when helpful. Do not pretend unsupported hard constraints were checked. Currently supported: global city and neighborhood queries, artists, food, activity and mood preferences, one to three coffee/activity/meal/drinks stops, same-day time window, group spending allowances. Flights, bookings, exact costs, allergies, medical needs, verified accessibility, age suitability and route timing cannot be guaranteed.',parameters:{type:'object',additionalProperties:false,properties:{question:{type:'string',maxLength:400}},required:['question']}}};
 
+const CONTEXT_FIELD={type:'object',additionalProperties:false,description:'Only self-disclosed work/life context and cultural interests. Attach exact short user quotes to new disclosures. Audience IDs must come from the live Qloo audienceCatalog and match disclosed context. Roles are a weak clue, never proof of tastes; omit unsupported mappings.',properties:{role:{type:'string',maxLength:80},roleQuote:{type:'string',maxLength:200},audiences:{type:'array',maxItems:3,items:{type:'string'}},interests:{type:'array',maxItems:6,items:{type:'object',additionalProperties:false,properties:{type:{type:'string',enum:INTEREST_TYPES},name:{type:'string',maxLength:160},quote:{type:'string',maxLength:200}},required:['type','name','quote']}}}};
+PLAN_TOOL.function.parameters.properties.people.items.properties.context=CONTEXT_FIELD;
 const PERSON_FIELDS = PLAN_TOOL.function.parameters.properties.people.items.properties;
 export const PEOPLE_TOOLS = [
-  {type:'function',function:{name:'add_person',description:'Add a person the organizer explicitly asks to include in this outing or confirms is coming. Merely mentioning someone or wanting to meet a supervisor is not an instruction to add them. Never invent their tastes; empty artists and vibes are valid. Do not require taste cards for a practical meeting.',parameters:{type:'object',additionalProperties:false,properties:{name:PERSON_FIELDS.name,artists:PERSON_FIELDS.artists,vibes:PERSON_FIELDS.vibes,spending:PERSON_FIELDS.spending},required:['name','artists','vibes']}}},
+  {type:'function',function:{name:'add_person',description:'Add a person the organizer explicitly asks to include in this outing or confirms is coming. Merely mentioning someone or wanting to meet a supervisor is not an instruction to add them. Never invent their tastes; empty artists and vibes are valid. Do not require taste cards for a practical meeting.',parameters:{type:'object',additionalProperties:false,properties:{name:PERSON_FIELDS.name,artists:PERSON_FIELDS.artists,vibes:PERSON_FIELDS.vibes,spending:PERSON_FIELDS.spending,context:CONTEXT_FIELD},required:['name','artists','vibes']}}},
   {type:'function',function:{name:'update_person',description:'Change one existing person’s name or tastes. Preserve all existing preferences unless explicitly changed. Use their exact ID from context. Ask if a name is ambiguous.',parameters:{type:'object',additionalProperties:false,properties:PERSON_FIELDS,required:['id','name','artists','vibes']}}},
   {type:'function',function:{name:'remove_person',description:'Remove a specifically named participant from the day, except the organizer. Use the exact ID from context.',parameters:{type:'object',additionalProperties:false,properties:{id:PERSON_FIELDS.id},required:['id']}}},
 ];
@@ -34,7 +38,7 @@ const NEARBY_FIELD={type:'boolean',description:'True only when the user asks to 
 export const AUTOPILOT_TOOL = {type:'function',function:{name:'autopilot_day',description:'In Autopilot, compose a complete outing in one action using the current people and their saved tastes. Optionally bring one named saved circle and/or named saved contacts by exact ID. Apply all requested trip changes and explicit taste edits together. Existing participants and their current tastes take priority over saved copies. Do not invent people or tastes, increase the budget to accommodate them, or change saved account profiles. Missing location is confirmed by the app before discovery. Use empty changes to plan from the current brief.',parameters:{type:'object',additionalProperties:false,properties:{
   circleId:{type:'string'},personIds:strings(6),nearby:NEARBY_FIELD,
   changes:{type:'object',additionalProperties:false,properties:Object.fromEntries(REVISION_FIELDS.map(key=>[key,PLAN_TOOL.function.parameters.properties[key]]))},
-  tasteUpdates:{type:'array',maxItems:6,items:{type:'object',additionalProperties:false,properties:{id:PERSON_FIELDS.id,artists:PERSON_FIELDS.artists,vibes:PERSON_FIELDS.vibes,spending:PERSON_FIELDS.spending},required:['id']}},
+  tasteUpdates:{type:'array',maxItems:6,items:{type:'object',additionalProperties:false,properties:{id:PERSON_FIELDS.id,artists:PERSON_FIELDS.artists,vibes:PERSON_FIELDS.vibes,spending:PERSON_FIELDS.spending,context:CONTEXT_FIELD},required:['id']}},
 },required:['changes']}}};
 export const CHAT_TOOLS = [
   {type:'function',function:{name:'add_saved_person',description:'Add an existing connection from the supplied contacts by their exact ID. These are people already in the user’s circles, not a public directory. Ask if the name is ambiguous.',parameters:{type:'object',additionalProperties:false,properties:{personId:{type:'string'}},required:['personId']}}},
@@ -124,7 +128,7 @@ function autopilotRequest(args,brief,circles,contacts){
   const updates=args.tasteUpdates??[];
   if(!Array.isArray(updates)||updates.length>6||new Set(updates.map(p=>p?.id)).size!==updates.length)throw new InputError('Provide one taste update per person.');
   for(const update of updates){
-    fields(update,['id','artists','vibes','spending'],'taste update');
+    fields(update,['id','artists','vibes','spending','context'],'taste update');
     if(!people.some(p=>p.id===update.id))throw new InputError('Choose a person in this outing before changing their tastes.');
     people=people.map(p=>p.id===update.id?{...p,...update}:p);
   }
@@ -155,7 +159,7 @@ function parsePlanContext(value,brief){
 }
 function personAction(name,args,brief){
   if(!brief)throw new InputError('Start a day before changing its people.');
-  const allowed=name==='remove_person'?['id']:name==='add_person'?['name','artists','vibes','spending']:['id','name','artists','vibes','spending'];
+  const allowed=name==='remove_person'?['id']:name==='add_person'?['name','artists','vibes','spending','context']:['id','name','artists','vibes','spending','context'];
   if(!args||typeof args!=='object'||Object.keys(args).some(k=>!allowed.includes(k)))throw new InputError('The person update contains unsupported fields.');
   const member=brief.people.find(p=>p.id&&p.id===args.id);
   if(name!=='add_person'&&!member)throw new InputError('Choose a person currently in this day.');
@@ -176,7 +180,7 @@ class ToolResponseError extends AgentError {}
 export function createAgent({fetchImpl=globalThis.fetch,getKey=()=>process.env.LLM_API_KEY||process.env.GEMINI_API_KEY,getModel=()=>process.env.LLM_MODEL||'gemini-3.5-flash-lite',baseUrl=process.env.LLM_BASE_URL||'https://generativelanguage.googleapis.com/v1beta/openai/'}={}) {
   return {
     configured:()=>!!getKey(),
-    async interpret({message,context,history=[],circles=[],contacts=[],planContext,locationContext,mode='guided',peopleMode='guest',planningMemory=[]}) {
+    async interpret({message,context,history=[],circles=[],contacts=[],planContext,locationContext,mode='guided',peopleMode='guest',planningMemory=[],audienceCatalog=[]}) {
       if(typeof message!=='string'||!message.trim()||message.length>1600)throw new InputError('Describe your outing in 1–1600 characters.');
       if(!Array.isArray(history)||history.length>16||history.some(turn=>!turn||typeof turn!=='object'||Object.keys(turn).some(key=>!['role','text'].includes(key))||!['user','assistant'].includes(turn.role)||typeof turn.text!=='string'||!turn.text.trim()||turn.text.length>1600))throw new InputError('Conversation history must contain up to sixteen short user or assistant turns.');
       const brief=context===undefined?null:parseItinerary(context,{allowMissingLocation:true});
@@ -196,7 +200,7 @@ export function createAgent({fetchImpl=globalThis.fetch,getKey=()=>process.env.L
         let repairNote='';
         for(let attempt=0;attempt<2;attempt++){
           try{
-        response=await fetchImpl(endpoint,{method:'POST',headers:{'content-type':'application/json',Authorization:`Bearer ${getKey()}`},signal:AbortSignal.timeout(attempt===0?25000:15000),body:JSON.stringify({model:getModel(),max_tokens:2200,...(getModel()==='gemini-3.5-flash-lite'?{reasoning_effort:'minimal'}:{}),messages:[{role:'system',content:system+experienceRules+conversationRules+autopilotRules+(peopleMode==='connected'?' SIGNED-IN PEOPLE: only add real accounts from contacts using add_saved_person, or personIds in autopilot_day. If a requested person is not there, use invite_person so they can accept a private circle invitation. Never create a name-only person, search by email, or pretend an invitation was sent. Existing guest profiles in the current day may remain.':' Guests may add a name-only person with add_person.')+CONVERSATION_RULES+' Reduce clarification effort by using the current brief, saved tastes and recent outing patterns. Make useful reversible suggestions and explain the evidence, uncertainty and next step. Never treat a prior outing as a new instruction to spend the same amount, bring past people or repeat its activities.'+repairNote},{role:'user',content:JSON.stringify({message,context:brief,history,circles:savedCircles,contacts:savedContacts,peopleMode,planContext:currentPlan,locationContext,planningMemory,tasteCardCatalog:publicDeck().map(({id,label,sub,group})=>({id,label,sub,group}))})}],tools:scopedTools(mode==='autopilot'?[AUTOPILOT_TOOL,QUESTION_TOOL,...PEOPLE_TOOLS,...CHAT_TOOLS.filter(t=>['show_ui','reply','invite_person','add_saved_person'].includes(t.function.name))]:AGENT_TOOLS,brief,savedContacts,savedCircles),tool_choice:'auto'})});
+        response=await fetchImpl(endpoint,{method:'POST',headers:{'content-type':'application/json',Authorization:`Bearer ${getKey()}`},signal:AbortSignal.timeout(attempt===0?25000:15000),body:JSON.stringify({model:getModel(),max_tokens:2200,...(getModel()==='gemini-3.5-flash-lite'?{reasoning_effort:'minimal'}:{}),messages:[{role:'system',content:system+' PERSONAL CONTEXT: Carry disclosed role and named cultural interests into person.context using exact user quotes. Resolve audiences only against audienceCatalog; no matching audience is acceptable. Do not invent student, teacher or occupation audience IDs. Explicit wishes, swipes and saved individual tastes take priority over any audience correlation. Research describes possible experiences (relaxation, autonomy, mastery, connection), never what every worker wants or a treatment. Use it to propose varied contextual cards alongside place discovery, not to silently vote for the user. Never recommend alcohol as a wellbeing intervention. When someone wants a week, preserve that horizon in experience.notes and offer distinct outing ideas, clearly explaining the current planner assembles one outing at a time.'+experienceRules+conversationRules+autopilotRules+(peopleMode==='connected'?' SIGNED-IN PEOPLE: only add real accounts from contacts using add_saved_person, or personIds in autopilot_day. If a requested person is not there, use invite_person so they can accept a private circle invitation. Never create a name-only person, search by email, or pretend an invitation was sent. Existing guest profiles in the current day may remain.':' Guests may add a name-only person with add_person.')+CONVERSATION_RULES+' Reduce clarification effort by using the current brief, saved tastes and recent outing patterns. Make useful reversible suggestions and explain the evidence, uncertainty and next step. Never treat a prior outing as a new instruction to spend the same amount, bring past people or repeat its activities.'+repairNote},{role:'user',content:JSON.stringify({message,context:brief,history,circles:savedCircles,contacts:savedContacts,peopleMode,planContext:currentPlan,locationContext,planningMemory,audienceCatalog,contextResearch:CONTEXT_RESEARCH,tasteCardCatalog:publicDeck().map(({id,label,sub,group})=>({id,label,sub,group}))})}],tools:scopedTools(mode==='autopilot'?[AUTOPILOT_TOOL,QUESTION_TOOL,...PEOPLE_TOOLS,...CHAT_TOOLS.filter(t=>['show_ui','reply','invite_person','add_saved_person'].includes(t.function.name))]:AGENT_TOOLS,brief,savedContacts,savedCircles),tool_choice:'auto'})});
         if(!response.ok)throw new AgentError();
         const data=await response.json();
         const calls=data.choices?.[0]?.message?.tool_calls;
@@ -212,7 +216,7 @@ export function createAgent({fetchImpl=globalThis.fetch,getKey=()=>process.env.L
           if(!Array.isArray(args.cardIds)||args.cardIds.length>8||args.cardIds.some(id=>!publicDeck().some(c=>c.id===id)))throw new InputError('Choose supported contextual taste card IDs.');
           tasteCards=[...new Set(args.cardIds)];delete args.cardIds;
         }
-        const narrate=result=>({...result,...(assistantMessage?{assistantMessage}:{}),...(tasteCards?.length?{tasteCards}:{})});
+        const narrate=result=>{validateDisclosures(result.request?.people||(result.person?[result.person]:[]),brief?.people,message,history,audienceCatalog);return {...result,...(assistantMessage?{assistantMessage}:{}),...(tasteCards?.length?{tasteCards}:{})};};
         const timeChanges=tool.name==='autopilot_day'?args.changes:args;
         if(['autopilot_day','set_location','revise_day','plan_day'].includes(tool.name)&&timeChanges?.timePreference!==undefined){
           const windows={morning:['09:00','12:00'],afternoon:['12:00','17:00'],evening:['17:00','22:00'],choose:['00:00','23:59']};

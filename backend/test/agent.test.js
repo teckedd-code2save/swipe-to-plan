@@ -310,3 +310,14 @@ test('Autopilot can reference a current participant without requiring a saved co
   assert.equal(properties.circleId,undefined);
   assert.deepEqual(result.tasteCards,['v-bar']);
 });
+
+test('disclosed work and cultural interests travel with contextual cards without adding fake tastes',async()=>{
+ const context=parseBrief({people:[{id:'you',name:'You'}],activities:[],timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}});
+ const audience='urn:audience:professional_area:medical_professional';
+ let payload;
+ const agent=createAgent({getKey:()=> 'test',fetchImpl:async(_,options)=>{payload=JSON.parse(options.body);return response('autopilot_day',{changes:{activities:['activity']},tasteUpdates:[{id:'you',context:{role:'Doctor',roleQuote:'a doctor',audiences:[audience],interests:[{type:'book',name:'Dune',quote:'love Dune'}]}}],cardIds:['v-nature']});}});
+ const result=await agent.interpret({message:'I am a doctor and love Dune. Find somewhere to unwind.',context,mode:'autopilot',audienceCatalog:[{id:audience,name:'Medical Professional'}]});
+ assert.equal(result.request.people[0].context.role,'Doctor');assert.deepEqual(result.request.people[0].vibes,[]);
+ assert.deepEqual(result.tasteCards,['v-nature']);
+ const input=JSON.parse(payload.messages[1].content);assert.equal(input.audienceCatalog[0].id,audience);assert.equal(input.contextResearch.length,3);
+});

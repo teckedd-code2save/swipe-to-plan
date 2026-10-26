@@ -37,9 +37,9 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
   const people = body.people ?? [{ name: 'You', artists: [], vibes: [] }];
   if (!Array.isArray(people) || !people.length || people.length > Math.min(6, adults + children)) throw new InputError('Add one to six taste profiles, no more than the number of people going.');
   const profiles = people.map((person, index) => {
-    object(person,['id','name','artists','vibes','spending'],'taste profile');
+    object(person,['id','name','artists','vibes','spending','context'],'taste profile');
     if (person.id !== undefined && (typeof person.id !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(person.id))) throw new InputError('Invalid taste profile ID.');
-    const parsed = parseRequest({ taste: { artists: person.artists ?? [], vibes: person.vibes ?? [] } });
+    const parsed = parseRequest({ taste: { artists: person.artists ?? [], vibes: person.vibes ?? [], context:person.context } });
     if (parsed.taste.artists.length > 6) throw new InputError('Use up to six artists per person.');
     let spending;
     if (person.spending !== undefined) {
@@ -48,7 +48,7 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
       if (!['mindful','balanced','treat'].includes(style) || !['even',...ACTIVITIES].includes(priority)) throw new InputError('Choose a supported spending style and priority.');
       spending={style,priority};
     }
-    return { ...(person.id ? {id:person.id} : {}), name: text(person.name,24,'a name'), artists: parsed.taste.artists, vibes: parsed.taste.vibes, ...(spending?{spending}:{}) };
+    return { ...(person.id ? {id:person.id} : {}), name: text(person.name,24,'a name'), artists: parsed.taste.artists, vibes: parsed.taste.vibes, ...(parsed.taste.context?{context:parsed.taste.context}:{}), ...(spending?{spending}:{}) };
   });
   if (new Set(profiles.filter(p=>p.id).map(p=>p.id)).size !== profiles.filter(p=>p.id).length) throw new InputError('Taste profile IDs must be distinct.');
   const activities = body.activities ?? [];
@@ -182,11 +182,11 @@ export async function buildItinerary(discovery, request) {
   const intents=request.route?.map(s=>s.intent)||request.activities;
   const planningRequest={...request,activities:intents};
   const schedule = exploring?intents.map(intent=>({intent,start:null,end:null,durationMinutes:DEFAULT_MINUTES[intent],bufferAfterMinutes:0,status:'unscheduled'})):makeSchedule(planningRequest);
-  const voters=request.people.map((person,index)=>({person,index})).filter(({person})=>person.artists.length||person.vibes.length);
+  const voters=request.people.map((person,index)=>({person,index})).filter(({person})=>person.artists.length||person.vibes.length||person.context?.audiences?.length||person.context?.interests?.length);
   const participating=voters.length?voters:request.people.map((person,index)=>({person,index}));
   const fetched = await Promise.all(participating.map(async({person,index}) => {
     const constraints = { excludeHotels:true,excludeIds:request.excludeIds,excludeTags:request.party.children ? ['nightclub','night_club','dance_club','adult_entertainment'] : [],...(request.maxPriceLevel?{maxPriceLevel:request.maxPriceLevel}:{}) };
-    return {index,results:await discovery.byIntents(parseRequest({location:{area:request.area,...(request.locationId?{id:request.locationId}:{})},taste:{artists:person.artists,vibes:person.vibes},constraints}),request.activities,{radiusKm:request.searchRadiusKm||0})};
+    return {index,results:await discovery.byIntents(parseRequest({location:{area:request.area,...(request.locationId?{id:request.locationId}:{})},taste:{artists:person.artists,vibes:person.vibes,context:person.context},constraints}),request.activities,{radiusKm:request.searchRadiusKm||0})};
   }));
   // A person without food/music/activity tastes has no ranking vote yet. Their
   // budget and participation remain included, without a generic search drowning
@@ -227,7 +227,7 @@ export async function buildItinerary(discovery, request) {
   if(!filled.length&&!request.searchRadiusKm&&request.locationId&&discovery.location){
     nearbyStatus='empty';
     try{
-      const nearby=await Promise.all(participating.map(async({person,index})=>({index,results:await discovery.byIntents(parseRequest({location:{area:request.area,id:request.locationId},taste:{artists:person.artists,vibes:person.vibes},constraints:{excludeHotels:true,excludeIds:request.excludeIds,excludeTags:request.party.children?['nightclub','night_club','dance_club','adult_entertainment']:[],...(request.maxPriceLevel?{maxPriceLevel:request.maxPriceLevel}:{})}}),request.activities,{radiusKm:20})})));
+      const nearby=await Promise.all(participating.map(async({person,index})=>({index,results:await discovery.byIntents(parseRequest({location:{area:request.area,id:request.locationId},taste:{artists:person.artists,vibes:person.vibes,context:person.context},constraints:{excludeHotels:true,excludeIds:request.excludeIds,excludeTags:request.party.children?['nightclub','night_club','dance_club','adult_entertainment']:[],...(request.maxPriceLevel?{maxPriceLevel:request.maxPriceLevel}:{})}}),request.activities,{radiusKm:20})})));
       nearbySuggestions=[...new Map(request.activities.flatMap((intent,i)=>{
         const items=nearby.length===1?nearby[0].results[i].ranked:mergeGroup(nearby.map(({results,index})=>({...results[i],id:request.people[index].id||`person-${index}`,name:request.people[index].name})),20).items;
         return rerankForExperience(items,request.experience,intent).slice(0,8).map(item=>[item.id,{intent,item}]);

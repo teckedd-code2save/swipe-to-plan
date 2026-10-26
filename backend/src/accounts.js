@@ -122,7 +122,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       return {session,returnTo:flow.returnTo};
     },
     async logout(session){await store.transact(data=>{delete data.sessions[hash(session)];});},
-    async updateProfile(session,body){fields(body,['name','artists','vibes','spending']);return store.transact(data=>{const user=requireUser(data,session);user.profile=profile(body,user.id);return {...safeUser(user),admin:isAdmin(user)};});},
+    async updateProfile(session,body){fields(body,['name','artists','vibes','spending','context']);return store.transact(data=>{const user=requireUser(data,session);user.profile=profile(body,user.id);return {...safeUser(user),admin:isAdmin(user)};});},
     async updatePlanningLocation(session,body,resolveLocation){
       fields(body,['locationId']);await store.read(data=>requireUser(data,session));
       if(body.locationId!==null&&!resolveLocation)throw new InputError('Location search is unavailable.');
@@ -155,7 +155,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       });
       const url=`${origin}/#/circle/${encodeURIComponent(id)}?invite=${token}`;
       try{
-        const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({from:process.env.CIRCLE_INVITE_FROM,to:[email],subject:'Invitation to join a circle on Unstressed',text:`You've been invited to join ${record.name} on Unstressed. Sign in with this email and accept: ${url}\\nThis invitation expires in seven days.`}),signal:AbortSignal.timeout(10000)});
+        const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({from:process.env.CIRCLE_INVITE_FROM,to:[email],subject:'Invitation to join a circle on Unstressed',text:`You've been invited to join ${record.name} on Unstressed. Sign in with this email and accept: ${url}\nThis invitation expires in seven days.`}),signal:AbortSignal.timeout(10000)});
         if(!response.ok)throw Error('Email provider unavailable');
       }catch(e){await store.transact(data=>{delete data.circles[id]?.emailInvites?.[hash(token)];});throw fail('Could not deliver the invitation. Try again.',502);}
       return {sent:true};
@@ -194,7 +194,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
         return circleView(data,circle,user);
       });
     },
-    async updateCirclePerson(session,id,memberId,body){fields(body,['name','artists','vibes','spending']);return store.transact(data=>{const user=requireUser(data,session),circle=data.circles[id];if(!circle||circle.ownerId!==user.id)throw fail('Only this circle’s organizer can edit an invited profile.');const member=circle.members.find(m=>!m.userId&&m.profile.id===memberId);if(!member)throw fail('Members who have joined manage their own account tastes.');member.profile=profile(body,memberId);return circleView(data,circle,user);});},
+    async updateCirclePerson(session,id,memberId,body){fields(body,['name','artists','vibes','spending','context']);return store.transact(data=>{const user=requireUser(data,session),circle=data.circles[id];if(!circle||circle.ownerId!==user.id)throw fail('Only this circle’s organizer can edit an invited profile.');const member=circle.members.find(m=>!m.userId&&m.profile.id===memberId);if(!member)throw fail('Members who have joined manage their own account tastes.');member.profile=profile(body,memberId);return circleView(data,circle,user);});},
     mount(app,{route,limit,resolveLocation}){
       const session=req=>cookie(req,sessionName);
       const mutation=(fn)=>route(async(req,res)=>{checkOrigin(req);await fn(req,res);});

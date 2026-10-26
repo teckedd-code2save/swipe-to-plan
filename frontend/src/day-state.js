@@ -1,6 +1,6 @@
 export const identity = () => crypto.randomUUID();
 export const withPeopleIds = brief => ({...brief, people:brief.people.map(p=>({...p,id:p.id||identity()}))});
-export const personInput = ({name,artists,vibes,spending}) => ({name,artists,vibes,...(spending?{spending}:{})});
+export const personInput = ({name,artists,vibes,spending,context}) => ({name,artists,vibes,...(context?{context}:{}),...(spending?{spending}:{})});
 export const hasTaste = person => !!(person.artists.length + person.vibes.length || person.spending);
 export function updateRoster(brief, people) {
   return {...brief,people,party:{...brief.party,adults:Math.max(brief.party.adults,people.length-brief.party.children)}};
@@ -51,3 +51,4 @@ export function createLatestPlanner({run,onStart,onResult,onError,onIdle}) {
   }
   return {enqueue(value){if(disposed)return;pending={value,version:++version};drain();},invalidate(){version++;pending=null;},dispose(){disposed=true;pending=null;}};
 }
+
