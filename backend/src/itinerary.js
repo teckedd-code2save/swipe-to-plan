@@ -35,7 +35,7 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
   if(typeof timing.dateConfirmed!=='boolean'||typeof timing.timeConfirmed!=='boolean'||!['fixed','flexible'].includes(timing.mode))throw new InputError('Choose a date and whether your start time is flexible.');
   if(timing.window!==undefined&&!['any','morning','afternoon','evening','custom'].includes(timing.window))throw new InputError('Choose a supported time window.');
   const party = object(body.party ?? {}, ['adults','children'], 'party');
-  const adults = integer(party.adults ?? 2,1,8,'Adults'), children = integer(party.children ?? 0,0,6,'Children');
+  const adults = integer(party.adults ?? 2,1,100,'Adults'), children = integer(party.children ?? 0,0,100,'Children');
   const people = body.people ?? [{ name: 'You', artists: [], vibes: [] }];
   if (!Array.isArray(people) || !people.length || people.length > Math.min(6, adults + children)) throw new InputError('Add one to six taste profiles, no more than the number of people going.');
   const profiles = people.map((person, index) => {

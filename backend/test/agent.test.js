@@ -355,8 +355,27 @@ test('a new open request starts discovery with contextual card copy, without wai
 test('an area in the first prompt survives interpretation before location confirmation',async()=>{
  const context=parseBrief({area:'',people:[{id:'you',name:'You'}],activities:[],timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}},{allowMissingLocation:true});
  let received;
- const agent=createAgent({getKey:()=> 'test',fetchImpl:async(_,options)=>{received=JSON.parse(JSON.parse(options.body).messages.at(-1).content);return response('set_location',{area:'East Legon, Accra, Ghana'});}});
+ const agent=createAgent({getKey:()=> 'test',fetchImpl:async(_,options)=>{received={message:JSON.parse(options.body).messages.at(-1).content};return response('set_location',{area:'East Legon, Accra, Ghana'});}});
  const result=await agent.interpret({message:'Find somewhere in East Legon to unwind',context,locationContext:{confirmed:false}});
  assert.equal(received.message,'Find somewhere in East Legon to unwind');
  assert.equal(result.action,'set_location');assert.equal(result.query,'East Legon, Accra, Ghana');
+});
+
+test('London correction is the latest user turn and preserves ten-person outing details',async()=>{
+  const history=[{role:'user',text:'We want an puting for 10 pwoplw fdiday migh'},{role:'assistant',text:'Where in Accra would you like to plan this Friday night outing for 10 people?'},{role:'user',text:'No london'},{role:'assistant',text:'Which neighborhood in Accra would you like?'}];
+  let payload;
+  const context=parseBrief({area:'',party:{adults:1,children:0}},{allowMissingLocation:true});
+  const agent=createAgent({getKey:()=> 'test',fetchImpl:async(_,options)=>{payload=JSON.parse(options.body);return response('autopilot_day',{changes:{area:'London, United Kingdom',party:{adults:10,children:0},weekday:'friday',timePreference:'evening',activities:['activity']},message:'Finding options for your Friday night outing in London.'});}});
+  const result=await agent.interpret({message:'Londom',context,history,mode:'autopilot',locationContext:{confirmed:false}});
+  assert.deepEqual(payload.messages.slice(-5),[...history.map(t=>({role:t.role,content:t.text})),{role:'user',content:'Londom'}]);
+  assert.equal(result.request.area,'London, United Kingdom');
+  assert.equal(result.request.party.adults,10);
+  assert.equal(result.request.people.length,1);
+  assert.equal(result.needsLocation,true);
+  assert.equal(new Date(result.request.date+'T12:00:00Z').getUTCDay(),5);
+});
+
+test('larger headcount is independent of taste profiles and still validates whole numbers',()=>{
+  for(const adults of [10,25,100]) assert.equal(parseBrief({party:{adults,children:10}}).party.adults,adults);
+  for(const adults of [0,1.5,101]) assert.throws(()=>parseBrief({party:{adults,children:0}}),/Adults must/);
 });
