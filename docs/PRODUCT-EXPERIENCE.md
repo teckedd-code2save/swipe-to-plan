@@ -14,7 +14,9 @@ Unstressed should reduce the work between a wish and an outing. The conversation
 
 ## Evidence boundaries and unfinished work
 
-Qloo relationships support discovery and taste reasoning; descriptions and relative price bands are not verified current menus, prices, capacity or accessibility. The current venue integration does not supply itemized prices. The UI therefore cannot honestly calculate an exact bill or savings. Priced-menu ingestion and freshness checks remain unfinished, as does automatic reconciliation of live route times with the schedule. A Maps link does not provide those results back to Unstressed.
+Qloo relationships support discovery and taste reasoning; descriptions and relative price bands are not verified current menus, prices, capacity or accessibility. The menu evidence endpoint reads bounded public venue-linked HTML pages and extracts explicitly published Schema.org MenuItem offers or microdata, using Cheerio. It may follow one same-site menu link. Item prices retain their source URL, currency and retrieval date. Selection subtotals count one of each chosen item, exclude unpriced or different-currency selections, and do not imply a group bill. DNS pinning and public-address validation apply to each redirect; no credentials or cookies are sent.
+
+Coverage remains limited: PDF/image menus, plain text without structured menu markup, ordering widgets and unavailable sites do not produce item prices. Current availability, extras, branch applicability and actual bills still require confirmation. Automatic reconciliation of live route times with the schedule remains unfinished. A Maps link does not provide those results back to Unstressed.
 
 Menu picks are outing preferences, not orders. Venue choices are planning edits, not bookings. Neither sends an external message. Do not claim the broader product rebuild is complete merely because the shared foundation is deployed.
 

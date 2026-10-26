@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.0.0",
+    "cheerio": "^1.2.0",
     "cors": "^2.8.5",
     "countries-and-timezones": "^3.11.0",
     "country-to-currency": "^3.0.1",
@@ -19,6 +20,7 @@
     "express": "^4.19.2",
     "geo-tz": "^8.1.10",
     "google-auth-library": "^10.9.1",
+    "ipaddr.js": "^2.5.0",
     "prisma": "^6.0.0"
   },
   "engines": {

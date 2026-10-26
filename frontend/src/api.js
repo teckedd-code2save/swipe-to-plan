@@ -31,6 +31,7 @@ export const api = {
   circleInvite:(id,token)=>json(`/api/circle-invites/${encodeURIComponent(id)}`,{headers:{'x-circle-invite':token}}),
   joinCircle:(id,body)=>json(`/api/account/circles/${encodeURIComponent(id)}/join`,post(body)),
   circlePerson:(id,memberId,person)=>json(`/api/account/circles/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}`,{method:'PATCH',body:JSON.stringify(person)}),
+  menuEvidence:(id,signal)=>json(`/api/places/${encodeURIComponent(id)}/menu`,{signal}),
   place:(id,signal)=>json(`/api/places/${encodeURIComponent(id)}`,{signal}),
   placeChecks: (body,signal) => json('/api/place-checks',{...post(body),signal}),
   health: () => json("/api/health"), deck: () => json("/api/deck"),

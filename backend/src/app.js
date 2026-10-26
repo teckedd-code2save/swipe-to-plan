@@ -1,3 +1,4 @@
+import {createMenuEvidence} from './menu-evidence.js';
 import {withActionMessages} from './agent-conversation.js';
 import {nearbyRequest} from './locations.js';
 import express from "express";
@@ -23,6 +24,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   app.set('trust proxy', trustProxy);
   const discovery = createDiscovery({ provider, now,reviewCandidates:agent?.configured?.()&&agent.reviewCandidates?agent.reviewCandidates:undefined });
   const places = createPlaceGuide({provider,now});
+  const menuEvidence=createMenuEvidence({places,now});
   discovery.placeDetails=provider.getPlace?places.details:null;
   discovery.now=now;
   const days = createDays({ discovery, store: dayStore, now });
@@ -74,6 +76,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   }));
   app.get('/api/locations/:id',limit(60),route(async(req,res)=>{if(!provider.getLocation)throw new InputError('Location search is unavailable on this server.');res.json(await provider.getLocation(req.params.id));}));
   app.get("/api/deck", (_req, res) => res.json(publicDeck()));
+  app.get('/api/places/:id/menu',limit(12),route(async(req,res)=>res.json(await menuEvidence.get(req.params.id))));
   app.get('/api/places/:id',limit(30),route(async(req,res)=>res.json(await places.details(req.params.id))));
   app.post('/api/place-checks',limit(15),route(async(req,res)=>res.json(await places.check(req.body))));
   app.post("/api/recommend", limit(30), route(async (req, res) => res.json(await discovery.recommend(parseRequest(req.body)))));
