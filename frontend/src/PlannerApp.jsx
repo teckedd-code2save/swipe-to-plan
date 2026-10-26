@@ -144,7 +144,8 @@ export default function PlannerApp() {
     planRef.current=result;setPlan(result);replaceBrief(result.request);rememberSaved(result);
     const circle=accountRef.current.circles.find(c=>c.people.length>1&&c.people.length===result.request.people.length&&c.people.every(p=>result.request.people.some(member=>member.id===p.id)));
     if(circle)activeCircle.current={id:circle.id,people:circle.people};
-    resultReceipt(result,'Your saved day is ready, with its original area and timing.');setShowSaved(false);setPlanOpen(true);
+    let conversation=[];try{conversation=JSON.parse(sessionStorage.getItem(`outing.chat:${accountRef.current.user?.id||'guest'}:${result.savedPlan?.id||''}`)||'[]');}catch{}
+    if(Array.isArray(conversation)&&conversation.length)setChat(conversation.slice(-60));else resultReceipt(result,'Your saved day is ready, with its original area and timing.');setShowSaved(false);setPlanOpen(true);
   }
   async function openSaved(entry){
     const epoch=dayEpoch.current,version=localVersion.current,userId=accountRef.current.user?.id;setSavedLoading(true);
@@ -162,6 +163,7 @@ export default function PlannerApp() {
   useEffect(()=>{if(autopilotPhase==='checking'&&['ready','error','idle'].includes(placeChecks.status))setAutopilotPhase('');},[autopilotPhase,placeChecks.status]);
   function keepPeople(people){if(accountRef.current.user)return;try{setContacts(saveContacts(people));}catch{/* Saving the optional local address book must not stop planning. */}}
   function replaceBrief(value){const next=withPeopleIds(value);briefRef.current=next;setBrief(next);return next;}
+  useEffect(()=>{if(!plan?.savedPlan?.id||!account.ready||shared.linked||!chat.length)return;try{sessionStorage.setItem(`outing.chat:${account.user?.id||'guest'}:${plan.savedPlan.id}`,JSON.stringify(chat.slice(-60)));}catch{/* Storage restrictions must not interrupt planning. */}},[chat,plan?.savedPlan?.id,account.user?.id,account.ready,shared.linked]);
   function append(role,text,extra={}){const turn={id:identity(),role,text,...extra};setChat(c=>[...c,turn].slice(-60));return turn.id;}
   function resultReceipt(result,text){
     const summary=partialPlanSummary(result)||text||(result.phase==='discovery'?'Here are places to explore.':'Your day is ready.');
@@ -224,7 +226,7 @@ export default function PlannerApp() {
     if(fromAutopilot){autopilotPending.current=null;setAutopilotPhase('checking');}
     if(!toolRef.current){
       const filled=result.stops.filter(stop=>stop.item).length;
-      resultReceipt(result,result.phase==='needs_timing'?'I found relevant places, but the requested time doesn’t fit their reported hours. The places are shown without a scheduled visit.':!filled?(result.stops.some(s=>s.reason==='time_in_past')?'That planning window has already passed. You can try tomorrow without changing the rest of your request.':result.stops.some(s=>s.reason==='no_open_place')?'I found places, but none fit the requested time and reported hours. Try another time.':'I haven’t found a place matching this request in the selected area. No venue is confirmed.'):result.status==='partial'?`I found ${filled} of ${result.stops.length} stops. The missing parts are marked on your day.`:result.phase==='discovery'?'Here are places to explore.':'Your day is ready.');
+      if(!old)resultReceipt(result,result.phase==='needs_timing'?'I found relevant places, but the requested time doesn’t fit their reported hours. The places are shown without a scheduled visit.':!filled?(result.stops.some(s=>s.reason==='time_in_past')?'That planning window has already passed. You can try tomorrow without changing the rest of your request.':result.stops.some(s=>s.reason==='no_open_place')?'I found places, but none fit the requested time and reported hours. Try another time.':'I haven’t found a place matching this request in the selected area. No venue is confirmed.'):result.status==='partial'?`I found ${filled} of ${result.stops.length} stops. The missing parts are marked on your day.`:result.phase==='discovery'?'Here are places to explore.':'Your day is ready.');
       showWhenReady.current=false;
     }
   }

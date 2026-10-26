@@ -25,3 +25,12 @@
 .chat-studio .cs-venue-mention{display:inline;padding:0;border:0;background:none;color:#355b3c;font:inherit;font-weight:650;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:4px;cursor:pointer}
 .cs-venue-mention:focus-visible{outline:2px solid #456c40;outline-offset:3px;border-radius:3px}
 .pg-visit-control{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px;color:#53664e}.pg-visit-control .pg-link{min-height:40px;padding:8px 10px;border:1px solid #cbd6c2;border-radius:8px;text-decoration:none}
+/* Compact contextual help while reading history or composing; no accordion or timer. */
+.chat-studio .suggestions-small .cs-results-ready{padding:8px 12px;gap:10px;margin-bottom:6px;box-shadow:none}
+.chat-studio .suggestions-small .cs-results-ready>svg,.chat-studio .suggestions-small .cs-results-ready small{display:none}
+.chat-studio .suggestions-small .cs-results-ready strong{font-size:12px}
+.chat-studio .suggestions-small .cs-results-ready button{min-height:32px;padding:6px 10px;font-size:12px}
+.chat-studio .suggestions-small .cs-next-steps.compact{padding:0;margin-bottom:6px;border:0;background:none}
+.chat-studio .suggestions-small .cs-next-buttons{flex-wrap:nowrap;overflow-x:auto;gap:6px}
+.chat-studio .suggestions-small .cs-next-buttons button{min-height:32px;padding:5px 9px;white-space:nowrap;flex-shrink:0;font-size:11px}
+.chat-studio .suggestions-small .cs-next-buttons button>svg:last-child{display:none}
