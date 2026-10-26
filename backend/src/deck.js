@@ -56,7 +56,7 @@ export const DECK = [
   vibe('beach','Beach time','Salt air and a slower afternoon','🌊','(^|[:_])beach($|[:_])','activity'),
   vibe('markets','Markets & local finds','Browse, wander, find a little treasure','🧺','(^|[:_])(market|marketplace|craft_market|flea_market)($|[:_])','activity'),
   vibe('books','Books & browsing','Follow your curiosity down an aisle','📚','(^|[:_])(bookstore|bookshop|library)($|[:_])','activity'),
-  vibe('cinema','Film nights','A story worth going out for','🎬','(^|[:_])(movie_theater|movie_theatre|cinema)($|[:_])','activity'),
+  vibe('cinema','Film nights','A story worth going out for','🎬',':(movie_theater|movie_theatre|cinema)$','activity'),
   vibe('theatre','Theatre & performances','A play, comedy or something live','🎭','(^|[:_])(performing_arts_theater|performing_arts_theatre|theater|theatre|comedy_club)($|[:_])','activity'),
   vibe('games','Games & friendly competition','Bowling, arcades and playful company','🎳','(^|[:_])(bowling_alley|amusement_center|video_arcade)($|[:_])','activity'),
   vibe('familyplay','Playful family time','Explore places for a shared day out','🛝','(^|[:_])(playground|amusement_park|children_museum|childrens_museum)($|[:_])','activity'),
@@ -69,7 +69,7 @@ export const DECK = [
   vibe('nigerian','Nigerian food','Explore familiar and new favorites','🍲','(^|[:_])nigerian($|[:_])','food'),
 ];
 
-const tagQueries={bar:'bar',club:'nightclub',african:'african',ghanaian:'ghanaian',seafood:'seafood',italian:'italian',asian:'asian',plant:'vegetarian',grill:'barbecue',bakery:'bakery',art:'art gallery',nature:'park',history:'museum',beach:'beach',markets:'market',books:'bookstore',cinema:'cinema',theatre:'theater',games:'bowling',familyplay:'playground',wildlife:'aquarium',walks:'hiking',sports:'sports',indian:'indian',middleeastern:'middle eastern',mexican:'mexican',nigerian:'nigerian'};
+const tagQueries={bar:'bar',club:'nightclub',african:'african',ghanaian:'ghanaian',seafood:'seafood',italian:'italian',asian:'asian',plant:'vegetarian',grill:'barbecue',bakery:'bakery',art:'art gallery',nature:'park',history:'museum',beach:'beach',markets:'market',books:'bookstore',cinema:'movie theater',theatre:'theater',games:'bowling',familyplay:'playground',wildlife:'aquarium',walks:'hiking',sports:'sports',indian:'indian',middleeastern:'middle eastern',mexican:'mexican',nigerian:'nigerian'};
 for(const card of DECK)if(tagQueries[card.id.slice(2)])card.tagQuery=tagQueries[card.id.slice(2)];
 
 export const byId = Object.fromEntries(DECK.map((c) => [c.id, c]));

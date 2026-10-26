@@ -96,3 +96,11 @@ test('explicit outing topics retrieve relevant categories without recording a sa
  assert.deepEqual(tags,[{preferenceId:'v-cinema',tagIds:['urn:tag:category:place:movie_theater']}]);
  assert.ok(calls.some(u=>u.searchParams.get('filter.tags')==='urn:tag:category:place:movie_theater'));
 });
+
+
+test('film discovery resolves movie theaters and rejects cinema equipment suppliers',async()=>{
+ const calls=[];
+ const client=createQlooClient({getKey:()=> 'test',fetchImpl:async url=>{calls.push(url);return {ok:true,json:async()=>({results:{tags:[{id:'urn:tag:category:place:cinema_equipment_supplier'},{id:'urn:tag:category:place:movie_theater'}]}})};}});
+ assert.deepEqual(await client.resolveTasteTags(['v-cinema']),[{preferenceId:'v-cinema',tagIds:['urn:tag:category:place:movie_theater']}]);
+ assert.equal(calls[0].searchParams.get('filter.query'),'movie theater');
+});
