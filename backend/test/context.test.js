@@ -46,3 +46,13 @@ test('context affects discovery cache identity and cultural entities reach retri
  assert.equal(calls.length,2);assert.deepEqual(calls[0].signalIds,['book-id']);
  assert.deepEqual(first.taste.resolved,[]);assert.equal(first.taste.contextSignals.interests[0].name,'Dune');
 });
+
+import {auditContext} from '../src/context-audit.js';
+test('context review can only remove signals and preserves existing personal preferences on failure',async()=>{
+ const previous=[{id:'you',vibes:['v-art'],context:{audiences:[tech]}}];
+ const result=()=>({request:{people:[{id:'you',vibes:['v-art','v-cafe'],context:{role:'Research student',audiences:[tech,'urn:audience:professional_area:business_professional'],interests:[{type:'destination',name:'hiking'},{type:'movie',name:'Spirited Away'}]}}]}});
+ const reviewed=await auditContext(result(),{previous,message:'I am a research student and love Spirited Away',review:async()=>[{id:'you',audiences:['invented-id'],vibes:['invented-vibe'],interestIndexes:[1,99]}]});
+ const person=reviewed.request.people[0];assert.deepEqual(person.vibes,['v-art']);assert.deepEqual(person.context.audiences,[tech]);assert.equal(person.context.interests[0].name,'Spirited Away');assert.equal(person.context.interests.length,1);
+ const fallback=await auditContext(result(),{previous,review:async()=>{throw new Error('timeout');}});
+ assert.deepEqual(fallback.request.people[0].context.audiences,[tech]);assert.deepEqual(fallback.request.people[0].context.interests,[]);assert.deepEqual(fallback.request.people[0].vibes,['v-art']);assert.equal(fallback.request.people[0].context.role,'Research student');
+});

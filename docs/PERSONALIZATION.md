@@ -2,6 +2,8 @@
 
 Self-disclosed work/life context and named cultural interests enter a typed person context. New chat disclosures require exact user quotes. A role is a clue, not a preference; there is no profession-to-activity lookup table.
 
+A short semantic review can only remove model-proposed audience, cultural-interest and vibe signals. It rejects unrelated professional cohorts and broad activities masquerading as named entities. If review is unavailable, new signals are omitted while previously confirmed preferences remain and place discovery continues. This review is a model judgment, not external evidence of an individual preference.
+
 Qloo audiences come from its live professional, hobby, leisure and life-stage catalogs, cached for one day. Unsupported IDs are omitted. No audience match is valid: technology and medical audiences exist, but teacher and research-student equivalents were not present in the checked professional catalog. Political/religious audience IDs are excluded.
 
 Named books, films, artists, podcasts, games, brands, destinations and places resolve with typed entity search. Only one exact-name, exact-type match becomes a signal. Ambiguous/absent matches remain visible as unused. Cultural entities are interest signals; the audience weight is 0.35, a relative provider weight, not a probability or measured accuracy. Discovery cache identity includes audiences and entity inputs.

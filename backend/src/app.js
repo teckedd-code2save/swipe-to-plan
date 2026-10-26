@@ -88,7 +88,9 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     if(!agent)throw new AgentError('agent_not_configured');
     const target=await accounts.planTarget(req);
     const audienceCatalog=provider.audienceCatalog?await provider.audienceCatalog().catch(()=>[]):[];
-    const interpretation=await agent.interpret({...req.body,...await accounts.planningPeople(req),audienceCatalog});
+    const planningPeople=await accounts.planningPeople(req);
+    let interpretation=await agent.interpret({...req.body,...planningPeople,audienceCatalog});
+    if(agent.auditContext)interpretation=await agent.auditContext(interpretation,{...req.body,...planningPeople,audienceCatalog});
     if(['needs_input','action','show_ui','reply','autopilot'].includes(interpretation.status))return res.json(interpretation);
     const plan=await buildItinerary(discovery,interpretation.request);
     const user=await accounts.identity(req);if(visitorId(req))await metrics.record('plan_created',{userId:user?.id,visitor:visitorId(req)}).catch(()=>{});

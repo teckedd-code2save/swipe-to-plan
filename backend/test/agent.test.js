@@ -321,3 +321,10 @@ test('disclosed work and cultural interests travel with contextual cards without
  assert.deepEqual(result.tasteCards,['v-nature']);
  const input=JSON.parse(payload.messages[1].content);assert.equal(input.audienceCatalog[0].id,audience);assert.equal(input.contextResearch.length,3);
 });
+
+test('semantic context review keeps approved cultural entities and rejects unrelated professional cohorts',async()=>{
+ const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('review_context',{people:[{id:'you',audiences:['urn:audience:leisure:museums'],interestIndexes:[],vibes:[]}]})});
+ const result={status:'autopilot',request:{people:[{id:'you',artists:[],vibes:['v-cafe'],context:{role:'Research student',audiences:['urn:audience:professional_area:business_professional','urn:audience:leisure:museums'],interests:[{type:'destination',name:'hiking'}]}}]}};
+ const reviewed=await agent.auditContext(result,{message:'I am a research student who likes museums',context:{people:[{id:'you',artists:[],vibes:[]}]},audienceCatalog:[]});
+ assert.deepEqual(reviewed.request.people[0].context.audiences,['urn:audience:leisure:museums']);assert.deepEqual(reviewed.request.people[0].context.interests,[]);assert.deepEqual(reviewed.request.people[0].vibes,[]);
+});
