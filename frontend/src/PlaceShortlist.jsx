@@ -1,3 +1,4 @@
+import {Stop} from './PlanDetails.jsx';
 import {useEffect,useState} from 'react';
 import {Icon} from './PlannerIcons.jsx';
 import {shortlistCandidates} from './shortlist.js';
@@ -14,12 +15,12 @@ export default function PlaceShortlist({plan,busy,editable,onChoose,onDetails,on
   function move(id,direction){setSelected(values=>{const next=[...values],index=next.indexOf(id),to=index+direction;if(index>=0&&to>=0&&to<next.length)[next[index],next[to]]=[next[to],next[index]];return next;});}
   function rows(values){return (expanded?values:values.slice(0,5)).map(({intent,item})=>{
     const index=selected.indexOf(item.id);
-    return <article className="cs-place-option" key={item.id}>
-      <label>{arranging&&<input type="checkbox" aria-label={`Include ${item.name}`} checked={index>=0} disabled={!editable||busy||index<0&&selected.length>=3} onChange={()=>toggle(item.id)}/>}<span>{item.image&&<img className="cs-place-thumb" src={item.image} alt="" loading="lazy" onError={e=>{e.currentTarget.hidden=true;}}/>}<strong>{item.name}</strong><small>{item.nearby?`About ${item.nearby.distanceKm} km from the selected area’s centre · wider-area suggestion`:item.address||'In the selected search area'}</small></span></label>
-      <p>{item.description||item.tagNames?.slice(0,4).join(' · ')||`Provider category matches ${intent==='dinner'?'a meal':intent==='coffee'?'cafés':intent}.`}</p>
-      {!!item.matchedVibes?.length&&<small>Matches your chosen tastes: {item.matchedVibes.join(' · ')}</small>}
-      <div className="cs-starters"><button onClick={()=>onDetails(item)}>Details & contact</button><button onClick={()=>onDetails(item,'practical')}>Menus & hours</button>{!arranging&&currentIds.includes(item.id)&&<span className="cs-current-pick">In your plan</span>}{arranging&&index>=0&&<><span>Stop {index+1}</span><button aria-label={`Move ${item.name} earlier`} disabled={index===0||busy} onClick={()=>move(item.id,-1)}>↑</button><button aria-label={`Move ${item.name} later`} disabled={index===selected.length-1||busy} onClick={()=>move(item.id,1)}>↓</button></>}</div>
-    </article>;
+    const stop={id:'shortlist-place',intent,item,start:null,end:null,connections:[]};
+    return <div className="cs-place-option" key={item.id}>
+      {arranging&&<label className="outing-route-choice"><input type="checkbox" aria-label={`Include ${item.name}`} checked={index>=0} disabled={!editable||busy||index<0&&selected.length>=3} onChange={()=>toggle(item.id)}/><span>{index>=0?`Stop ${index+1}`:'Add to route'}</span></label>}
+      <Stop discovery stop={stop} plan={plan} busy={busy} onDetails={(_,view)=>onDetails(item,view)}/>
+      {arranging&&index>=0&&<div className="cs-starters"><button aria-label={`Move ${item.name} earlier`} disabled={index===0||busy} onClick={()=>move(item.id,-1)}>Move earlier</button><button aria-label={`Move ${item.name} later`} disabled={index===selected.length-1||busy} onClick={()=>move(item.id,1)}>Move later</button></div>}
+    </div>;
   });}
   return <section className="cs-place-shortlist cs-tool" aria-label="Places for your outing" aria-busy={busy}>
     <div className="cs-tool-head"><span><Icon name="map" size={18}/>Your options</span>{busy&&<small>{plan.qualityReview?.status==='pending'?'Checking the fit…':'Updating places…'}</small>}</div>

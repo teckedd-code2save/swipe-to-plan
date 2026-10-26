@@ -1,0 +1,6 @@
+.decision-panel{width:100%;min-width:0;padding:20px;background:var(--color-panel-solid);border:1px solid var(--gray-5);border-radius:var(--radius-4)}
+.decision-budget{margin:20px 0;padding:16px;background:var(--sage-3);border-radius:var(--radius-3)}
+.decision-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:16px;margin:20px 0}
+.decision-card{min-width:0;overflow-wrap:anywhere}.decision-card section{border-top:1px solid var(--gray-5);padding:16px 0;margin-top:16px}.decision-card h4{margin-bottom:10px}.decision-photo{width:100%;height:160px;object-fit:cover;border-radius:var(--radius-2);margin-bottom:12px}.decision-hours{font-size:13px;margin:10px 0}.decision-hours>div{display:flex;justify-content:space-between;gap:16px;padding:4px 0}.decision-hours dt{text-transform:capitalize}.decision-hours dd{margin:0;text-align:right}.decision-price-note{margin:12px 0;color:var(--gray-11)}
+.decision-panel .rt-Button{min-height:40px;white-space:normal}.decision-panel .rt-CheckboxCardsRoot{grid-template-columns:1fr}.decision-panel .rt-CheckboxCardsItem{min-height:44px}
+@media(max-width:600px){.decision-panel{padding:14px}.decision-grid{grid-template-columns:minmax(0,1fr)}.decision-card{padding:16px}}

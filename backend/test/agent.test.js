@@ -400,3 +400,17 @@ test('unsupported optional taste suggestions cannot block a valid family outing'
  const result=await agent.interpret({message:'Cinema for two adults and two children, 60 pounds total',context,mode:'autopilot',locationContext:{confirmed:true}});
  assert.equal(calls,1);assert.equal(result.status,'autopilot');assert.deepEqual(result.tasteCards,['v-cinema']);assert.deepEqual(result.request.party,{adults:2,children:2});assert.equal(result.request.budget,60);assert.deepEqual(result.request.people[0].vibes,[]);
 });
+
+test('post-discovery choice uses existing option IDs and preserves planning context',async()=>{
+ const context=parseItinerary({people:[{id:'you',name:'You'}],budget:350});
+ let payload;
+ const planContext={stops:[],options:[{id:'real-one',intent:'dinner',name:'One',connections:[],practical:'Provider menu highlights, no prices'},{id:'real-two',intent:'drinks',name:'Two',connections:[]}],warnings:[]};
+ const invoke=ids=>createAgent({getKey:()=> 'test',fetchImpl:async(_,opts)=>{payload=JSON.parse(opts.body);return response('select_places',{placeIds:ids});}}).interpret({message:'Go with the second one',context,planContext,mode:'autopilot'});
+ assert.deepEqual(await invoke(['real-two']),{status:'action',action:'select_places',placeIds:['real-two']});
+ assert.equal(context.budget,350);
+ assert(payload.tools.some(t=>t.function.name==='select_places'));
+ const sent=JSON.parse(payload.messages.find(m=>m.role==='user').content);
+ assert.equal(sent.planContext.options.length,2);
+ await assert.rejects(invoke(['invented']),e=>e.status===400);
+ await assert.rejects(invoke(['real-one','real-one']),e=>e.status===400);
+});

@@ -43,7 +43,7 @@ test('Autopilot retains child constraints and can ask one clarification without 
 test('fulfilled discovery points toward menus, comparison and visit planning rather than another questionnaire',()=>{
  const plan={phase:'discovery',request:context,stops:[{item:{id:'place'}}]};
  const steps=nextPlanSteps(plan,{status:'ready',data:{stops:[]}});
- assert.deepEqual(steps.actions.map(a=>a.id),['menus','compare','timing']);
+ assert.deepEqual(steps.actions.map(a=>a.id),['menus','compare','routes','timing']);
  const sparse=nextPlanSteps({...plan,stops:[{item:null,reason:'no_eligible_places'}]},{});
  assert.deepEqual(sparse.actions.map(a=>a.id),['review','location']);
 });
