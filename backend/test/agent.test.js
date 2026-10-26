@@ -351,3 +351,12 @@ test('a new open request starts discovery with contextual card copy, without wai
  const result=await agent.interpret({message:'I need to unwind after work',context,mode:'autopilot',locationContext:{confirmed:true}});
  assert.equal(result.status,'autopilot');assert.equal(result.request.budget,null);assert.equal(result.request.experience.explore,true);assert.equal(result.cardPrompts[0].label,'A little room to breathe?');assert.deepEqual(result.request.people[0].vibes,['v-bar']);
 });
+
+test('an area in the first prompt survives interpretation before location confirmation',async()=>{
+ const context=parseBrief({area:'',people:[{id:'you',name:'You'}],activities:[],timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}},{allowMissingLocation:true});
+ let received;
+ const agent=createAgent({getKey:()=> 'test',fetchImpl:async(_,options)=>{received=JSON.parse(JSON.parse(options.body).messages.at(-1).content);return response('set_location',{area:'East Legon, Accra, Ghana'});}});
+ const result=await agent.interpret({message:'Find somewhere in East Legon to unwind',context,locationContext:{confirmed:false}});
+ assert.equal(received.message,'Find somewhere in East Legon to unwind');
+ assert.equal(result.action,'set_location');assert.equal(result.query,'East Legon, Accra, Ghana');
+});

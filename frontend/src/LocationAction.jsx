@@ -22,6 +22,7 @@ export default function LocationAction({brief,preferred,query:initialQuery='',sc
     finally{if(run===nearbyRun.current)setLocating(false);}
   }
   useEffect(()=>{let mounted=true;if(nearMe)queueMicrotask(()=>{if(mounted)findNearby();});return()=>{mounted=false;nearbyRun.current++;nearbyAbort.current?.abort();nearbyPoint.current=null;};},[]);
+  useEffect(()=>{if(initialQuery){cancelNearby();edited.current=true;setSelected(null);setQuery(initialQuery);setError('');}},[initialQuery]);
   const listId=useId(),currency=mode==='local'?selected?.currency:custom;
   useEffect(()=>{let live=true;if(!nearMe&&!initialQuery&&!initial&&brief.locationId){setSearching(true);api.location(brief.locationId).then(value=>{if(live&&!edited.current){setSelected(value);setQuery(value.label);}}).catch(e=>live&&setError(e.message)).finally(()=>live&&setSearching(false));}return()=>{live=false;};},[]);
   useEffect(()=>{
@@ -52,3 +53,4 @@ export default function LocationAction({brief,preferred,query:initialQuery='',sc
     <div className="cs-location-foot"><small>{nearby?'Nearby areas · confirm before planning':'Area search · no place search yet'}</small>{preferred&&<button disabled={busy} onClick={async()=>{setBusy(true);try{await onForget();setScope('plan');}catch(e){setError(e.message);}finally{setBusy(false);}}}>Forget saved area</button>}</div>
   </section>;
 }
+

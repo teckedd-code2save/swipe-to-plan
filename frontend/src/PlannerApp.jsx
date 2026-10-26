@@ -1,3 +1,4 @@
+import {locationPromptId,upsertLocationPrompt} from './location-prompt.js';
 import OutageDiscovery,{DiscoveryReceipt} from './OutageDiscovery.jsx';
 import {requestedGroupControl} from './group-controls.js';
 import {outageRequests,loadOutageResults,isChatOutage,discoverDuringOutage} from './outage-discovery.js';
@@ -76,6 +77,7 @@ export default function PlannerApp() {
   const [plan, setPlan] = useState(null);
   const [outageOptions,setOutageOptions]=useState(null);
   const pendingGroupMessage=useRef(null);
+  const pendingLocationMessage=useRef(null);
   useEffect(()=>setOutageOptions(null),[brief.area,brief.locationId,account.user?.id]);
   const [previous, setPrevious] = useState(null);
   const [health, setHealth] = useState(null);
@@ -161,9 +163,10 @@ export default function PlannerApp() {
     append('assistant',summary,{result:{title:planTitle(result.request),detail:`${result.stops.filter(s=>s.item).length} ${result.stops.filter(s=>s.item).length===1?'stop':'stops'} · ${result.phase==='discovery'?'Choose a time later':dateLabel(result.request.date)} · ${result.request.budget==null?'Budget not set':formatMoney(result.request.budget,result.request.currency)}`}});
   }
 
-  function presentTool(kind,text,options={}){const id=identity();toolRef.current={id,kind,...options};setTool(toolRef.current);setPlanOpen(false);setChat(c=>[...c,{id,role:'assistant',text:text||({tastes:'Let’s find a few favorites.',circles:'Who should we bring along?',people:'Here’s who’s in the day.',share:'Here’s the day, ready to share.',location:'Where should I plan?',timing:'When would you like to go? I haven’t picked a date or time for you.',review:'Here’s what I’ll work with. Change anything, then I’ll find the places.',profile:'A little passport to what you love. Your circles will see your latest tastes.'}[kind]),widget:kind}].slice(-60));}
+  function presentTool(kind,text,options={}){if(kind==='location'&&toolRef.current?.kind==='location')return;const id=kind==='location'?locationPromptId(chat,identity()):identity();toolRef.current={id,kind,...options};setTool(toolRef.current);setPlanOpen(false);const turn={id,role:'assistant',text:text||({tastes:'Let’s find a few favorites.',circles:'Who should we bring along?',people:'Here’s who’s in the day.',share:'Here’s the day, ready to share.',location:'Where should I plan?',timing:'When would you like to go? I haven’t picked a date or time for you.',review:'Here’s what I’ll work with. Change anything, then I’ll find the places.',profile:'A little passport to what you love. Your circles will see your latest tastes.'}[kind]),widget:kind};setChat(c=>kind==='location'?upsertLocationPrompt(c,turn):[...c,turn].slice(-60));}
   function askLocation(request=briefRef.current,query='',scope='plan',assistantText,nearMe=false){
     if(!owner){setError('Ask the organizer to set the planning area.');return;}
+    if(toolRef.current?.kind==='location'&&!query&&!nearMe&&request.area===briefRef.current.area&&request.locationId===briefRef.current.locationId)return;
     clearTimeout(autoTimer.current);autoTimer.current=null;planner.current.invalidate();setPending(false);
     localVersion.current++;
     if(request.area!==briefRef.current.area||request.locationId!==briefRef.current.locationId){locationConfirmed.current=false;planningPaused.current=true;setDraftChanged(!!planRef.current);}
@@ -185,6 +188,8 @@ export default function PlannerApp() {
     if(autopilotRef.current&&autopilotPending.current){await continueAutopilot(next);return;}
     // Location is context, not consent to begin an onboarding questionnaire.
     toolRef.current=null;setTool(null);setAutopilotPhase('');
+    const waiting=pendingLocationMessage.current;pendingLocationMessage.current=null;
+    if(waiting&&message.trim()===waiting.trim()){await sendMessage(waiting);return;}
     append('assistant',`${selected.name} it is. What do you have in mind?`);
   }
   async function applyTiming(request){
@@ -334,6 +339,7 @@ export default function PlannerApp() {
     setTasteId(null);
   }
   function resetDay(){
+    pendingLocationMessage.current=null;
     pendingGroupMessage.current=null;
     setOutageOptions(null);
     chatRequest.current?.abort();chatRequest.current=null;previewBase.current=null;setBusy(false);
@@ -495,7 +501,7 @@ export default function PlannerApp() {
   }
   async function sendMessage(sent=message,{record=true}={}){
     if(!sent.trim())return;
-    if(owner&&!shared.linked&&!locationConfirmed.current&&!briefRef.current.area&&!preferredRef.current?.label){setMessage(sent);askLocation(briefRef.current,'','plan','Choose a planning area first. Your message is saved here, ready to send afterward.');return;}
+    if(owner&&!shared.linked&&!locationConfirmed.current&&!briefRef.current.area)pendingLocationMessage.current=sent;
     const groupControl=owner?requestedGroupControl(sent,{hasGroup:briefRef.current.people.length>1||!!activeCircle.current}):null;
     if(groupControl){
       chatRequest.current?.abort();chatRequest.current=null;planner.current.invalidate();localVersion.current++;working.current=false;setBusy(false);
@@ -505,7 +511,7 @@ export default function PlannerApp() {
     if(record)pendingGroupMessage.current=null;
     if(!health?.agentConfigured){setError('Chat isn’t connected yet. Use Tastes, People, Circles and Review plan to shape your day.');return;}
     chatRequest.current?.abort();chatRequest.current=new AbortController();planner.current.invalidate();clearTimeout(autoTimer.current);autoTimer.current=null;localVersion.current++;
-    working.current=true;setBusy(true);setError('');setOutageOptions(null);setRevisionFailed(false);toolRef.current=null;setTool(null);
+    working.current=true;setBusy(true);setError('');setOutageOptions(null);setRevisionFailed(false);if(toolRef.current?.kind!=='location'){toolRef.current=null;setTool(null);}
     const version=localVersion.current,revision=shared.day?.revision,controller=chatRequest.current;
     autopilotPending.current=null;setAutopilotPhase(autopilotRef.current&&owner?'thinking':'');
     if(record)append('user',sent.trim());setMessage('');
@@ -549,6 +555,7 @@ export default function PlannerApp() {
       setRevisionFailed(true);setMessage(sent);setAutopilotPhase('');autopilotPending.current=null;
       const recovered=!interpreted&&isChatOutage(e)&&await discoverDuringOutage({request:recoveryRequests.length?recoveryRequests:null,load:requests=>loadOutageResults(requests,request=>api.recommend(request,controller.signal)),isCurrent:()=>version===localVersion.current,publish:result=>setOutageOptions({...result,brief:recoveryBrief})});
       if(version!==localVersion.current)return;
+      if(!interpreted&&isChatOutage(e)&&!recoveryRequests.length&&owner&&!briefRef.current.area)askLocation(briefRef.current,'','plan','Chat is temporarily busy. Confirm your planning area here; your request is kept.');
       if(!recovered)setError(!interpreted&&isChatOutage(e)?'Chat is temporarily unavailable. Your message and current results are kept here.':e.message==='Failed to fetch'?'Couldn’t refresh the places. Your current results are still here.':e.message);
     }
     finally{if(chatRequest.current===controller){working.current=false;setBusy(false);}}
