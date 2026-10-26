@@ -1,3 +1,4 @@
+import {sendCircleMail} from './circle-mail.js';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {mkdir,readFile,writeFile,rename} from 'node:fs/promises';
 import {dirname} from 'node:path';
@@ -141,7 +142,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       fields(body,['email']);
       const email=String(body.email||'').trim().toLowerCase();
       if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254)throw new InputError('Enter a valid email address.');
-      if(!process.env.RESEND_API_KEY||!process.env.CIRCLE_INVITE_FROM)throw fail('Email invitations are not configured yet.',503);
+      if(!process.env.RESEND_API_KEY||!process.env.CIRCLE_INVITE_FROM)throw fail('Email invitations are not configured yet. Copy an invite link instead.',503);
       const token=opaque();
       const record=await store.transact(data=>{
         const user=requireUser(data,session),circle=data.circles[id];
@@ -155,10 +156,8 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       });
       const url=`${origin}/#/circle/${encodeURIComponent(id)}?invite=${token}`;
       try{
-        const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({from:process.env.CIRCLE_INVITE_FROM,to:[email],subject:'Invitation to join a circle on Unstressed',text:`You've been invited to join ${record.name} on Unstressed. Sign in with this email and accept: ${url}\nThis invitation expires in seven days.`}),signal:AbortSignal.timeout(10000)});
-        if(!response.ok)throw Error('Email provider unavailable');
-      }catch(e){await store.transact(data=>{delete data.circles[id]?.emailInvites?.[hash(token)];});throw fail('Could not deliver the invitation. Try again.',502);}
-      return {sent:true};
+        return await sendCircleMail({email,name:record.name,url,key:process.env.RESEND_API_KEY,from:process.env.CIRCLE_INVITE_FROM,idempotencyKey:`circle-invite/${hash(token)}`});
+      }catch(e){await store.transact(data=>{delete data.circles[id]?.emailInvites?.[hash(token)];});throw fail(e.status===502?e.message:'Could not send the invitation. Try again or copy an invite link.',502);}
     },
     async acceptEmailInvite(session,id,body){
       fields(body,['token']);

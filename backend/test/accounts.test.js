@@ -239,12 +239,12 @@ test('email circle invitations are recipient-bound and require explicit acceptan
   const oldFetch=globalThis.fetch,oldKey=process.env.RESEND_API_KEY,oldFrom=process.env.CIRCLE_INVITE_FROM;
   process.env.RESEND_API_KEY='test-resend-key';process.env.CIRCLE_INVITE_FROM='Invites <invites@example.test>';
   let emailText='';
-  globalThis.fetch=async(_url,options)=>{emailText=JSON.parse(options.body).text;return {ok:true};};
+  globalThis.fetch=async(_url,options)=>{emailText=JSON.parse(options.body).text;return {ok:true,json:async()=>({id:'mail-123'})};};
   try{
     const f=fixture(),a=await f.login('Alice'),alice=(await f.accounts.current(a.session)).user;
     const circle=await f.accounts.createCircle(a.session,{name:'Sunday people',people:[alice.profile]});
     assert.deepEqual((await f.accounts.current(a.session)).circles[0].accountIds,[alice.id]);
-    assert.deepEqual(await f.accounts.inviteByEmail(a.session,circle.id,{email:'other@example.test'}),{sent:true});
+    assert.deepEqual(await f.accounts.inviteByEmail(a.session,circle.id,{email:'other@example.test'}),{sent:true,status:'accepted',messageId:'mail-123'});
     const token=emailText.match(/[?]invite=([A-Za-z0-9_-]+)/)?.[1];
     assert.ok(token);
     assert.equal((await f.accounts.current(a.session)).circles[0].people.length,1);
@@ -260,3 +260,4 @@ test('email circle invitations are recipient-bound and require explicit acceptan
     if(oldFrom===undefined)delete process.env.CIRCLE_INVITE_FROM;else process.env.CIRCLE_INVITE_FROM=oldFrom;
   }
 });
+
