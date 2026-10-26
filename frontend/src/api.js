@@ -34,7 +34,7 @@ export const api = {
   place:(id,signal)=>json(`/api/places/${encodeURIComponent(id)}`,{signal}),
   placeChecks: (body,signal) => json('/api/place-checks',{...post(body),signal}),
   health: () => json("/api/health"), deck: () => json("/api/deck"),
-  recommend: (body) => json("/api/recommend", {...post(body),signal:AbortSignal.timeout(45000)}),
+  recommend: (body,signal) => json("/api/recommend", {...post(body),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(10000)]):AbortSignal.timeout(10000)}),
   outing: (body) => json("/api/outings", {...post(body),signal:AbortSignal.timeout(45000)}),
   itinerary: async(body,headers,{signal,onDiscovery}={}) => {
     const response=await fetch('/api/itineraries',{...post(body),headers:{'content-type':'application/json',accept:'application/x-ndjson',...(!navigator.globalPrivacyControl?{'x-unstressed-session':usageSession()}:{}),...headers},signal:signal?AbortSignal.any([signal,AbortSignal.timeout(45000)]):AbortSignal.timeout(45000)});
