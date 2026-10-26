@@ -77,7 +77,7 @@ test('an explicit chat time switches flexible scheduling to a fixed start withou
 
 test('named afternoon windows are deterministic even if the model supplies a fixed noon start and stale end time',async()=>{
   const context=request({endTime:'21:00',timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}});
-  const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>({ok:true,json:async()=>({choices:[{message:{tool_calls:[{function:{name:'autopilot_day',arguments:JSON.stringify({changes:{timePreference:'afternoon',startTime:'12:00',endTime:'21:00',timing:{dateConfirmed:true,timeConfirmed:true,mode:'fixed'}}})}}]}}]})})});
+  const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>({ok:true,json:async()=>({choices:[{message:{tool_calls:[{function:{name:'autopilot_day',arguments:JSON.stringify({changes:{date:context.date,timePreference:'afternoon',startTime:'12:00',endTime:'21:00',timing:{dateConfirmed:true,timeConfirmed:true,mode:'fixed'}}})}}]}}]})})});
   const result=await agent.interpret({message:'Plan a lunch today afternoon',mode:'autopilot',context,locationContext:{confirmed:true}});
   assert.equal(result.request.startTime,'12:00');assert.equal(result.request.endTime,'17:00');assert.equal(result.request.timing.mode,'flexible');assert.equal(result.request.date,context.date);
 });

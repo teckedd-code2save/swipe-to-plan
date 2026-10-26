@@ -328,3 +328,19 @@ test('semantic context review keeps approved cultural entities and rejects unrel
  const reviewed=await agent.auditContext(result,{message:'I am a research student who likes museums',context:{people:[{id:'you',artists:[],vibes:[]}]},audienceCatalog:[]});
  assert.deepEqual(reviewed.request.people[0].context.audiences,['urn:audience:leisure:museums']);assert.deepEqual(reviewed.request.people[0].context.interests,[]);assert.deepEqual(reviewed.request.people[0].vibes,[]);
 });
+
+test('weekday tool values are computed in code and cannot retain a wrong placeholder date',async()=>{
+ const {localNow,nextWeekdayDate}=await import('../src/scheduling.js');
+ const context=parseBrief({date:'2026-01-01',people:[{id:'you',name:'You'}],activities:[],timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}});
+ const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('autopilot_day',{changes:{weekday:'friday',date:'2026-01-01',activities:['drinks'],timePreference:'evening'}})});
+ const result=await agent.interpret({message:'This Friday after work',context,mode:'autopilot',locationContext:{confirmed:true,timeZone:'Africa/Accra'}});
+ assert.equal(result.request.date,nextWeekdayDate(localNow('Africa/Accra').date,'friday'));assert.equal(result.request.timing.dateConfirmed,true);assert.equal(result.request.weekday,undefined);
+});
+
+test('a new date confirmation without a concrete date repairs instead of scheduling a placeholder',async()=>{
+ const context=parseBrief({people:[{id:'you',name:'You'}],activities:[],timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}});
+ let calls=0;
+ const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('autopilot_day',{changes:++calls===1?{activities:['drinks'],timing:{dateConfirmed:true,timeConfirmed:true,mode:'flexible'}}:{weekday:'friday',activities:['drinks'],timePreference:'evening'}})});
+ const result=await agent.interpret({message:'This Friday after work',context,mode:'autopilot',locationContext:{confirmed:true,timeZone:'Africa/Accra'}});
+ assert.equal(calls,2);assert.equal(new Date(result.request.date+'T12:00:00Z').getUTCDay(),5);
+});

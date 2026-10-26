@@ -56,3 +56,11 @@ test('context review can only remove signals and preserves existing personal pre
  const fallback=await auditContext(result(),{previous,review:async()=>{throw new Error('timeout');}});
  assert.deepEqual(fallback.request.people[0].context.audiences,[tech]);assert.deepEqual(fallback.request.people[0].context.interests,[]);assert.deepEqual(fallback.request.people[0].vibes,['v-art']);assert.equal(fallback.request.people[0].context.role,'Research student');
 });
+
+import {nextWeekdayDate} from '../src/scheduling.js';
+test('named weekdays resolve from the destination date across month/year boundaries',()=>{
+ assert.equal(nextWeekdayDate('2026-10-26','friday'),'2026-10-30');
+ assert.equal(nextWeekdayDate('2026-10-30','friday'),'2026-10-30');
+ assert.equal(nextWeekdayDate('2026-12-31','monday'),'2027-01-04');
+ assert.throws(()=>nextWeekdayDate('2026-10-26','someday'));
+});

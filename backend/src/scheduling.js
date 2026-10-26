@@ -75,3 +75,11 @@ export async function schedulePlaces(pools, schedule, request, {details, timeZon
   return {stops,notes:[...(shifted?['I adjusted the stop times within your chosen window, allowing for the time now and any reported opening hours.']:[])]};
 }
 
+
+export const WEEKDAYS=['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+export function nextWeekdayDate(localDate,weekday){
+  const target=WEEKDAYS.indexOf(weekday);if(target<0)throw new RangeError('Choose a supported weekday.');
+  const date=new Date(`${localDate}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate()+(target-date.getUTCDay()+7)%7);
+  return date.toISOString().slice(0,10);
+}
