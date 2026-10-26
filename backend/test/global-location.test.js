@@ -67,7 +67,8 @@ test('selected locality ID, local currency and custom currency reach planning wi
   const request=parseItinerary({date:'2099-10-24',area:'Old area label',locationId:locationEntity.entity_id,currency:'GHS',currencyMode:'local',budget:100,activities:['dinner']});
   const plan=await buildItinerary(discovery,request);assert.equal(plan.request.area,locationEntity.disambiguation);assert.equal(plan.budget.currency,'GBP');assert.equal(plan.budget.total,100);assert.equal(plan.status,'complete');
   const insights=urls.find(u=>u.pathname==='/v2/insights');assert.equal(insights.searchParams.get('filter.location'),locationEntity.entity_id);assert.equal(insights.searchParams.has('filter.location.query'),false);
-  const custom=await buildItinerary(discovery,{...request,currency:'USD',currencyMode:'custom'});assert.equal(custom.budget.currency,'USD');assert.equal(urls.length,2,'budget-only changes reuse locality results');
+  const beforeBudgetChange=urls.length;
+  const custom=await buildItinerary(discovery,{...request,currency:'USD',currencyMode:'custom'});assert.equal(custom.budget.currency,'USD');assert.equal(urls.length,beforeBudgetChange,'budget-only changes reuse locality results');
 });
 
 test('agent asks for planning area before discovery, retains the proposed brief and supports default intent',async()=>{
@@ -100,3 +101,4 @@ test('confirming a new area retains the entire single-stop request and explicit 
   assert.equal(result.action,'set_location');assert.deepEqual(result.request.activities,['dinner']);assert.equal(result.request.budget,300);assert.equal(result.request.currency,'USD');assert.equal(result.request.currencyMode,'custom');
   assert.equal(result.request.date,args.date);assert.equal(result.request.startTime,'13:00');assert.deepEqual(result.request.party,{adults:2,children:1});assert.deepEqual(result.request.people,context.people);assert.deepEqual(result.request.pins,{dinner:'qloo:meal'});assert.deepEqual(result.request.excludeIds,['qloo:skip']);
 });
+

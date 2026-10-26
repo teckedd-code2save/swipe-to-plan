@@ -223,3 +223,13 @@ test('nearby suggestions require coordinates within the declared radius rather t
   assert.equal(result.ranked[0].nearby.distanceKm,6);
   assert.equal(result.ranked[0].nearby.radiusKm,20);
 });
+
+test('whole shopping complexes cannot become restaurants because they contain dining',()=>{
+ const complex={...venue('complex','restaurant'),tags:[{id:'urn:tag:category:place:restaurant'},{id:'urn:tag:category:place:department_store'}]};
+ const ranked=rankPlaces([complex,venue('meal','restaurant')],request({intent:'dinner'})).ranked;
+ assert.deepEqual(ranked.map(x=>x.entityId),['meal']);
+});
+test('cinema and bowling categories are eligible activity results',()=>{
+ const ranked=rankPlaces([venue('film','movie_theater'),venue('bowl','bowling_alley')],{...request(),intent:'activity'}).ranked;
+ assert.equal(ranked.length,2);
+});

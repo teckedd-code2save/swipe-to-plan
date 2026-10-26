@@ -79,3 +79,11 @@ test('new leisure choices resolve only provider categories, not incidental venue
   const signals=await client.resolveTasteTags(['v-cinema','v-games','v-familyplay']);
   assert.deepEqual(signals,[{preferenceId:'v-cinema',tagIds:['urn:tag:category:place:cinema']},{preferenceId:'v-games',tagIds:['urn:tag:category:place:bowling_alley']},{preferenceId:'v-familyplay',tagIds:['urn:tag:category:place:playground']}]);
 });
+
+test('dining requests retrieve a restaurant pool using provider-resolved category IDs',async()=>{
+ const calls=[];
+ const client=createQlooClient({getKey:()=> 'test',fetchImpl:async url=>{calls.push(url);return {ok:true,json:async()=>url.pathname==='/v2/tags'?{results:{tags:[{id:'urn:tag:category:place:restaurant'},{id:'urn:tag:amenity:place:restaurant'}]}}:{results:{entities:[]}}};}});
+ await client.discover({signalIds:[],area:'London',includeDining:true});
+ assert.ok(calls.some(u=>u.searchParams.get('filter.tags')==='urn:tag:category:place:restaurant'));
+ assert.ok(!calls.some(u=>u.searchParams.get('filter.tags')?.includes('amenity')));
+});

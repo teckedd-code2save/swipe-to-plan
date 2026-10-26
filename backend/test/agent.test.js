@@ -379,3 +379,15 @@ test('larger headcount is independent of taste profiles and still validates whol
   for(const adults of [10,25,100]) assert.equal(parseBrief({party:{adults,children:10}}).party.adults,adults);
   for(const adults of [0,1.5,101]) assert.throws(()=>parseBrief({party:{adults,children:0}}),/Adults must/);
 });
+
+test('a requested outing routes missing location to its picker while retaining headcount and weekday',async()=>{
+ const context=parseBrief({area:'',timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}},{allowMissingLocation:true});
+ const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('ask_question',{question:'Where and what kind of outing?',topic:'location',outingRequested:true,changes:{party:{adults:10,children:0},weekday:'friday'}})});
+ const result=await agent.interpret({message:'Outing for ten Friday',context,mode:'autopilot',locationContext:{confirmed:false}});
+ assert.equal(result.status,'autopilot');assert.equal(result.needsLocation,true);assert.equal(result.request.party.adults,10);assert.equal(result.request.area,'');assert.equal(new Date(result.request.date+'T12:00:00Z').getUTCDay(),5);
+});
+test('a concern without an outing request still receives a conversational question',async()=>{
+ const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('ask_question',{question:'Would a change of scene help?',topic:'experience',outingRequested:false,changes:{}})});
+ const result=await agent.interpret({message:'I am struggling with my research',mode:'autopilot'});
+ assert.equal(result.status,'needs_input');assert.equal(result.request,undefined);
+});

@@ -150,7 +150,7 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
       cache.set(key, { at: now(), value });
       return value;
     },
-    async discover({ signalIds, area,locationId,tagSignals=[],contextSignals,includeActivity=false,includeDrinks=false,radiusKm=0 }) {
+    async discover({ signalIds, area,locationId,tagSignals=[],contextSignals,includeActivity=false,includeDrinks=false,includeDining=false,radiusKm=0 }) {
       const chosen=locationId?await getLocation(locationId):null;
       if(radiusKm&&(!chosen?.center||radiusKm!==20))throw new ProviderError('provider_response_invalid');
       const parameters={
@@ -161,7 +161,7 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
         ...(radiusKm?{'filter.location':`POINT(${chosen.center.longitude} ${chosen.center.latitude})`}:chosen?{'filter.location':chosen.id}:{'filter.location.query':locationQuery(area)}), "filter.location.radius":radiusKm*1000, take: 50,
       };
       const retrieve=async params=>{const items=await call('/v2/insights',params,chosen?undefined:area);if(chosen)items.locality={...chosen,query:area,method:'qloo_locality_filter',radius:radiusKm*1000,...(radiusKm?{scope:'nearby',center:chosen.center,radiusKm}:{} )};return items;};
-      if(!includeActivity&&!includeDrinks)return retrieve(parameters);
+      if(!includeActivity&&!includeDrinks&&!includeDining)return retrieve(parameters);
       // Retrieve the requested venue types as well as the taste-led pool, so a
       // dining-heavy result cannot hide eligible bars or discovery venues.
       const categories=[];
@@ -170,6 +170,11 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
         categories.push(...(requested.length?requested:[...await tasteTags('v-history'),...await tasteTags('v-nature')]).filter(id=>/^urn:tag:category:place:[^:]+$/.test(id)));
       }
       if(includeDrinks)categories.push(...await tasteTags('v-bar'),...await tasteTags('v-club'));
+      if(includeDining){
+        let hit=tagsCache.get('venue:restaurant');
+        if(!hit||now()-hit.at>=86400000){const value=call('/v2/tags',{'filter.query':'restaurant',take:30}).then(tags=>tags.filter(t=>/^urn:tag:category:(place|qloo):restaurant$/.test(t.id)).map(t=>t.id));hit={at:now(),value};tagsCache.set('venue:restaurant',hit);try{await value;}catch(e){tagsCache.delete('venue:restaurant');throw e;}}
+        categories.push(...await hit.value);
+      }
       const results=await Promise.all([retrieve(parameters),...(categories.length?[retrieve({...parameters,'filter.tags':[...new Set(categories)].join(','),'operator.filter.tags':'union'})]:[])]);
       return Object.assign([...new Map(results.flat().map(place=>[place.entity_id,place])).values()],{locality:results[0].locality});
     },

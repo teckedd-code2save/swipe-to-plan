@@ -6,7 +6,8 @@ import { ProviderError } from "./qloo.js";
 // Venue category evidence is required. Interest/decor tags cannot establish a venue type.
 const VENUE = /(?:^|_)(restaurant|cafe|coffee_shop|coffeehouse|tea_house|tearoom|tea_room|espresso_bar|bar|pub|lounge|nightclub|night_club|bistro|eatery|pizzeria|steakhouse)(?:$|_)/;
 function intentEvidence(tags, intent) {
-  if (intent === "activity") return tags.filter((t) => /^urn:tag:(category|genre):(place|qloo):/.test(t.id) && /(?:^|_)(museum|gallery|art_gallery|park|garden|zoo|aquarium|cultural_center|landmark|tourist_attraction|beach|market|marketplace|bookstore|bookshop|library|monument|memorial)(?:$|_)/.test(t.id.split(":").at(-1)));
+  if (["coffee","dinner","drinks"].includes(intent) && tags.some(t=>/^urn:tag:category:(place|qloo):(department_store|shopping_mall|outlet_mall|arena)$/.test(t.id))) return [];
+  if (intent === "activity") return tags.filter((t) => /^urn:tag:(category|genre):(place|qloo):/.test(t.id) && /(?:^|_)(museum|gallery|art_gallery|park|garden|zoo|aquarium|cultural_center|landmark|tourist_attraction|beach|market|marketplace|bookstore|bookshop|library|monument|memorial|movie_theater|movie_theatre|cinema|theater|theatre|performing_arts_theater|performing_arts_theatre|comedy_club|bowling_alley|amusement_center|video_arcade|playground|amusement_park|children_museum|childrens_museum|wildlife_park|hiking_area|hiking_trail|nature_preserve|sports_complex|swimming_pool|tennis_court|recreation_center)(?:$|_)/.test(t.id.split(":").at(-1)));
   const categories = tags.filter((t) => /^urn:tag:(category|genre):(place|qloo):/.test(t.id) && VENUE.test(t.id.split(":").at(-1)));
   if (intent === "any") return [...categories,...intentEvidence(tags,"activity")];
   if (!categories.length) return [];
@@ -178,12 +179,13 @@ export function createDiscovery({ provider, now = Date.now, reviewCandidates }) 
     const tagSignals=[...(provider.resolveTasteTags?await provider.resolveTasteTags(request.taste.vibes):[]),...(provider.resolveExperienceTags?await provider.resolveExperienceTags(experience):[])];
     const includeActivity=intents.includes('activity');
     const includeDrinks=intents.includes('drinks');
-    const key = JSON.stringify([request.location.area,request.location.id, signalIds,contextSignals?.audiences,...(provider.resolveTasteTags||provider.resolveExperienceTags?[tagSignals,includeActivity,includeDrinks,radiusKm]:[])]);
+    const includeDining=intents.includes('dinner');
+    const key = JSON.stringify([request.location.area,request.location.id, signalIds,contextSignals?.audiences,...(provider.resolveTasteTags||provider.resolveExperienceTags?[tagSignals,includeActivity,includeDrinks,includeDining,radiusKm]:[])]);
     let entry = cache.get(key);
     const cached = !!entry && now() - entry.at < 600000;
     if (!cached) {
       let places;
-      try { places = await provider.discover({ signalIds, area: request.location.area,locationId:request.location.id,tagSignals,contextSignals,includeActivity,includeDrinks,radiusKm }); }
+      try { places = await provider.discover({ signalIds, area: request.location.area,locationId:request.location.id,tagSignals,contextSignals,includeActivity,includeDrinks,includeDining,radiusKm }); }
       catch (e) { throw e instanceof ProviderError ? e : new ProviderError(); }
       if (!Array.isArray(places)) throw new ProviderError("provider_response_invalid");
       entry = { places, locality:places.locality||null, at: now() };

@@ -37,6 +37,13 @@ export const PEOPLE_TOOLS = [
   {type:'function',function:{name:'remove_person',description:'Remove a specifically named participant from the day, except the organizer. Use the exact ID from context.',parameters:{type:'object',additionalProperties:false,properties:{id:PERSON_FIELDS.id},required:['id']}}},
 ];
 const REVISION_FIELDS = ['title','area','date','weekday','timing','timePreference','party','budget','currency','startTime','endTime','pace','activities','experience','maxPriceLevel'];
+// Clarification metadata lets the UI collect missing location while preserving the outing.
+Object.assign(QUESTION_TOOL.function.parameters.properties,{
+  topic:{type:'string',enum:['location','experience','identity','constraint'],description:'The actual missing information. Location and undecided experience are handled proactively for requested outings.'},
+  outingRequested:{type:'boolean',description:'True when the user has asked for an outing, including follow-up corrections. False for a concern that is not yet a request to plan.'},
+  changes:{type:'object',additionalProperties:false,properties:Object.fromEntries(REVISION_FIELDS.map(key=>[key,PLAN_TOOL.function.parameters.properties[key]])),description:'Preserve all explicit details already supplied, especially headcount, weekday, budget and exclusions. Do not invent an area. An empty object is valid.'},
+});
+QUESTION_TOOL.function.parameters.required=['question','topic','outingRequested','changes'];
 const LOCATION_FIELDS = REVISION_FIELDS.filter(key=>key!=='area');
 const NEARBY_FIELD={type:'boolean',description:'True only when the user asks to plan near their current physical location. The app requests device permission and asks them to confirm a nearby area. Never invent coordinates or infer current whereabouts from a saved area.'};
 export const AUTOPILOT_TOOL = {type:'function',function:{name:'autopilot_day',description:'In Autopilot, compose a complete outing in one action using the current people and their saved tastes. Optionally bring one named saved circle and/or named saved contacts by exact ID. Apply all requested trip changes and explicit taste edits together. Existing participants and their current tastes take priority over saved copies. Do not invent people or tastes, increase the budget to accommodate them, or change saved account profiles. Missing location is confirmed by the app before discovery. Use empty changes to plan from the current brief.',parameters:{type:'object',additionalProperties:false,properties:{
@@ -233,6 +240,10 @@ export function createAgent({fetchImpl=globalThis.fetch,getKey=()=>process.env.L
         if(!Array.isArray(calls)||calls.length!==1)throw new ToolResponseError();
         const tool=calls[0].function;
         let args;try{args=JSON.parse(tool.arguments);}catch{throw new ToolResponseError();}
+        if(tool.name==='ask_question'&&mode==='autopilot'&&args.outingRequested===true&&['location','experience'].includes(args.topic)){
+          tool.name='autopilot_day';
+          args={changes:args.changes||{}};
+        }
         let assistantMessage;
         if(args&&Object.hasOwn(args,'message')&&!['reply','ask_question'].includes(tool.name)){
           assistantMessage=boundedText(args.message,600,'an action message');delete args.message;
