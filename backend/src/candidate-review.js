@@ -5,7 +5,7 @@ export async function reviewCandidatePools(pools,request,review){
   const candidates=pools.map((items,index)=>({index,intent:request.activities[index],places:items.slice(0,12).map(({id,name,description,tagNames})=>({id,name,description,tags:tagNames}))}));
   if(!candidates.some(pool=>pool.places.length))return {pools,status:'not_needed'};
   try{
-    const choices=await review({experience:request.experience||{},people:request.people.map(({vibes,context})=>({vibes:vibes.map(id=>({id,label:byId[id]?.label})),context})),candidates});
+    const choices=await review({experience:request.experience||{},party:request.party,budget:request.budget,currency:request.currency,timing:request.timing,people:request.people.map(({vibes,context})=>({vibes:vibes.map(id=>({id,label:byId[id]?.label})),context})),candidates});
     if(!Array.isArray(choices)||choices.length!==pools.length||new Set(choices.map(c=>c?.index)).size!==pools.length)throw new Error('Invalid candidate review');
     const revised=pools.map((items,index)=>{
       const choice=choices.find(c=>c?.index===index),allowed=new Set(candidates[index].places.map(p=>p.id));

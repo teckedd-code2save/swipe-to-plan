@@ -73,3 +73,9 @@ test('nearby suggestions use a bounded point query in metres, with separate prox
   assert.equal(result.locality.scope,'nearby');
   assert.deepEqual(result.locality.center,{latitude:5.6,longitude:-.2});
 });
+
+test('new leisure choices resolve only provider categories, not incidental venue amenities',async()=>{
+  const client=createQlooClient({getKey:()=> 'test',fetchImpl:async url=>({ok:true,json:async()=>({results:{tags:[{id:'urn:tag:category:place:cinema'},{id:'urn:tag:amenity:place:cinema'},{id:'urn:tag:category:place:bowling_alley'},{id:'urn:tag:category:place:playground'}]}})})});
+  const signals=await client.resolveTasteTags(['v-cinema','v-games','v-familyplay']);
+  assert.deepEqual(signals,[{preferenceId:'v-cinema',tagIds:['urn:tag:category:place:cinema']},{preferenceId:'v-games',tagIds:['urn:tag:category:place:bowling_alley']},{preferenceId:'v-familyplay',tagIds:['urn:tag:category:place:playground']}]);
+});

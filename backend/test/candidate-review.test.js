@@ -34,3 +34,10 @@ test('place review caches identical requests but refreshes when purpose changes'
  await agent.reviewCandidates(input);await agent.reviewCandidates(input);assert.equal(calls,1);
  await agent.reviewCandidates({...input,experience:{atmosphere:'lively'}});assert.equal(calls,2);
 });
+
+test('relevance review receives whole-group budget and participation without inventing price evidence',async()=>{
+ const request={activities:['activity'],people:[],party:{adults:2,children:3},budget:80,currency:'GBP',timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'},experience:{notes:'Indoors; step-free access needed'}};
+ let received;
+ await reviewCandidatePools([[{id:'museum',name:'Museum',description:'Exhibitions'}]],request,async input=>{received=input;return [{index:0,ids:['museum']}];});
+ assert.deepEqual(received.party,{adults:2,children:3});assert.equal(received.budget,80);assert.equal(received.currency,'GBP');assert.equal(received.experience.notes,request.experience.notes);assert.equal(received.candidates[0].places[0].price,undefined);
+});
