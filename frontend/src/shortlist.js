@@ -9,3 +9,7 @@ export function routeFromChoices(plan,ids){
   const choices=ids.map(id=>pool.get(id));
   return {...plan.request,activities:[...new Set(choices.map(c=>c.intent))],route:choices.map(c=>({intent:c.intent,placeId:c.item.id})),pins:{},searchRadiusKm:choices.some(c=>c.item.nearby)?20:plan.request.searchRadiusKm||0};
 }
+export function alternativeCandidates(plan){
+  const current=new Set(plan?.stops.filter(stop=>stop.item).map(stop=>stop.item.id)||[]);
+  return shortlistCandidates(plan).filter(choice=>!current.has(choice.item.id));
+}
