@@ -157,9 +157,9 @@ export function relaxationOptions(request) {
   return options;
 }
 
-export function createDiscovery({ provider, now = Date.now }) {
+export function createDiscovery({ provider, now = Date.now, reviewCandidates }) {
   const cache = new Map();
-  async function retrieve(request,intents=[],radiusKm=0) {
+  async function retrieve(request,intents=[],radiusKm=0,experience) {
     const resolution = await Promise.all(request.taste.artists.map(async (requested) => {
       try {
         const result = await provider.resolveArtist(requested);
@@ -175,10 +175,10 @@ export function createDiscovery({ provider, now = Date.now }) {
     const unresolved = resolution.filter((s) => !s.entityId);
     const contextSignals=provider.resolveContext?await provider.resolveContext(request.taste.context):undefined;
     const signalIds = [...new Set([...resolved.map((s) => s.entityId),...(contextSignals?.interests||[]).map(s=>s.entityId)])].sort();
-    const tagSignals=provider.resolveTasteTags?await provider.resolveTasteTags(request.taste.vibes):[];
+    const tagSignals=[...(provider.resolveTasteTags?await provider.resolveTasteTags(request.taste.vibes):[]),...(provider.resolveExperienceTags?await provider.resolveExperienceTags(experience):[])];
     const includeActivity=intents.includes('activity');
     const includeDrinks=intents.includes('drinks');
-    const key = JSON.stringify([request.location.area,request.location.id, signalIds,contextSignals?.audiences,...(provider.resolveTasteTags?[tagSignals,includeActivity,includeDrinks,radiusKm]:[])]);
+    const key = JSON.stringify([request.location.area,request.location.id, signalIds,contextSignals?.audiences,...(provider.resolveTasteTags||provider.resolveExperienceTags?[tagSignals,includeActivity,includeDrinks,radiusKm]:[])]);
     let entry = cache.get(key);
     const cached = !!entry && now() - entry.at < 600000;
     if (!cached) {
@@ -202,9 +202,10 @@ export function createDiscovery({ provider, now = Date.now }) {
   }
   return {
     location:provider.getLocation,
+    reviewCandidates,
     person,
-    async byIntents(request, intents, {radiusKm=0}={}) {
-      const retrieved = await retrieve(request,intents,radiusKm);
+    async byIntents(request, intents, {radiusKm=0,experience}={}) {
+      const retrieved = await retrieve(request,intents,radiusKm,experience);
       return intents.map((intent) => rank(retrieved, { ...request, intent }));
     },
     async recommend(request) {

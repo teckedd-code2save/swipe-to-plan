@@ -1,3 +1,4 @@
+import {reviewCandidatePools} from './candidate-review.js';
 import {locationId as parseLocationId} from './locations.js';
 import { parseArea, InputError, parseRequest } from './contract.js';
 import { byId,matchesTasteTag } from './deck.js';
@@ -186,14 +187,19 @@ export async function buildItinerary(discovery, request) {
   const participating=voters.length?voters:request.people.map((person,index)=>({person,index}));
   const fetched = await Promise.all(participating.map(async({person,index}) => {
     const constraints = { excludeHotels:true,excludeIds:request.excludeIds,excludeTags:request.party.children ? ['nightclub','night_club','dance_club','adult_entertainment'] : [],...(request.maxPriceLevel?{maxPriceLevel:request.maxPriceLevel}:{}) };
-    return {index,results:await discovery.byIntents(parseRequest({location:{area:request.area,...(request.locationId?{id:request.locationId}:{})},taste:{artists:person.artists,vibes:person.vibes,context:person.context},constraints}),request.activities,{radiusKm:request.searchRadiusKm||0})};
+    return {index,results:await discovery.byIntents(parseRequest({location:{area:request.area,...(request.locationId?{id:request.locationId}:{})},taste:{artists:person.artists,vibes:person.vibes,context:person.context},constraints}),request.activities,{radiusKm:request.searchRadiusKm||0,experience:request.experience})};
   }));
   // A person without food/music/activity tastes has no ranking vote yet. Their
   // budget and participation remain included, without a generic search drowning
   // out another member's explicit preferences or creating false taste evidence.
   const uniqueMembers=request.people.map((_,index)=>fetched.find(m=>m.index===index)?.results||request.activities.map(()=>({ranked:[],taste:{mode:'discovery',resolved:[],unresolved:[],vibes:[]},provenance:fetched[0].results[0].provenance,fetched:0})));
   const members=uniqueMembers.map(results=>intents.map(intent=>results[request.activities.indexOf(intent)]));
-  const ranked = intents.map((intent,index) => rerankForExperience(fetched.length === 1 ? fetched[0].results[request.activities.indexOf(intent)].ranked : mergeGroup(fetched.map(({results,index:i}) => ({...results[request.activities.indexOf(intent)],id:request.people[i].id || `person-${i}`,name:request.people[i].name})),50).items,request.experience,intent));
+  let ranked = intents.map((intent,index) => rerankForExperience(fetched.length === 1 ? fetched[0].results[request.activities.indexOf(intent)].ranked : mergeGroup(fetched.map(({results,index:i}) => ({...results[request.activities.indexOf(intent)],id:request.people[i].id || `person-${i}`,name:request.people[i].name})),50).items,request.experience,intent));
+  let qualityReview={status:'not_requested'};
+  if(discovery.reviewCandidates&&(request.experience||request.people.some(p=>p.context))){
+    const review=await reviewCandidatePools(ranked,{...request,activities:intents},discovery.reviewCandidates);
+    ranked=review.pools;qualityReview={status:review.status,basis:'model_relevance_judgment',providerFactsVerified:false};
+  }
   const desired=index=>request.route?.[index]?.placeId||request.pins[intents[index]];
   const reserved = new Set(request.route?request.route.map(s=>s.placeId):Object.values(request.pins));
   const makePools=(limit)=>ranked.map((items,index) => desired(index) ? items.filter((item) => item.id===desired(index)) : items.filter((item) => !reserved.has(item.id)).slice(0,limit));
@@ -227,18 +233,20 @@ export async function buildItinerary(discovery, request) {
   if(!filled.length&&!request.searchRadiusKm&&request.locationId&&discovery.location){
     nearbyStatus='empty';
     try{
-      const nearby=await Promise.all(participating.map(async({person,index})=>({index,results:await discovery.byIntents(parseRequest({location:{area:request.area,id:request.locationId},taste:{artists:person.artists,vibes:person.vibes,context:person.context},constraints:{excludeHotels:true,excludeIds:request.excludeIds,excludeTags:request.party.children?['nightclub','night_club','dance_club','adult_entertainment']:[],...(request.maxPriceLevel?{maxPriceLevel:request.maxPriceLevel}:{})}}),request.activities,{radiusKm:20})})));
-      nearbySuggestions=[...new Map(request.activities.flatMap((intent,i)=>{
+      const nearby=await Promise.all(participating.map(async({person,index})=>({index,results:await discovery.byIntents(parseRequest({location:{area:request.area,id:request.locationId},taste:{artists:person.artists,vibes:person.vibes,context:person.context},constraints:{excludeHotels:true,excludeIds:request.excludeIds,excludeTags:request.party.children?['nightclub','night_club','dance_club','adult_entertainment']:[],...(request.maxPriceLevel?{maxPriceLevel:request.maxPriceLevel}:{})}}),request.activities,{radiusKm:20,experience:request.experience})})));
+      let nearbyPools=request.activities.map((intent,i)=>{
         const items=nearby.length===1?nearby[0].results[i].ranked:mergeGroup(nearby.map(({results,index})=>({...results[i],id:request.people[index].id||`person-${index}`,name:request.people[index].name})),20).items;
-        return rerankForExperience(items,request.experience,intent).slice(0,8).map(item=>[item.id,{intent,item}]);
-      })).values()].slice(0,8);nearbyStatus=nearbySuggestions.length?'ready':'empty';
+        return rerankForExperience(items,request.experience,intent);
+      });
+      if(discovery.reviewCandidates&&(request.experience||request.people.some(p=>p.context)))nearbyPools=(await reviewCandidatePools(nearbyPools,{...request,pins:{},route:undefined},discovery.reviewCandidates)).pools;
+      nearbySuggestions=[...new Map(nearbyPools.flatMap((items,i)=>items.slice(0,8).map(item=>[item.id,{intent:request.activities[i],item}]))).values()].slice(0,8);nearbyStatus=nearbySuggestions.length?'ready':'empty';
     }catch{nearbyStatus='unavailable';}
   }
   const provider = members[0][0].provenance.provider;
   const unresolved = members.flatMap((results,index) => results[0].taste.unresolved.map((entry) => ({...entry,person:request.people[index].name})));
   const budget=allocateBudget(planningRequest,filled.map(stop=>stop.intent));
   return {
-    version:'1.0',shortlist,nearbySuggestions,nearbyStatus,searchScope:request.searchRadiusKm?{kind:'nearby',radiusKm:request.searchRadiusKm,area:request.area}:{kind:'area',area:request.area},phase:exploring?'discovery':needsTiming?'needs_timing':'scheduled',activityBasis,status:filled.length===stops.length&&!needsTiming?'complete':'partial',request:{...request,title:resultTitle(request,stops)},stops,tasteMap,
+    version:'1.0',qualityReview,shortlist,nearbySuggestions,nearbyStatus,searchScope:request.searchRadiusKm?{kind:'nearby',radiusKm:request.searchRadiusKm,area:request.area}:{kind:'area',area:request.area},phase:exploring?'discovery':needsTiming?'needs_timing':'scheduled',activityBasis,status:filled.length===stops.length&&!needsTiming?'complete':'partial',request:{...request,title:resultTitle(request,stops)},stops,tasteMap,
     budget:{...budget,allocations:budget.allocations.map((a,index)=>({...a,stopId:`stop-${index}`}))},
     people:request.people.map((person,index)=>({id:person.id || `person-${index}`,name:person.name,taste:members[index][0].taste})),
     provenance:{provider,retrievedAt:members[0][0].provenance.retrievedAt,...(members[0][0].provenance.locality?{locality:members[0][0].provenance.locality}:{})},

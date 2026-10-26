@@ -21,7 +21,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   const app = express();
   // Production is reachable only through the one host-level Caddy proxy.
   app.set('trust proxy', trustProxy);
-  const discovery = createDiscovery({ provider, now });
+  const discovery = createDiscovery({ provider, now,reviewCandidates:agent?.configured?.()&&agent.reviewCandidates?agent.reviewCandidates:undefined });
   const places = createPlaceGuide({provider,now});
   discovery.placeDetails=provider.getPlace?places.details:null;
   discovery.now=now;

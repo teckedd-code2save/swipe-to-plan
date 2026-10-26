@@ -95,6 +95,6 @@ export const API_SCHEMA = {
   feedback: { reasons: FEEDBACK_REASONS, scope: "Request/session only. Both reasons exclude that candidate. too_noisy also subtracts 0.25 from places tagged live_music, loud, noisy, nightclub, night_club or dance_club. This does not verify quietness. Remove entries to undo." },
   statuses: ["ok", "insufficient_matches"],
   errors: { 400: "Invalid or unsupported input", 429: "Rate limit", 503: "Provider or database unavailable; never represented as zero matches" },
-  limitations: ["Global locality queries use Qloo’s matched locality with radius zero; text checks are a fallback when locality metadata is unavailable.", "No live availability, booking, open-now guarantee, or verified current prices.", "Unknown request fields are rejected rather than silently ignored.", "Recommendations and typed itineraries do not call a language model. Only /api/agent uses an optional configured model to call the planning tool."],
+  limitations: ["Global locality queries use Qloo’s matched locality with radius zero; text checks are a fallback when locality metadata is unavailable.", "No live availability, booking, open-now guarantee, or verified current prices.", "Unknown request fields are rejected rather than silently ignored.", "Solo recommendations do not call a language model. A configured planner can review itinerary candidate relevance against explicit outing context, using only retrieved place IDs. Model judgments never verify venue facts."],
 };
 
