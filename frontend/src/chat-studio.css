@@ -224,7 +224,7 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 .deck-spread .deck-fan-card:focus-within,.deck-spread .deck-fan-card:hover{z-index:12}
 @media(max-width:600px){.deck-spread .deck-fan-actions{top:8px;right:8px}}
 
-.cs-discovery-receipt{margin:20px 0 26px 40px;max-width:650px}.cs-discovery-receipt .cs-result-card{width:100%}.cs-discovery-receipt>small{display:block;color:var(--cs-muted);font-size:12px;line-height:1.6}.cs-discovery-status{padding:14px 18px;background:#edf0e5;border-radius:12px;font-size:13px;line-height:1.6;margin:0 0 24px}.cs-discovery-panel .cs-day-footer>small{font-size:11px;color:var(--cs-muted)}.cs-discovery-panel .pl-stop.discovery-option{display:block}.discovery-option .pl-place{margin-top:0}.discovery-option .pl-place-image{min-height:190px}.cs-discovery-panel .pl-stop.discovery-option+.pl-stop{margin-top:28px}@media(max-width:600px){.cs-discovery-receipt{margin-left:0}.discovery-option .pl-place-image{min-height:170px}.cs-discovery-panel .pl-place{flex-direction:column}.cs-discovery-panel .pl-place-image{width:100%;height:190px;min-height:190px}}
+.cs-discovery-receipt{margin:20px 0 26px 40px;max-width:650px}.cs-discovery-receipt .cs-result-card{width:100%}.cs-discovery-receipt>small{display:block;color:var(--cs-muted);font-size:12px;line-height:1.6}.cs-discovery-status{padding:14px 18px;background:#edf0e5;border-radius:12px;font-size:13px;line-height:1.6;margin:0 0 24px}.cs-discovery-panel .cs-day-footer>small{font-size:11px;color:var(--cs-muted)}.chat-studio .cs-day-content .pl-stop.discovery-option{display:block;width:100%;min-width:0}.discovery-option .pl-place{margin-top:0}.discovery-option .pl-place-image{min-height:190px}.cs-discovery-panel .pl-stop.discovery-option+.pl-stop{margin-top:28px}@media(max-width:600px){.cs-discovery-receipt{margin-left:0}.discovery-option .pl-place-image{min-height:170px}.cs-discovery-panel .pl-place{flex-direction:column}.cs-discovery-panel .pl-place-image{width:100%;height:190px;min-height:190px}}
 /* Fill the available workspace; only the result body scrolls. */
 .cs-day-panel{align-self:stretch;height:100%;max-height:100%;margin:0 0 0 10px;border-radius:20px 0 0 20px}
 .cs-day-header,.cs-day-footer,.cs-day-tabs,.cs-route{flex-shrink:0}
@@ -246,3 +246,16 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 .cs-menu-venue{border-top:1px solid var(--cs-line);padding:20px 0}.cs-menu-venue h3{font:25px/1.25 Georgia,serif;margin:0 0 12px;overflow-wrap:anywhere}.cs-menu-intro{font-size:12px;color:var(--cs-muted);margin:0 0 12px}.cs-menu-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:16px}.chat-studio .cs-menu-choice{display:flex;align-items:center;text-align:left;gap:10px;padding:13px 14px;min-height:54px;border:1px solid #d9dfd0;border-radius:12px;background:#fffef9;color:#35452e;font-size:14px;line-height:1.4}.chat-studio .cs-menu-choice[aria-pressed=true]{border-color:#627a4e;background:#e9efdf}.cs-menu-check{width:21px;height:21px;flex-shrink:0;border:1px solid #9eac90;border-radius:6px;display:grid;place-items:center}.cs-menu-choice[aria-pressed=true] .cs-menu-check{background:#415936;border-color:#415936;color:white}.cs-menu-choice:focus-visible{outline:3px solid #9cb187;outline-offset:2px}.cs-menu-tool>.cs-review-plan{width:100%;min-height:48px;justify-content:center}.cs-more-options-heading{margin:26px 0 16px;font:25px/1.2 Georgia,serif}@media(max-width:600px){.cs-menu-grid{grid-template-columns:minmax(0,1fr)}.cs-menu-venue h3{font-size:23px}.chat-studio .cs-menu-choice{min-height:52px}}
 .cs-menu-saved{display:flex;align-items:center;gap:8px;color:#48643a;font-size:12px;padding-top:12px;border-top:1px solid var(--cs-line)}
 .chat-studio .cs-alternative-choice{display:flex;align-items:center;gap:8px;padding:12px 14px;border:1px solid #c7d3ba;border-radius:11px;font-size:12px;line-height:1.4;color:#415936;margin:10px 0 28px;min-height:44px}.cs-more-options-heading{border-top:1px solid var(--cs-line);padding-top:24px}
+
+/* Discovery cards have no time rail: their content owns the full row. */
+.chat-studio .cs-day-content .pl-stop.discovery-option>.pl-stop-content{width:100%;min-width:0}
+.cs-place-option{min-width:0;margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid var(--cs-line)}
+.chat-studio .cs-place-option .pl-stop{margin-bottom:0}
+.chat-studio .cs-place-option .cs-alternative-choice{width:100%;justify-content:space-between;margin:14px 0 0}
+@media screen and (max-width:600px){
+ .chat-studio .cs-day-content .pl-place{grid-template-columns:minmax(0,1fr)}
+ .chat-studio .cs-day-content .pl-place-image{height:180px;min-height:180px;max-height:180px}
+ .chat-studio .cs-day-content .pl-place-info{padding:16px}
+ .chat-studio .cs-day-content .pl-stop-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+ .chat-studio .cs-day-content .pl-stop-actions>button{min-height:44px;padding:8px 10px;border:1px solid var(--cs-line);border-radius:9px;font-size:12px;line-height:1.4}
+}
