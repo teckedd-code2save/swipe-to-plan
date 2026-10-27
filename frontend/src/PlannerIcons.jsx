@@ -2,6 +2,8 @@ import React from 'react';
 
 export function Icon({name,size=20,...props}) {
   const paths={
+    share:<><path d="M12 16V3m-4 4 4-4 4 4M5 13v8h14v-8"/></>,
+    invite:<><circle cx="8" cy="8" r="3"/><path d="M2 21v-2a6 6 0 0 1 12 0v2m5-15v8m-4-4h8"/></>,
     download:<><path d="M12 3v12m-5-5 5 5 5-5M4 15v6h16v-6"/></>,
     plus:<path d="M12 5v14M5 12h14"/>,arrow:<path d="M5 12h14m-5-5 5 5-5 5"/>,up:<path d="M12 19V5m-6 6 6-6 6 6"/>,close:<path d="m6 6 12 12M6 18 18 6"/>,check:<path d="m5 12 4 4 10-10"/>,
     pin:<><path d="M20 10c0 6-8 11-8 11S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>,

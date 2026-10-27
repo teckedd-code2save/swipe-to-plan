@@ -5,10 +5,10 @@ export function circleInviteUrl(circle){
   return circle?.inviteToken?`${location.origin}/#/circle/${encodeURIComponent(circle.id)}?invite=${encodeURIComponent(circle.inviteToken)}`:null;
 }
 
-export default function CircleInviteLink({name,url}){
+export default function CircleInviteLink({name,url,compact=false}){
   const [notice,setNotice]=useState('');
   if(!url)return null;
-  async function copy(){try{await navigator.clipboard.writeText(url);setNotice('Link copied. Send it to your people.');}catch{setNotice('Select and copy the link below.');}}
+  async function copy(){try{await navigator.clipboard.writeText(url);setNotice('Link copied');}catch{setNotice('Select and copy the link below.');}}
   async function share(){try{await navigator.share({title:`Join ${name} on Unstressed`,text:`Join ${name} and plan our next outing together.`,url});}catch(e){if(e.name!=='AbortError')await copy();}}
-  return <section className="cs-invite-link" aria-label={`Invite to ${name}`}><strong>Bring your people</strong><p>Share this link. They open it and tap Join to become part of {name}.</p><div className="cs-invite-link-actions">{typeof navigator.share==='function'&&<button type="button" className="pl-button" onClick={share}>Share invite <Icon name="arrow" size={16}/></button>}<button type="button" className="pl-button" onClick={copy}>Copy invite link <Icon name="copy" size={16}/></button></div><input aria-label={`Invite link for ${name}`} readOnly value={url} onFocus={e=>e.target.select()}/><small>Anyone with this link can join. New members sign in with Google to keep their circle and tastes.</small>{notice&&<p role="status">{notice}</p>}</section>;
+  return <section className={`cs-invite-link${compact?' cs-invite-compact':''}`} aria-label={`Invite to ${name}`}>{!compact&&<><strong>Invite to {name}</strong><p>Open the link and join the circle.</p></>}<div className="cs-invite-link-actions"><button type="button" className="pl-button" aria-label={`Share invite to ${name}`} title="Share invite" onClick={typeof navigator.share==='function'?share:copy}><Icon name="share" size={20}/></button><button type="button" className="pl-button" aria-label={`Copy invite link for ${name}`} title="Copy invite link" onClick={copy}><Icon name="copy" size={20}/></button></div>{(!compact||notice==='Select and copy the link below.')&&<input aria-label={`Invite link for ${name}`} readOnly value={url} onFocus={e=>e.target.select()}/>} {!compact&&<small>Anyone with this link can join after signing in.</small>}{notice&&<p role="status">{notice}</p>}</section>;
 }

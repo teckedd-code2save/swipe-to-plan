@@ -17,7 +17,8 @@ test('directions include the first journey and individual transit legs, without 
 test('mixed coverage and timing gaps explain each cause and do not advertise a complete day',()=>{
   const plan={request:{people:[]},stops:[stop('drinks','drinks'),{intent:'coffee',item:null,reason:'no_eligible_places'},{intent:'activity',item:null,reason:'no_open_place'}]};
   const next=nextPlanSteps(plan);
-  assert.equal(next.actions[0].id,'review');assert.equal(next.actions[1].id,'location');assert.equal(next.actions[2].id,'keep_found');
+  assert.deepEqual(next.actions.slice(0,4).map(a=>a.id),['nearby','review','location','keep_found']);
+  assert.ok(!nextPlanSteps({...plan,request:{...plan.request,searchRadiusKm:20}}).actions.some(a=>a.id==='nearby'));
   assert.match(next.note,/coffee in this area/);assert.match(next.note,/discovery into your time window/);
   assert.match(partialPlanSummary(plan),/1 of 3 requested stops/);
 });
