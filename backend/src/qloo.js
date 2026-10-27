@@ -151,6 +151,35 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
       cache.set(key, { at: now(), value });
       return value;
     },
+    async suggestAreas({locationId,artists=[],vibes=[],experience={},activities=[]}){
+      const origin=await getLocation(locationId);
+      if(!origin.center)return [];
+      const [artistMatches,tasteSignals,experienceSignals]=await Promise.all([
+        Promise.all(artists.slice(0,6).map(name=>this.resolveArtist(name).catch(()=>null))),
+        this.resolveTasteTags(vibes),this.resolveExperienceTags(experience),
+      ]);
+      const signalIds=artistMatches.filter(x=>x?.status==='resolved').map(x=>x.entityId);
+      const tagSignals=[...tasteSignals,...experienceSignals];
+      if(!signalIds.length&&!tagSignals.length&&!activities.length)return [];
+      const places=await this.discover({signalIds,area:origin.label,locationId:origin.id,tagSignals,radiusKm:20,includeActivity:activities.includes('activity'),includeDining:activities.includes('dinner'),includeDrinks:activities.includes('drinks')});
+      const candidates=[];
+      for(const place of places){
+        const geo=place.properties?.geocode||{};
+        const name=place.location?.neighborhood||place.properties?.neighborhood||geo.neighborhood||geo.district;
+        if(typeof name!=='string'||!name.trim()||typeof place.name!=='string'||!place.entity_id)continue;
+        if(areaDistanceKm(origin.center,place.location)>20||areaDistanceKm(origin.center,place.location)===null)continue;
+        if(candidates.some(c=>norm(c.name)===norm(name)))continue;
+        candidates.push({name:name.trim().slice(0,80),place:place.name.slice(0,120)});
+        if(candidates.length===5)break;
+      }
+      const matches=await Promise.all(candidates.map(async candidate=>{
+        const query=[candidate.name,origin.country].filter(Boolean).join(', ');
+        const found=await this.searchLocations(query).catch(()=>[]);
+        const area=found.find(item=>norm(item.name)===norm(candidate.name)&&item.center&&areaDistanceKm(origin.center,{lat:item.center.latitude,lon:item.center.longitude})<=20&&(!origin.countryCode||item.countryCode===origin.countryCode));
+        return area?{...area,example:candidate.place}:null;
+      }));
+      return matches.filter(Boolean).slice(0,3);
+    },
     async discover({ signalIds, area,locationId,tagSignals=[],contextSignals,includeActivity=false,includeDrinks=false,includeDining=false,radiusKm=0 }) {
       const chosen=locationId?await getLocation(locationId):null;
       if(radiusKm&&(!chosen?.center||radiusKm!==20))throw new ProviderError('provider_response_invalid');
@@ -163,6 +192,9 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
       };
       const retrieve=async params=>{const items=await call('/v2/insights',params,chosen?undefined:area);if(chosen)items.locality={...chosen,query:area,method:'qloo_locality_filter',radius:radiusKm*1000,...(radiusKm?{scope:'nearby',center:chosen.center,radiusKm}:{} )};return items;};
       if(!includeActivity&&!includeDrinks&&!includeDining)return retrieve(parameters);
+      // Start the main search while optional category tags are being resolved.
+      const mainSearch=retrieve(parameters);
+      mainSearch.catch(()=>{}); // Category resolution may fail before the main search is awaited.
       // Retrieve the requested venue types as well as the taste-led pool, so a
       // dining-heavy result cannot hide eligible bars or discovery venues.
       const categories=[];
@@ -176,7 +208,7 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
         if(!hit||now()-hit.at>=86400000){const value=call('/v2/tags',{'filter.query':'restaurant',take:30}).then(tags=>tags.filter(t=>/^urn:tag:category:(place|qloo):restaurant$/.test(t.id)).map(t=>t.id));hit={at:now(),value};tagsCache.set('venue:restaurant',hit);try{await value;}catch(e){tagsCache.delete('venue:restaurant');throw e;}}
         categories.push(...await hit.value);
       }
-      const results=await Promise.all([retrieve(parameters),...(categories.length?[retrieve({...parameters,'filter.tags':[...new Set(categories)].join(','),'operator.filter.tags':'union'})]:[])]);
+      const results=await Promise.all([mainSearch,...(categories.length?[retrieve({...parameters,'filter.tags':[...new Set(categories)].join(','),'operator.filter.tags':'union'})]:[])]);
       return Object.assign([...new Map(results.flat().map(place=>[place.entity_id,place])).values()],{locality:results[0].locality});
     },
   };
