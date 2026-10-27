@@ -164,6 +164,9 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
       const places=await this.discover({signalIds,area:origin.label,locationId:origin.id,tagSignals,radiusKm:20,includeActivity:activities.includes('activity'),includeDining:activities.includes('dinner'),includeDrinks:activities.includes('drinks')});
       const candidates=[];
       for(const place of places){
+        const categories=(place.tags||[]).map(t=>t?.id||'').filter(id=>/^urn:tag:(category|genre):(place|qloo):/.test(id));
+        const relevant=activities.some(activity=>categories.some(id=>({coffee:/(cafe|coffee_shop|coffeehouse|tea_room)/,dinner:/(restaurant|bistro|eatery|pizzeria)/,drinks:/(bar|pub|nightclub|lounge)/,activity:/(museum|gallery|park|garden|beach|theater|cinema|market|hiking|landmark)/}[activity]||/$a/).test(id.split(':').at(-1))));
+        if(activities.length&&!relevant)continue;
         const geo=place.properties?.geocode||{};
         const name=place.location?.neighborhood||place.properties?.neighborhood||geo.neighborhood||geo.district;
         if(typeof name!=='string'||!name.trim()||typeof place.name!=='string'||!place.entity_id)continue;
