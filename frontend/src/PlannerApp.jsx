@@ -281,7 +281,7 @@ export default function PlannerApp() {
   }
   function editTaste(person){
     track('taste_edited');
-    if(activeCircle.current)activeCircle.current={...activeCircle.current,people:activeCircle.current.people.map(p=>p.id===person.id?person:p)};
+    // Keep the last remote circle snapshot separate from optimistic outing edits.
     if(person.id===accountRef.current.user?.id)accountRef.current.changeProfile({...person,context:accountRef.current.user.profile.context}).catch(e=>setError(e.message));
     else {const circle=accountRef.current.circles.find(c=>c.id===activeCircle.current?.id);if(circle?.owner&&!circle.accountIds.includes(person.id))accountRef.current.changeCirclePerson(circle.id,person).catch(e=>setError(e.message));}
     localVersion.current++;
@@ -404,9 +404,10 @@ export default function PlannerApp() {
       else {const existing=current.people.find(p=>p.id===id);if(existing&&profileChanged&&personSignature(existing)!==profileSignature){const next={...current,people:current.people.map(p=>p.id===id?account.user.profile:p)};if(planRef.current)schedule(next);else replaceBrief(next);}}
       accountProfileSeen.current={id,signature:profileSignature};
     }
-    const active=activeCircle.current,savedCircle=account.circles.find(c=>c.id===active?.id),circle=savedCircle?{...savedCircle,people:savedCircle.people.filter(p=>savedCircle.accountIds.includes(p.id))}:null;
+    const active=activeCircle.current,savedCircle=account.circles.find(c=>c.id===active?.id),circle=savedCircle?{...savedCircle,people:savedCircle.people.filter(p=>savedCircle.accountIds.includes(p.id)).map(p=>p.id===account.user?.id?account.user.profile:p)}:null;
     if(circle&&active&&!shared.linked){
-      const changed=circle.people.filter(p=>personSignature(p)!==personSignature(active.people.find(old=>old.id===p.id)));
+      const changed=circle.people.filter(p=>personSignature(p)!==personSignature(active.people.find(old=>old.id===p.id))&&personSignature(p)!==personSignature(briefRef.current.people.find(current=>current.id===p.id)));
+      activeCircle.current={id:circle.id,people:circle.people};
       const removed=active.people.filter(p=>!circle.people.some(n=>n.id===p.id));
       if(changed.length||removed.length){
         let people=briefRef.current.people.filter(p=>!removed.some(r=>r.id===p.id));
