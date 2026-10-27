@@ -104,3 +104,16 @@ test('film discovery resolves movie theaters and rejects cinema equipment suppli
  assert.deepEqual(await client.resolveTasteTags(['v-cinema']),[{preferenceId:'v-cinema',tagIds:['urn:tag:category:place:movie_theater']}]);
  assert.equal(calls[0].searchParams.get('filter.query'),'movie theater');
 });
+
+test('a brief rate limit retries once and preserves results',async()=>{
+  let calls=0,wait=0;
+  const client=createQlooClient({getKey:()=> 'test',sleep:async ms=>{wait=ms;},fetchImpl:async()=>{calls++;return calls===1?{status:429,headers:{get:()=> '1'}}:{ok:true,json:async()=>({results:{entities:[{entity_id:'a',name:'Place'}]}})};}});
+  const result=await client.discover({area:'Accra',signalIds:[]});assert.equal(calls,2);assert.equal(wait,1000);assert.equal(result.length,1);
+});
+
+test('unavailable optional taste signals do not discard a working place search',async()=>{
+  const rate=()=>Promise.reject(Object.assign(new Error('busy'),{code:'provider_rate_limited'}));
+  const discovery=createDiscovery({provider:{name:'qloo',resolveTasteTags:rate,resolveExperienceTags:rate,discover:async()=>[]}});
+  const result=await discovery.byIntents(parseRequest({area:'Accra',taste:{vibes:['v-history']}}),['activity']);
+  assert.equal(result[0].taste.signalsUnavailable,true);assert.equal(result[0].taste.mode,'discovery');
+});
