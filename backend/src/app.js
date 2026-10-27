@@ -95,15 +95,16 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     const request=parseItinerary(req.body);
     if(req.get('accept')?.includes('application/x-ndjson')){
       res.status(200).set({'Content-Type':'application/x-ndjson','Cache-Control':'no-cache','X-Accel-Buffering':'no'});res.flushHeaders();
+      let previewSent=false;
       try{
         const early=await buildItinerary({...discovery,reviewCandidates:undefined},{...request,timing:{...request.timing,dateConfirmed:false,timeConfirmed:false}},{deferNearby:true});
         early.request={...early.request,timing:request.timing};if(request.timing.dateConfirmed&&request.timing.timeConfirmed)early.phase='checking';early.qualityReview={status:'pending',basis:'provider_discovery',providerFactsVerified:false};
         if(res.destroyed)return;
-        res.write(JSON.stringify({type:'discovery',plan:early})+'\n');
+        res.write(JSON.stringify({type:'discovery',plan:early})+'\n');previewSent=true;
         const reviewed=await buildItinerary(discovery,request);if(res.destroyed)return;
         const final=await accounts.keepPlan(target,reviewed);
         res.end(JSON.stringify({type:'complete',plan:final})+'\n');
-      }catch(error){if(res.destroyed)return;res.end(JSON.stringify({type:'error',error:error.status&&error.status<500?error.message:'The review could not finish. Your places are still here.'})+'\n');}
+      }catch(error){if(res.destroyed)return;const providerMessages={provider_rate_limited:'Place search is busy. Please try again shortly.',provider_auth_error:'Place search could not connect. Please try again.',provider_not_configured:'Place search is not connected yet.',provider_unavailable:'Place search is temporarily unavailable. Please try again.'};const message=error.status&&error.status<500?error.message:providerMessages[error.code]||(previewSent?'The review could not finish. Your places are still here.':'I couldn’t finish finding places. Please try again.');res.end(JSON.stringify({type:'error',error:message})+'\n');}
       return;
     }
     res.json(await accounts.keepPlan(target,await buildItinerary(discovery,request)));
