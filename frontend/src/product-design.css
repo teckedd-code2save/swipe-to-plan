@@ -34,3 +34,9 @@
 .chat-studio .suggestions-small .cs-next-buttons{flex-wrap:nowrap;overflow-x:auto;gap:6px}
 .chat-studio .suggestions-small .cs-next-buttons button{min-height:32px;padding:5px 9px;white-space:nowrap;flex-shrink:0;font-size:11px}
 .chat-studio .suggestions-small .cs-next-buttons button>svg:last-child{display:none}
+/* Ease the existing context into its compact state instead of snapping it away. */
+.chat-studio .cs-day-header{transition:padding .24s ease}
+.chat-studio .cs-day-header h2{transition:font-size .24s ease,line-height .24s ease}
+.chat-studio .cs-day-header p,.chat-studio .cs-day-header .cs-eyebrow,.chat-studio .cs-day-header .cs-day-people{max-height:100px;opacity:1;overflow:hidden;transition:max-height .24s ease,opacity .18s ease,margin .24s ease,padding .24s ease}
+.chat-studio .cs-day-panel.header-small .cs-day-header p,.chat-studio .cs-day-panel.header-small .cs-eyebrow,.chat-studio .cs-day-panel.header-small .cs-day-people{display:block;max-height:0;min-height:0;opacity:0;margin:0;padding:0;border:0;pointer-events:none;visibility:hidden}
+.chat-studio .cs-results-ready,.chat-studio .cs-next-steps.compact{transition:padding .22s ease,margin .22s ease}
