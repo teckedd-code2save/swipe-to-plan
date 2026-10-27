@@ -177,9 +177,9 @@ test("residential or street interests cannot qualify as dining venues", () => {
 test("auth and quota errors stop discovery rather than falling back", async () => {
   for (const status of [401,403,429]) {
     let calls=0;
-    const p=createQlooClient({getKey:()=> 'test-only',fetchImpl: async()=>{calls++;return {ok:false,status};}});
+    const p=createQlooClient({getKey:()=> 'test-only',sleep:async()=>{},fetchImpl: async()=>{calls++;return {ok:false,status};}});
     await assert.rejects(createDiscovery({provider:p}).recommend(request({taste:{artists:['Amaarae']}})), e=>['provider_auth_error','provider_rate_limited'].includes(e.code));
-    assert.equal(calls,1);
+    assert.equal(calls,status===429?4:1);
   }
 });
 
