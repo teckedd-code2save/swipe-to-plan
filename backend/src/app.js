@@ -74,6 +74,14 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     if(!provider.nearbyLocations)throw new InputError('Nearby area search is unavailable. You can still search by name.');
     res.json({locations:await provider.nearbyLocations(point,radiusKm),source:'qloo'});
   }));
+  app.post('/api/locations/suggest',limit(10),route(async(req,res)=>{
+    strictFields(req.body,['locationId','brief']);
+    const brief=parseItinerary(req.body.brief,{allowMissingLocation:true});
+    if(!provider.suggestAreas)return res.json({locations:[]});
+    const person=brief.people[0];
+    const locations=await provider.suggestAreas({locationId:req.body.locationId,artists:person.artists,vibes:person.vibes,experience:brief.experience,activities:brief.activities});
+    res.json({locations,source:'qloo'});
+  }));
   app.get('/api/locations/:id',limit(60),route(async(req,res)=>{if(!provider.getLocation)throw new InputError('Location search is unavailable on this server.');res.json(await provider.getLocation(req.params.id));}));
   app.get("/api/deck", (_req, res) => res.json(publicDeck()));
   app.get('/api/places/:id/menu',limit(12),route(async(req,res)=>res.json(await menuEvidence.get(req.params.id))));
@@ -88,7 +96,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     if(req.get('accept')?.includes('application/x-ndjson')){
       res.status(200).set({'Content-Type':'application/x-ndjson','Cache-Control':'no-cache','X-Accel-Buffering':'no'});res.flushHeaders();
       try{
-        const early=await buildItinerary({...discovery,reviewCandidates:undefined},{...request,timing:{...request.timing,dateConfirmed:false,timeConfirmed:false}});
+        const early=await buildItinerary({...discovery,reviewCandidates:undefined},{...request,timing:{...request.timing,dateConfirmed:false,timeConfirmed:false}},{deferNearby:true});
         early.request={...early.request,timing:request.timing};if(request.timing.dateConfirmed&&request.timing.timeConfirmed)early.phase='checking';early.qualityReview={status:'pending',basis:'provider_discovery',providerFactsVerified:false};
         if(res.destroyed)return;
         res.write(JSON.stringify({type:'discovery',plan:early})+'\n');
@@ -103,9 +111,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   app.post("/api/agent", limit(10), route(async(req,res)=>{
     strictFields(req.body,['message','context','history','circles','contacts','planContext','locationContext','mode']);
     if(!agent)throw new AgentError('agent_not_configured');
-    const target=await accounts.planTarget(req);
-    const audienceCatalog=provider.audienceCatalog?await provider.audienceCatalog().catch(()=>[]):[];
-    const planningPeople=await accounts.planningPeople(req);
+    const [target,audienceCatalog,planningPeople]=await Promise.all([accounts.planTarget(req),provider.audienceCatalog?provider.audienceCatalog().catch(()=>[]):Promise.resolve([]),accounts.planningPeople(req)]);
     let interpretation=await agent.interpret({...req.body,...planningPeople,audienceCatalog});
     if(agent.auditContext)interpretation=await agent.auditContext(interpretation,{...req.body,...planningPeople,audienceCatalog});
     if(['needs_input','action','show_ui','reply','autopilot'].includes(interpretation.status))return res.json(interpretation);
