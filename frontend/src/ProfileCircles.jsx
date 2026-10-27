@@ -1,9 +1,9 @@
 import {useEffect,useRef,useState} from 'react';
 import {Icon} from './PlannerIcons.jsx';
+import CircleInviteLink,{circleInviteUrl} from './CircleInviteLink.jsx';
 
 export default function ProfileCircles({account,onClose}){
   const dialog=useRef(null);
-  const [email,setEmail]=useState({});
   const [name,setName]=useState('');
   const [creating,setCreating]=useState(false);
   const [busy,setBusy]=useState(false);
@@ -24,15 +24,13 @@ export default function ProfileCircles({account,onClose}){
         <div className="cs-pc-expanded">
           <div className="cs-pc-section-label">Members</div>
           {circle.people.map(person=><div key={person.id} className="cs-pc-member"><span className="cs-pc-member-avatar">{person.name.charAt(0).toUpperCase()}</span><span>{person.name}{person.id===account.user?.id&&<small> You</small>}</span>{circle.owner&&person.id!==account.user?.id&&<button type="button" disabled={busy} aria-label={`Remove ${person.name} from ${circle.name}`} onClick={()=>{if(window.confirm(`Remove ${person.name} from ${circle.name}?`))perform(async()=>{await account.removeCircleMember(circle.id,person.id);setNotice('Member removed.');});}}>Remove</button>}</div>)}
-          <form className="cs-pc-invite" onSubmit={e=>{e.preventDefault();perform(async()=>{await account.inviteCircleByEmail(circle.id,email[circle.id]);setEmail(previous=>({...previous,[circle.id]:''}));setNotice('Invitation sent. They join after accepting.');});}}>
-            <label htmlFor={`pc-email-${circle.id}`}>Invite someone</label>
-            <div><input id={`pc-email-${circle.id}`} type="email" required autoComplete="email" value={email[circle.id]||''} onChange={e=>setEmail(v=>({...v,[circle.id]:e.target.value}))} placeholder="Email address"/><button type="submit" disabled={busy||!email[circle.id]?.trim()}><Icon name="arrow-right" size={16}/><span>Invite</span></button></div>
-          </form>
+          <CircleInviteLink name={circle.name} url={circleInviteUrl(circle)}/>
           <button type="button" className="cs-pc-leave" disabled={busy} onClick={()=>{if(window.confirm(circle.owner?`Delete ${circle.name} for everyone?`:`Leave ${circle.name}?`))perform(async()=>{await account.removeCircle(circle.id);setNotice(circle.owner?'Circle deleted.':'You left the circle.');});}}>{circle.owner?'Delete circle':'Leave circle'}</button>
         </div>
       </details>)}</div>
-      {!account.circles.length&&!creating&&<div className="cs-pc-empty"><Icon name="users" size={27}/><strong>Keep your favorite people close.</strong><p>Create a circle, invite them by email, and plan together whenever you like.</p></div>}
+      {!account.circles.length&&!creating&&<div className="cs-pc-empty"><Icon name="users" size={27}/><strong>Keep your favorite people close.</strong><p>Create a circle, share its invite link, and plan together whenever you like.</p></div>}
       {notice&&<p role="status" className="cs-pc-feedback">{notice}</p>}{error&&<p role="alert" className="cs-inline-error">{error}</p>}
     </div>
   </dialog>;
 }
+

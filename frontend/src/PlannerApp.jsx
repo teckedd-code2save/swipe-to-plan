@@ -327,7 +327,7 @@ export default function PlannerApp() {
     const circle=id?account.circles.find(c=>c.id===id):await account.createCircle({name,people:[account.user.profile]});
     if(!circle?.inviteToken)throw Error('Choose a circle you organize.');
     invitedCircles.current.set(circle.id,[...circle.accountIds]);
-    return {name:circle.name,url:`${location.origin}/#/circle/${circle.id}?invite=${circle.inviteToken}`};
+    return {id:circle.id,name:circle.name,url:`${location.origin}/#/circle/${circle.id}?invite=${circle.inviteToken}`};
   }
   async function sendCircleEmailInvite(id,name,email){
     if(!account.user)throw Error('Sign in to invite people.');
