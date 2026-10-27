@@ -163,7 +163,7 @@ export function relaxationOptions(request) {
 export function createDiscovery({ provider, now = Date.now, reviewCandidates }) {
   const cache = new Map();
   async function retrieve(request,intents=[],radiusKm=0,experience) {
-    const resolution = await Promise.all(request.taste.artists.map(async (requested) => {
+    const resolutionJob = Promise.all(request.taste.artists.map(async (requested) => {
       try {
         const result = await provider.resolveArtist(requested);
         return result?.status === "resolved" && result.entityId
@@ -174,11 +174,14 @@ export function createDiscovery({ provider, now = Date.now, reviewCandidates }) 
         return { requested, reason: "resolution_unavailable" };
       }
     }));
+    const contextJob=provider.resolveContext?provider.resolveContext(request.taste.context):Promise.resolve(undefined);
+    const tasteJob=provider.resolveTasteTags?provider.resolveTasteTags(request.taste.vibes):Promise.resolve([]);
+    const experienceJob=provider.resolveExperienceTags?provider.resolveExperienceTags(experience):Promise.resolve([]);
+    const [resolution,contextSignals,tasteSignals,experienceSignals]=await Promise.all([resolutionJob,contextJob,tasteJob,experienceJob]);
     const resolved = resolution.filter((s) => s.entityId);
     const unresolved = resolution.filter((s) => !s.entityId);
-    const contextSignals=provider.resolveContext?await provider.resolveContext(request.taste.context):undefined;
     const signalIds = [...new Set([...resolved.map((s) => s.entityId),...(contextSignals?.interests||[]).map(s=>s.entityId)])].sort();
-    const tagSignals=[...(provider.resolveTasteTags?await provider.resolveTasteTags(request.taste.vibes):[]),...(provider.resolveExperienceTags?await provider.resolveExperienceTags(experience):[])];
+    const tagSignals=[...tasteSignals,...experienceSignals];
     const includeActivity=intents.includes('activity');
     const includeDrinks=intents.includes('drinks');
     const includeDining=intents.includes('dinner');
