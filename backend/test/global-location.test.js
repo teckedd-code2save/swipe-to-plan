@@ -10,10 +10,10 @@ const london={entity_id:'london',name:'London',disambiguation:'London, England, 
 const response=localities=>({query:{localities:{filter:localities}},results:{entities:[{entity_id:'london-meal',name:'A London restaurant',tags:[{id:'urn:tag:category:place:restaurant'}],properties:{address:'A street in Westminster'},location:{lat:51.50,lon:-.12}}]}});
 
 test('global locality filtering supplies boundary evidence and destination time zone without adding Ghana',async()=>{
-  let sent;
-  const client=createQlooClient({getKey:()=> 'test',fetchImpl:async url=>{sent=url;return {ok:true,json:async()=>response([london])};}});
+  const sent=[];
+  const client=createQlooClient({getKey:()=> 'test',fetchImpl:async url=>{if(url.pathname==='/v2/insights')sent.push(url);return {ok:true,json:async()=>response([london])};}});
   const plan=await buildItinerary(createDiscovery({provider:client}),parseItinerary({date:'2099-10-24',area:'London, United Kingdom',activities:['dinner'],budget:25,currency:'GBP'}));
-  assert.equal(sent.searchParams.get('filter.location.query'),'London, United Kingdom');assert.equal(sent.searchParams.get('filter.location.radius'),'0');
+  assert.ok(sent.length>0);assert.ok(sent.every(url=>url.searchParams.get('filter.location.query')==='London, United Kingdom'&&url.searchParams.get('filter.location.radius')==='0'));
   assert.equal(plan.status,'complete');assert.equal(plan.timeZone,'Europe/London');assert.equal(plan.provenance.locality.id,'london');
   assert.equal(plan.stops[0].item.reasons.find(r=>r.code==='location_match').evidence[0].method,'qloo_locality_filter');
   assert.equal(plan.budget.currency,'GBP');assert.equal(plan.budget.total,25);
