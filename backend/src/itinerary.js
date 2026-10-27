@@ -171,7 +171,7 @@ function resultTitle(request,stops){
   return `${terms.join(' & ')||'Your outing'} ${request.searchRadiusKm?'around':'in'} ${area}`.slice(0,80);
 }
 
-export async function buildItinerary(discovery, request) {
+export async function buildItinerary(discovery, request, {deferNearby=false}={}) {
   const activityBasis=request.activities.length?'request':'taste_suggestion';
   if(!request.activities.length)request={...request,activities:suggestedActivities(request.people,request.party),title:''};
   const exploring=!request.timing.dateConfirmed||!request.timing.timeConfirmed;
@@ -231,7 +231,7 @@ export async function buildItinerary(discovery, request) {
   if (filled.length >= 1) {directions.searchParams.set('api','1');if(filled.length>=2)directions.searchParams.set('origin',query(filled[0].item));directions.searchParams.set('destination',query(filled.at(-1).item));if(filled.length>2)directions.searchParams.set('waypoints',filled.slice(1,-1).map((stop)=>query(stop.item)).join('|'));}
   const shortlist=[...new Map(ranked.flatMap((items,index)=>items.slice(0,8).map(item=>[item.id,{intent:intents[index],item}]))).values()].slice(0,12);
   let nearbySuggestions=[],nearbyStatus='not_needed';
-  if(!filled.length&&!request.searchRadiusKm&&request.locationId&&discovery.location){
+  if(!deferNearby&&!filled.length&&!request.searchRadiusKm&&request.locationId&&discovery.location){
     nearbyStatus='empty';
     try{
       const nearby=await Promise.all(participating.map(async({person,index})=>({index,results:await discovery.byIntents(parseRequest({location:{area:request.area,id:request.locationId},taste:{artists:person.artists,vibes:person.vibes,context:person.context},constraints:{excludeHotels:true,excludeIds:request.excludeIds,excludeTags:request.party.children?['nightclub','night_club','dance_club','adult_entertainment']:[],...(request.maxPriceLevel?{maxPriceLevel:request.maxPriceLevel}:{})}}),request.activities,{radiusKm:20,experience:request.experience,openDiscovery:request.experience?.explore===true&&request.activities.length===1&&request.activities[0]==='activity'&&!request.route})})));
