@@ -210,12 +210,12 @@ export default function PlannerApp() {
   async function forgetLocation(id){if(account.user)await account.forgetPlanningLocation(id);else{const areas=guestAreas.filter(p=>p.id!==id);localStorage.setItem('unstressed.planning-areas',JSON.stringify(areas));if(areas.length)localStorage.setItem('unstressed.planning-area',JSON.stringify(areas[0]));else localStorage.removeItem('unstressed.planning-area');setGuestAreas(areas);}setNotice('Area removed. This outing keeps its area.');}
   function finishTool(){
     if(pendingGroupMessage.current&&briefRef.current.people.length>1){const sent=pendingGroupMessage.current;pendingGroupMessage.current=null;toolRef.current=null;setTool(null);sendMessage(sent,{record:false});return;}
-    const tastes=toolRef.current?.kind==='tastes',resume=toolRef.current?.resume;toolRef.current=null;setTool(null);
+    const tastes=toolRef.current?.kind==='tastes',resume=toolRef.current?.resume,requestOnly=toolRef.current?.focus==='request';toolRef.current=null;setTool(null);
     if(!tastes)return;
     if(autopilotRef.current&&autopilotPending.current?.stage==='tastes'){continueAutopilot(briefRef.current,true).catch(e=>{setError(e.message);setAutopilotPhase('');});return;}
     if(planRef.current){setPlanOpen(false);return;}
     if(resume){sendMessage('Use these preferences to continue with my request.');return;}
-    append('assistant','Those preferences are saved.');
+    if(!requestOnly)append('assistant','Those preferences are saved.');
   }
   function showPlan(result,description){
     setOutageOptions(null);
