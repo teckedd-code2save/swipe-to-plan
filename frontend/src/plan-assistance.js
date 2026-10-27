@@ -33,7 +33,7 @@ export function nextPlanSteps(plan,checks={}) {
 export const autopilotPhaseText = {
   thinking:'Bringing your request and saved tastes together…',
   timing:'Choosing when to go…',
-  location:'Choose the area, then I’ll take it from here.',
+  location:'Your outing is saved. Choose where to explore.',
   tastes:'A few favorites will make this yours. I’ll continue when you’re done.',
   planning:'Finding places from your tastes and request…',
   checking:'Your plan is here. Checking reported hours…',
