@@ -170,13 +170,15 @@ export function createDiscovery({ provider, now = Date.now, reviewCandidates }) 
           ? { requested, name: result.name, entityId: result.entityId }
           : { requested, reason: result?.reason ?? "no_exact_artist_match" };
       } catch (e) {
-        if (["provider_auth_error", "provider_rate_limited", "provider_not_configured"].includes(e.code)) throw e;
+        if (["provider_auth_error", "provider_not_configured"].includes(e.code)) throw e;
         return { requested, reason: "resolution_unavailable" };
       }
     }));
-    const contextJob=provider.resolveContext?provider.resolveContext(request.taste.context):Promise.resolve(undefined);
-    const tasteJob=provider.resolveTasteTags?provider.resolveTasteTags(request.taste.vibes):Promise.resolve([]);
-    const experienceJob=provider.resolveExperienceTags?provider.resolveExperienceTags(experience):Promise.resolve([]);
+    let optionalSignalsUnavailable=false;
+    const optional=(job,fallback)=>job.catch(e=>{if(['provider_auth_error','provider_not_configured'].includes(e.code))throw e;optionalSignalsUnavailable=true;return fallback;});
+    const contextJob=provider.resolveContext?optional(provider.resolveContext(request.taste.context),undefined):Promise.resolve(undefined);
+    const tasteJob=provider.resolveTasteTags?optional(provider.resolveTasteTags(request.taste.vibes),[]):Promise.resolve([]);
+    const experienceJob=provider.resolveExperienceTags?optional(provider.resolveExperienceTags(experience),[]):Promise.resolve([]);
     const [resolution,contextSignals,tasteSignals,experienceSignals]=await Promise.all([resolutionJob,contextJob,tasteJob,experienceJob]);
     const resolved = resolution.filter((s) => s.entityId);
     const unresolved = resolution.filter((s) => !s.entityId);
@@ -198,7 +200,7 @@ export function createDiscovery({ provider, now = Date.now, reviewCandidates }) 
       cache.set(key, entry);
     }
     const provenance = { provider: provider.name, retrievedAt: new Date(entry.at).toISOString(), cached,...(entry.locality?{locality:entry.locality}:{}), cacheAgeMs: Math.max(0, now() - entry.at) };
-    return { places: entry.places, taste: { mode: resolved.length ? "artist_affinity" : request.taste.vibes.length ? "vibe_refinement" : "discovery", resolved, unresolved, ...(contextSignals?{contextSignals}:{}), vibes: request.taste.vibes,...(tagSignals.length?{tagSignals}:{}) }, provenance, fetched: entry.places.length };
+    return { places: entry.places, taste: { mode: resolved.length ? "artist_affinity" : tagSignals.length ? "vibe_refinement" : "discovery", resolved, unresolved, ...(contextSignals?{contextSignals}:{}), vibes: request.taste.vibes,...(tagSignals.length?{tagSignals}:{}),...(optionalSignalsUnavailable?{signalsUnavailable:true}:{}) }, provenance, fetched: entry.places.length };
   }
   function rank(retrieved, request) {
     const { places, ...metadata } = retrieved;
