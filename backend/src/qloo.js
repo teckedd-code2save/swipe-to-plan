@@ -18,17 +18,29 @@ function entities(data) {
   if (!Array.isArray(items)) throw new ProviderError("provider_response_invalid");
   return items.filter((e) => e && typeof e === "object");
 }
-export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => process.env.QLOO_API_KEY, baseUrl = process.env.QLOO_API_URL || "https://hackathon.api.qloo.com", now = Date.now } = {}) {
+export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => process.env.QLOO_API_KEY, baseUrl = process.env.QLOO_API_URL || "https://hackathon.api.qloo.com", now = Date.now, sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)) } = {}) {
   const cache = new Map();
   let audienceCache;
   const tagsCache=new Map(), locationCache=new Map(), searchCache=new Map();
+  let active=0;const waiting=[];
+  async function limitedFetch(url,headers,timeout){
+    if(active>=2)await new Promise(resolve=>waiting.push(resolve));else active++;
+    try{return await fetchImpl(url,{headers,signal:AbortSignal.timeout(timeout)});}
+    finally{if(waiting.length)waiting.shift()();else active--;}
+  }
   async function call(path, params, area) {
     const key = getKey();
     if (!key) throw new ProviderError("provider_not_configured");
     const url = new URL(path, baseUrl);
     for (const [k, v] of Object.entries(params)) if (v !== "") url.searchParams.set(k, String(v));
     try {
-      const res = await fetchImpl(url, { headers: { "X-Api-Key": key }, signal: AbortSignal.timeout(path==='/v2/insights'?15000:8000) });
+      const headers={"X-Api-Key":key},timeout=path==='/v2/insights'?15000:8000;
+      let res = await limitedFetch(url,headers,timeout);
+      if(res.status===429){
+        const seconds=Number(res.headers?.get?.('retry-after'));
+        // A long provider cooldown is not a useful interactive wait.
+        if(!Number.isFinite(seconds)||seconds<=2){await sleep(seconds>0?Math.max(300,seconds*1000):800);res=await limitedFetch(url,headers,timeout);}
+      }
       if ([401, 403].includes(res.status)) throw new ProviderError("provider_auth_error");
       if (res.status === 429) throw new ProviderError("provider_rate_limited");
       if(res.status===404&&path==='/search')return [];
@@ -201,6 +213,7 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
       // Retrieve the requested venue types as well as the taste-led pool, so a
       // dining-heavy result cannot hide eligible bars or discovery venues.
       const categories=[];
+      try {
       if(includeActivity){
         const requested=tagSignals.filter(s=>byId[s.preferenceId]?.group==='activity').flatMap(s=>s.tagIds);
         categories.push(...(requested.length?requested:[...await tasteTags('v-history'),...await tasteTags('v-nature')]).filter(id=>/^urn:tag:category:place:[^:]+$/.test(id)));
@@ -211,7 +224,9 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
         if(!hit||now()-hit.at>=86400000){const value=call('/v2/tags',{'filter.query':'restaurant',take:30}).then(tags=>tags.filter(t=>/^urn:tag:category:(place|qloo):restaurant$/.test(t.id)).map(t=>t.id));hit={at:now(),value};tagsCache.set('venue:restaurant',hit);try{await value;}catch(e){tagsCache.delete('venue:restaurant');throw e;}}
         categories.push(...await hit.value);
       }
-      const results=await Promise.all([mainSearch,...(categories.length?[retrieve({...parameters,'filter.tags':[...new Set(categories)].join(','),'operator.filter.tags':'union'})]:[])]);
+      } catch(error) { if(['provider_auth_error','provider_not_configured'].includes(error.code))throw error; }
+      const extraSearch=categories.length?retrieve({...parameters,'filter.tags':[...new Set(categories)].join(','),'operator.filter.tags':'union'}).catch(error=>{if(['provider_auth_error','provider_not_configured'].includes(error.code))throw error;return [];}):Promise.resolve([]);
+      const results=await Promise.all([mainSearch,extraSearch]);
       return Object.assign([...new Map(results.flat().map(place=>[place.entity_id,place])).values()],{locality:results[0].locality});
     },
   };
