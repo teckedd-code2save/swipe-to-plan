@@ -112,6 +112,11 @@ test('a saved planning area is account-private, survives reload and can be forgo
     const user=await f.accounts.updatePlanningLocation(a.session,{locationId:selected.id},resolve);assert.deepEqual(user.planningLocation,selected);
     assert.equal((await f.accounts.current(b.session)).user.planningLocation,null);
     const reloaded=fixture({store:createAccountStore({file})});assert.deepEqual((await reloaded.accounts.current(a.session)).user.planningLocation,selected);
+    const second={...selected,id:'650AB4C2-CA7B-42C0-8EAA-55D4BD8F23EE',name:'Osu',label:'Osu, Ghana',currency:'GHS',countryCode:'GH'};
+    await f.accounts.updatePlanningLocation(a.session,{locationId:second.id},async()=>second);
+    assert.deepEqual((await f.accounts.current(a.session)).user.planningLocations.map(x=>x.id),[second.id,selected.id]);
+    await f.accounts.updatePlanningLocation(a.session,{removeLocationId:second.id},resolve);
+    assert.deepEqual((await f.accounts.current(a.session)).user.planningLocations.map(x=>x.id),[selected.id]);
     await f.accounts.updateProfile(a.session,{name:'Alex',artists:['SZA'],vibes:[]});assert.deepEqual((await f.accounts.current(a.session)).user.planningLocation,selected);
     await f.accounts.updatePlanningLocation(a.session,{locationId:null},resolve);assert.equal((await f.accounts.current(a.session)).user.planningLocation,null);assert.equal((await f.accounts.current(a.session)).user.profile.artists[0],'SZA');
   }finally{await rm(dir,{recursive:true,force:true});}
