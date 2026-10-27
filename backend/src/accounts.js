@@ -11,7 +11,7 @@ const hash=value=>createHash('sha256').update(String(value||'')).digest('base64u
 const fail=(message,status=403)=>Object.assign(new Error(message),{status,code:'account_error'});
 const fields=(value,allowed)=>{if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!allowed.includes(k)))throw new InputError('Check the account request.');};
 const profile=(value,id)=>({...parseItinerary({party:{adults:1},people:[value]}).people[0],id});
-const safeUser=user=>({id:user.id,email:user.email,profile:user.profile,planningLocation:user.planningLocation||null});
+const safeUser=user=>({id:user.id,email:user.email,profile:user.profile,planningLocation:user.planningLocation||null,planningLocations:user.planningLocations||[user.planningLocation].filter(Boolean)});
 const cookie=(req,name)=>(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith(`${name}=`))?.slice(name.length+1);
 
 // A durable, single-process store, matching the shared-day deployment model.
@@ -125,10 +125,11 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
     async logout(session){await store.transact(data=>{delete data.sessions[hash(session)];});},
     async updateProfile(session,body){fields(body,['name','artists','vibes','spending','context']);return store.transact(data=>{const user=requireUser(data,session);user.profile=profile(body,user.id);return {...safeUser(user),admin:isAdmin(user)};});},
     async updatePlanningLocation(session,body,resolveLocation){
-      fields(body,['locationId']);await store.read(data=>requireUser(data,session));
+      fields(body,['locationId','removeLocationId']);await store.read(data=>requireUser(data,session));
+      if(body.removeLocationId!==undefined){if(typeof body.removeLocationId!=='string')throw new InputError('Choose an area to forget.');return store.transact(data=>{const user=requireUser(data,session);const previous=user.planningLocations||[user.planningLocation].filter(Boolean);user.planningLocations=previous.filter(p=>p.id!==body.removeLocationId);user.planningLocation=user.planningLocations[0]||null;return {...safeUser(user),admin:isAdmin(user)};});}
       if(body.locationId!==null&&!resolveLocation)throw new InputError('Location search is unavailable.');
       const selected=body.locationId===null?null:await resolveLocation(body.locationId);
-      return store.transact(data=>{const user=requireUser(data,session);user.planningLocation=selected;return {...safeUser(user),admin:isAdmin(user)};});
+      return store.transact(data=>{const user=requireUser(data,session);const previous=user.planningLocations||[user.planningLocation].filter(Boolean);user.planningLocations=selected?[selected,...previous.filter(p=>p.id!==selected.id)].slice(0,8):[];user.planningLocation=selected;return {...safeUser(user),admin:isAdmin(user)};});
     },
     async createCircle(session,body){
       fields(body,['name','people']);if(typeof body.name!=='string'||!body.name.trim()||body.name.length>40)throw new InputError('Name your circle in up to 40 characters.');
