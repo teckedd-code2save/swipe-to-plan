@@ -197,7 +197,7 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
     },
     async discover({ signalIds, area,locationId,tagSignals=[],contextSignals,includeActivity=false,includeDrinks=false,includeDining=false,radiusKm=0 }) {
       const chosen=locationId?await getLocation(locationId):null;
-      if(radiusKm&&(!chosen?.center||radiusKm!==20))throw new ProviderError('provider_response_invalid');
+      if(radiusKm&&(!chosen?.center||![20,50,100].includes(radiusKm)))throw new ProviderError('provider_response_invalid');
       const parameters={
         "filter.type": "urn:entity:place", "signal.interests.entities": signalIds.join(","),
         'signal.interests.tags':[...new Set(tagSignals.flatMap(s=>s.tagIds))].join(','),
