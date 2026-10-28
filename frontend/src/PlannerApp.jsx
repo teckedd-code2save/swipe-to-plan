@@ -183,6 +183,7 @@ export default function PlannerApp() {
   }
   async function applyLocation(patch,scope,selected){
     if(!owner)throw Error('Only the organizer can change the planning area.');
+    if(toolRef.current?.usualOnly&&scope==='default'){if(account.user)await account.changePlanningLocation(selected.id);else{const areas=[selected,...guestAreas.filter(p=>p.id!==selected.id)].slice(0,8);localStorage.setItem('unstressed.planning-areas',JSON.stringify(areas));localStorage.setItem('unstressed.planning-area',JSON.stringify(selected));setGuestAreas(areas);}locationDraft.current=null;toolRef.current=null;setTool(null);append('assistant',`${selected.name} is saved for later. You can change it any time.`);return;}
     localVersion.current++;
     const next={...(locationDraft.current||briefRef.current),...patch};
     const changed=next.locationId!==briefRef.current.locationId&&!!briefRef.current.area;
@@ -601,7 +602,7 @@ export default function PlannerApp() {
   }
   async function copy() { try { await navigator.clipboard.writeText(planText(plan)); setNotice('Your itinerary and taste connections are copied.'); } catch { setNotice('Copy isn’t available here. Use Print to keep a copy.'); } }
   const trace = id => { setSelection(id); setTab('taste');setPlanOpen(true); };
-  function chooseTool(kind){if(kind==='usual-location'){askLocation(briefRef.current,'','default','Save an area you often enjoy. You can change it any time.');return;}if(kind==='nearby'){askLocation(briefRef.current,'','plan','Let’s see what’s around you. Choose a nearby area, then we’ll shape the outing.',true);return;}if(kind==='location'){askLocation();return;}if(kind==='profile'&&!account.user){setAccountAction('profile');setAccountOpen(true);return;}if(kind==='tastes')openTaste();else presentTool(kind);}
+  function chooseTool(kind){if(kind==='usual-location'){const prompt='Save an area you often enjoy. You can change it any time.';locationDraft.current={...briefRef.current,area:'',locationId:null};setLocationPrompt({query:'',scope:'default',nearMe:false,prompt});presentTool('location',prompt,{usualOnly:true});return;}if(kind==='nearby'){askLocation(briefRef.current,'','plan','Let’s see what’s around you. Choose a nearby area, then we’ll shape the outing.',true);return;}if(kind==='location'){askLocation();return;}if(kind==='profile'&&!account.user){setAccountAction('profile');setAccountOpen(true);return;}if(kind==='tastes')openTaste();else presentTool(kind);}
   function openDetails(){editorRevision.current=shared.day?.revision;setEditor(true);}
   function chooseActivities(activities){
     if(!owner)return;
