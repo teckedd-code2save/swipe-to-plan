@@ -2,6 +2,7 @@
 export function partialPlanSummary(plan){
   const found=plan.stops.filter(s=>s.item).length;
   if(found===plan.stops.length)return null;
+  if(!found&&plan.nearbySuggestions?.length)return 'I looked a little further and found places nearby.';
   return `I found ${found} of ${plan.stops.length} requested stops. ${found?'The day isn’t complete yet.':'I haven’t found a usable plan yet.'}`;
 }
 // Suggestions reflect the current plan and provider checks, never model-made facts.
@@ -16,7 +17,7 @@ export function nextPlanSteps(plan,checks={}) {
   const coverageGap=plan.stops.some(s=>!s.item&&['no_eligible_places','no_distinct_place'].includes(s.reason));
   const unmatched=plan.stops.filter(s=>!s.item).map(s=>({coffee:'coffee',activity:'discovery',dinner:'a meal',drinks:'drinks'})[s.intent]||'an activity').join(', ');
   const note=coverageGap?`I couldn’t find a match for ${unmatched} in this area. ${filled.length?'Your itinerary shows the places I did find. ':''}There may be local spots we don’t cover yet. Try another area or change the activities.`:timingGap?'The requested time window doesn’t fit the places I found. Change the time or try another day.':!filled.length?'I haven’t found the places yet. Let’s adjust the plan.':checks.status==='loading'?'I’m checking reported opening hours and available venue details.':checks.status==='error'?'The hours check couldn’t finish. Let’s try it again.':flags?`${flags===1?'One stop needs':`${flags} stops need`} a timing check before you go.`:fits===filled.length?'Your times fit reported weekly hours. Available menu highlights and links are shown with each place; meal service hours and prices still need confirmation.':'Some hours are unlisted. I’ve gathered the venue details to help you check.';
-  if(plan.nearbySuggestions?.length)return {note:'No matching places returned in the selected area. I found wider-area suggestions in chat, with approximate distances. Choose any you want to include.',attention:false,actions:[{id:'shortlist',label:'See nearby suggestions',icon:'map'},{id:'location',label:'Change area',icon:'pin'}]};
+  if(plan.nearbySuggestions?.length)return {note:'I looked beyond your chosen area and found these nearby places. Distances are approximate.',attention:false,actions:[{id:'shortlist',label:'See nearby places',icon:'map'}]};
   if(coverageGap){
     const names=stops=>stops.map(s=>({coffee:'coffee',activity:'discovery',dinner:'a meal',drinks:'drinks'})[s.intent]||'an activity').join(' and ');
     const missing=plan.stops.filter(s=>!s.item&&['no_eligible_places','no_distinct_place'].includes(s.reason));
