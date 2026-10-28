@@ -205,7 +205,14 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
       ]);
       const signalIds=artistsFound.filter(x=>x?.status==='resolved').map(x=>x.entityId);
       const tags=[...new Set([...tasteSignals,...experienceSignals].flatMap(x=>x.tagIds))];
-      const places=await call('/v2/insights',{'filter.type':'urn:entity:place','signal.interests.entities':signalIds.join(','),'signal.interests.tags':tags.join(','),...(origin?.center?{'signal.location':`POINT(${origin.center.longitude} ${origin.center.latitude})`,'signal.location.weight':0.1}:{}),'diversify.by':'properties.geocode.city','diversify.take':3,take:30});
+      let places;
+      try{places=await call('/v2/insights',{'filter.type':'urn:entity:place','signal.interests.entities':signalIds.join(','),'signal.interests.tags':tags.join(','),...(origin?.center?{'signal.location':`POINT(${origin.center.longitude} ${origin.center.latitude})`,'signal.location.weight':0.1}:{}),'diversify.by':'properties.geocode.city','diversify.take':3,take:30});}
+      catch(error){
+        if(error.code!=='provider_unavailable')throw error;
+        const query=(experience.searchTags||[]).map(id=>byId[id]?.tagQuery).find(Boolean)||({coffee:'coffee shop',dinner:'restaurant',drinks:'bar'}[activities[0]]);
+        if(!query)throw error;
+        places=await call('/search',{query,types:'urn:entity:place',take:30});
+      }
       const candidates=[];
       for(const place of places){
         const categories=(place.tags||[]).map(t=>t?.id||'').filter(id=>/^urn:tag:(category|genre):(place|qloo):/.test(id));
