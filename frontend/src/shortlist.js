@@ -7,7 +7,7 @@ export function routeFromChoices(plan,ids){
   const pool=new Map(shortlistCandidates(plan).map(c=>[c.item.id,c]));
   if(!Array.isArray(ids)||!ids.length||ids.length>3||new Set(ids).size!==ids.length||ids.some(id=>!pool.has(id)))throw Error('Choose one to three different places from the shortlist.');
   const choices=ids.map(id=>pool.get(id));
-  return {...plan.request,activities:[...new Set(choices.map(c=>c.intent))],route:choices.map(c=>({intent:c.intent,placeId:c.item.id})),pins:{},searchRadiusKm:choices.some(c=>c.item.nearby)?20:plan.request.searchRadiusKm||0};
+  return {...plan.request,activities:[...new Set(choices.map(c=>c.intent))],route:choices.map(c=>({intent:c.intent,placeId:c.item.id})),pins:{},searchRadiusKm:choices.some(c=>c.item.nearby)?Math.max(...choices.filter(c=>c.item.nearby).map(c=>c.item.nearby.radiusKm||20)):plan.request.searchRadiusKm||0};
 }
 export function alternativeCandidates(plan){
   const current=new Set(plan?.stops.filter(stop=>stop.item).map(stop=>stop.item.id)||[]);
