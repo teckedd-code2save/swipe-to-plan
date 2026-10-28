@@ -65,7 +65,17 @@
 
 
 /* Keep the card collection scannable while preserving native scrolling. */
-.deck-collection{max-height:min(60dvh,560px);overflow-y:auto;overscroll-behavior:contain;padding:2px}.deck-collection-card{min-height:154px}.chat-studio .cs-tastes-open .card-stack{height:clamp(250px,35dvh,340px)}.chat-studio .cs-tastes-open .card-stack>.taste-card,.chat-studio .cs-tastes-open .stack-sheet{height:100%}
+.deck-collection{padding:2px}.deck-collection-card{min-height:154px}.chat-studio .cs-tastes-open .card-stack{height:clamp(250px,35dvh,340px)}.chat-studio .cs-tastes-open .card-stack>.taste-card,.chat-studio .cs-tastes-open .stack-sheet{height:100%}
 
 /* Give outing-specific cards room to read without dominating the conversation. */
 .chat-studio .cs-tastes-request .swipe-deck{max-width:440px;margin-inline:auto}.chat-studio .cs-tastes-request .card-stack{height:clamp(220px,30dvh,290px)}
+
+/* Keep the deck, cards, and actions on the same readable measure. */
+.chat-studio .cs-tastes-open .swipe-deck{width:100%;max-width:100%;margin:0}
+.chat-studio .cs-tastes-open .card-stack,.chat-studio .cs-tastes-request .card-stack{height:clamp(280px,38dvh,360px)}
+.chat-studio .cs-tastes-open .card-stack>.taste-card,.chat-studio .cs-tastes-open .card-stack>.stack-sheet{height:100%;width:100%}
+.chat-studio .cs-tastes-open .decision-controls{margin-top:16px}
+.chat-studio .cs-tastes-open .deck-collection{max-height:none;overflow:visible;position:relative;padding:4px}
+.chat-studio .cs-tastes-open .deck-collection-card{height:auto;min-height:0;position:relative;overflow:visible}
+.chat-studio .cs-tastes-open .deck-view-controls button{min-width:40px;min-height:40px;padding:0}
+@media(max-width:600px){.chat-studio .cs-tastes-open .card-stack,.chat-studio .cs-tastes-request .card-stack{height:clamp(250px,36dvh,320px)}}
