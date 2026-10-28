@@ -12,6 +12,7 @@ export const api = {
   locations:(q,signal)=>json(`/api/locations?q=${encodeURIComponent(q)}`,{signal}),
   nearbyLocations:(point,signal)=>json('/api/locations/nearby',{...post(point),signal}),
   suggestLocations:(locationId,brief,signal)=>json('/api/locations/suggest',{...post({locationId,brief}),signal}),
+  matchingLocations:(locationId,brief,signal)=>json('/api/locations/ideas',{...post({locationId,brief}),signal}),
   location:id=>json(`/api/locations/${encodeURIComponent(id)}`),
   planningLocation:id=>json('/api/account/planning-location',{method:'PATCH',body:JSON.stringify({locationId:id})}),
   forgetPlanningLocation:id=>json('/api/account/planning-location',{method:'PATCH',body:JSON.stringify({removeLocationId:id})}),
