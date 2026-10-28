@@ -6,6 +6,7 @@ import {CURRENCIES} from './money.js';
 
 export default function LocationAction({brief,preferred,query:initialQuery='',scope:initialScope='plan',signedIn,nearMe=false,onApply,onForget,onDone,prompt='',savedAreas=[]}){
   const dialog=useRef(null);
+  const opening=prompt.replace(/(?:^|\s)(?:where (?:should|would|do|are|can|shall|is)[^?]*\?)\s*$/i,'').trim();
   useEffect(()=>{const node=dialog.current;const previous=document.activeElement;node.showModal();return()=>{node.close();requestAnimationFrame(()=>{const input=document.querySelector('textarea[aria-label="Message Unstressed"]');if(input)input.focus({preventScroll:true});else previous?.focus?.();});};},[]);
   const initial=null;
   const [selected,setSelected]=useState(initial),[query,setQuery]=useState(initial?.label||initialQuery||brief.area||'');
@@ -40,8 +41,8 @@ export default function LocationAction({brief,preferred,query:initialQuery='',sc
   async function submit(e){e.preventDefault();if(!selected||!currency)return;setBusy(true);setError('');try{await onApply({area:selected.label,locationId:selected.id,currency,currencyMode:mode},scope,Object.fromEntries(Object.entries(selected).filter(([key])=>!['distanceKm','broadArea','example'].includes(key))));}catch(e){setError(e.message);}finally{setBusy(false);}}
   return <dialog ref={dialog} className="cs-location-dialog" aria-label="Planning area" onCancel={onDone}><section className="cs-tool cs-location-tool">
     <div className="cs-tool-head"><span>Your outing</span><button onClick={onDone} aria-label="Close location"><Icon name="close" size={15}/></button></div>
-    {prompt&&<p className="cs-location-context">{prompt}</p>}
-    {!prompt.trim().endsWith('?')&&<h2 className="cs-location-question">Where should I look?</h2>}
+    {opening&&<p className="cs-location-context">{opening}</p>}
+    <h2 className="cs-location-question">Let’s find somewhere for you.</h2>
     {!selected&&!query&&!nearby&&savedAreas.map(area=><div className="cs-saved-area" key={area.id}><button type="button" className="cs-location-usual" onClick={()=>choose(area)}><Icon name="pin" size={17}/><span><strong>{area.name}</strong><small>Saved area</small></span><Icon name="arrow" size={16}/></button><button type="button" className="cs-forget-area" aria-label={`Forget ${area.name}`} disabled={busy} onClick={async()=>{setBusy(true);try{await onForget(area.id);}catch(e){setError(e.message);}finally{setBusy(false);}}}><Icon name="close" size={14}/></button></div>)}
     {!selected&&!query&&!nearby&&suggestedAreas.length>0&&<div className="cs-location-suggestions"><p>Or explore somewhere nearby</p>{suggestedAreas.filter(area=>!savedAreas.some(saved=>saved.id===area.id)).map(area=><button type="button" key={area.id} className="cs-location-usual" onClick={()=>choose(area)}><Icon name="pin" size={17}/><span><strong>{area.name}</strong><small>Explore places like {area.example}</small></span><Icon name="arrow" size={16}/></button>)}</div>}
     <div className="cs-nearby-choice"><button type="button" disabled={busy||locating} onClick={()=>findNearby()}><Icon name="pin" size={17}/><span>{locating?'Finding nearby areas…':'Use my location'}</span></button><small>With your permission. No live tracking.</small></div>
