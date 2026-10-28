@@ -275,3 +275,13 @@ test('outing-specific search topics remain separate from personal preferences',(
  assert.deepEqual(brief.people[0].vibes,[]);assert.deepEqual(brief.experience.searchTags,['v-cinema','v-games']);
  assert.throws(()=>parseItinerary({...before,experience:{searchTags:['invented-category']}}),/supported outing search/);
 });
+
+test('empty searches widen step by step and retain the distance of the first useful results',async()=>{
+  const id='12345678-1234-1234-1234-123456789abc',calls=[];
+  const item={id:'qloo:farther',entityId:'farther',name:'Further spot',reasons:[],affinityEvidence:[],score:1,nearby:{distanceKm:32,fromArea:'Selected Area',radiusKm:50}};
+  const metadata={taste:{resolved:[],unresolved:[],vibes:[]},provenance:{provider:'qloo',retrievedAt:'2026-10-25T20:00:00Z'},fetched:1};
+  const discovery={location:async()=>({label:'Selected Area',currency:'GHS'}),byIntents:async(_request,intents,options)=>{calls.push(options.radiusKm);return intents.map(()=>({...metadata,ranked:options.radiusKm===50?[item]:[]}));}};
+  const request=parseItinerary({locationId:id,activities:['activity'],timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}});
+  const result=await buildItinerary(discovery,request);
+  assert.deepEqual(calls,[0,20,50]);assert.equal(result.nearbySuggestions[0].item.nearby.radiusKm,50);assert.equal(result.request.area,'Selected Area');
+});
