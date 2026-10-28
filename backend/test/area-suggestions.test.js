@@ -12,3 +12,23 @@ test('area ideas use actual nearby venue locality evidence and never invent a lo
   const qloo=createQlooClient({fetchImpl,getKey:()=> 'test'});const ideas=await qloo.suggestAreas({locationId:origin,activities:['coffee']});
   assert.equal(ideas.length,1);assert.equal(ideas[0].id,area);assert.equal(ideas[0].example,'Example Cafe');
 });
+
+test('matching areas use geographic context as a signal and return resolved cities backed by places',async()=>{
+  const origin='AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA',city='CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC';let insights;
+  const client=createQlooClient({getKey:()=> 'test',fetchImpl:async input=>{const url=new URL(input);let entities=[];
+    if(url.pathname==='/entities')entities=[{entity_id:origin,name:'Accra',types:['urn:entity:locality'],location:{lat:5.6,lon:-.2},properties:{place:'city',ancestors:[{place:'country',name:'Ghana'}]}}];
+    else if(url.pathname==='/v2/insights'){insights=url;entities=[{entity_id:'p1',name:'Art House',tags:[{id:'urn:tag:category:place:art_gallery'}],properties:{geocode:{city:'Kumasi',country_code:'GH'}}}];}
+    else if(url.pathname==='/search')entities=[{entity_id:city,name:'Kumasi',types:['urn:entity:locality'],location:{lat:6.68,lon:-1.62},properties:{place:'city',ancestors:[{place:'country',name:'Ghana'}]}}];
+    return {ok:true,json:async()=>({results:{entities}})};
+  }});
+  const result=await client.findMatchingAreas({locationId:origin,activities:['activity']});
+  assert.equal(insights.searchParams.get('filter.geocode.country_code'),null);assert.ok(insights.searchParams.has('signal.location'));assert.equal(result[0].name,'Kumasi');assert.equal(result[0].example,'Art House');
+});
+
+test('anywhere can query Qloo without a location or profile signals',async()=>{
+  let query;
+  const client=createQlooClient({getKey:()=> 'test',fetchImpl:async input=>{const url=new URL(input);if(url.pathname==='/v2/insights')query=url;return {ok:true,json:async()=>({results:{entities:[]}})};}});
+  assert.deepEqual(await client.findMatchingAreas({activities:[]}),[]);
+  assert.equal(query.searchParams.get('filter.type'),'urn:entity:place');
+  assert.equal(query.searchParams.has('signal.location'),false);assert.equal(query.searchParams.has('filter.location'),false);
+});
