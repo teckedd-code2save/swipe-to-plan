@@ -82,6 +82,11 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     const locations=await provider.suggestAreas({locationId:req.body.locationId,artists:person.artists,vibes:person.vibes,experience:brief.experience,activities:brief.activities});
     res.json({locations,source:'qloo'});
   }));
+  app.post('/api/locations/ideas',limit(10),route(async(req,res)=>{
+    strictFields(req.body,['locationId','brief']);const brief=parseItinerary(req.body.brief,{allowMissingLocation:true});
+    if(!provider.findMatchingAreas)return res.json({locations:[]});const person=brief.people[0];
+    res.json({locations:await provider.findMatchingAreas({locationId:req.body.locationId,artists:person.artists,vibes:person.vibes,experience:brief.experience,activities:brief.activities}),source:'qloo'});
+  }));
   app.get('/api/locations/:id',limit(60),route(async(req,res)=>{if(!provider.getLocation)throw new InputError('Location search is unavailable on this server.');res.json(await provider.getLocation(req.params.id));}));
   app.get("/api/deck", (_req, res) => res.json(publicDeck()));
   app.get('/api/places/:id/menu',limit(12),route(async(req,res)=>res.json(await menuEvidence.get(req.params.id))));
