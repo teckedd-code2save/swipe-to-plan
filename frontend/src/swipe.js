@@ -1,5 +1,5 @@
 export function swipeDirection(dx, dy, width) {
-  const threshold = Math.min(100, Math.max(60, width * 0.24));
+  const threshold = Math.min(80, Math.max(40, width * 0.14));
   if (Math.abs(dx) < threshold || Math.abs(dx) < Math.abs(dy) * 1.2) return null;
   return dx > 0 ? 'like' : 'skip';
 }

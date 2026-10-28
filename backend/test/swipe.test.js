@@ -16,3 +16,10 @@ test('completed deck cannot add duplicate votes; early shortlist contains only d
  assert.equal(decideCard(history,deck,true),history);assert.deepEqual(likedCards(history),['a','c']);
  assert.deepEqual(likedCards(history.slice(0,1)),['a']);
 });
+
+test('short intentional horizontal releases count and a full taste profile can grow',async()=>{
+ assert.equal(swipeDirection(60,5,350),'like');assert.equal(swipeDirection(-60,5,350),'skip');assert.equal(swipeDirection(20,2,350),null);
+ const {tasteFromSwipe}=await import('../../frontend/src/day-state.js');
+ const person={artists:[],vibes:Array.from({length:18},(_,i)=>`v-${i}`)};
+ assert.equal(tasteFromSwipe(person,{kind:'vibe',id:'v-new'},true).vibes.length,19);
+});

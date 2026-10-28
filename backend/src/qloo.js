@@ -213,18 +213,36 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
         if(!query)throw error;
         places=await call('/search',{query,types:'urn:entity:place',take:30});
       }
-      const candidates=[];
-      for(const place of places){
-        const categories=(place.tags||[]).map(t=>t?.id||'').filter(id=>/^urn:tag:(category|genre):(place|qloo):/.test(id));
-        const relevant=activities.some(activity=>categories.some(id=>({coffee:/(cafe|coffee_shop|coffeehouse|tea_room)/,dinner:/(restaurant|bistro|eatery|pizzeria)/,drinks:/(bar|pub|nightclub|lounge)/,activity:/(museum|gallery|park|garden|beach|theater|cinema|market|hiking|landmark)/}[activity]||/$a/).test(id.split(':').at(-1))));
-        if(activities.length&&!relevant)continue;
-        const geo=place.properties?.geocode||{},city=geo.city||place.location?.city,code=geo.country_code;
-        if(typeof city!=='string'||!city.trim()||!place.entity_id||typeof place.name!=='string'||typeof code!=='string'||!/^[a-z]{2}$/i.test(code))continue;
-        if(candidates.some(c=>norm(c.city)===norm(city)&&c.code===code.toUpperCase()))continue;
-        candidates.push({city:city.trim(),code:code.toUpperCase(),place:place.name.slice(0,120)});if(candidates.length===4)break;
+      const resolveCandidates=async rows=>{
+        const candidates=[];
+        for(const place of rows){
+          const categories=(place.tags||[]).map(t=>t?.id||'').filter(id=>/^urn:tag:(category|genre):(place|qloo):/.test(id));
+          const relevant=activities.some(activity=>categories.some(id=>({coffee:/(cafe|coffee_shop|coffeehouse|tea_room)/,dinner:/(restaurant|bistro|eatery|pizzeria)/,drinks:/(bar|pub|nightclub|lounge)/,activity:/(museum|gallery|park|garden|beach|theater|cinema|market|hiking|landmark)/}[activity]||/$a/).test(id.split(':').at(-1))));
+          // Search results can omit tags. The later place-discovery step checks
+          // intent and location before a result can be recommended.
+          if(activities.length&&categories.length&&!relevant)continue;
+          const geo=place.properties?.geocode||{},city=geo.city||geo.locality||geo.town||place.location?.city;
+          const code=geo.country_code||geo.countryCode||place.location?.country_code;
+          const country=typeof geo.country==='string'?geo.country:'';
+          if(typeof city!=='string'||!city.trim()||!place.entity_id||typeof place.name!=='string')continue;
+          const validCode=typeof code==='string'&&/^[a-z]{2}$/i.test(code)?code.toUpperCase():null;
+          if(candidates.some(c=>norm(c.city)===norm(city)&&c.code===validCode&&norm(c.country)===norm(country)))continue;
+          candidates.push({city:city.trim(),code:validCode,country,place:place.name.slice(0,120)});if(candidates.length===4)break;
+        }
+        const matches=await Promise.all(candidates.map(async c=>{
+          const country=c.code?new Intl.DisplayNames(['en'],{type:'region'}).of(c.code):c.country;
+          const found=await this.searchLocations([c.city,country].filter(Boolean).join(', ')).catch(()=>[]);
+          const exact=found.filter(x=>norm(x.name)===norm(c.city)&&(!c.code||x.countryCode===c.code)&&(!c.country||norm(x.country)===norm(c.country)));
+          return exact.length===1?{...exact[0],example:c.place}:null;
+        }));
+        return matches.filter(Boolean);
+      };
+      let matches=await resolveCandidates(places);
+      if(!matches.length){
+        const query=(experience.searchTags||[]).map(id=>byId[id]?.tagQuery).find(Boolean)||({coffee:'coffee shop',dinner:'restaurant',drinks:'bar'}[activities[0]]);
+        if(query){const fallback=await call('/search',{query,types:'urn:entity:place',take:30});matches=await resolveCandidates(fallback);}
       }
-      const matches=await Promise.all(candidates.map(async c=>{const country=new Intl.DisplayNames(['en'],{type:'region'}).of(c.code);const found=await this.searchLocations([c.city,country].join(', ')).catch(()=>[]);const area=found.find(x=>norm(x.name)===norm(c.city)&&x.countryCode===c.code);return area?{...area,example:c.place}:null;}));
-      const value=matches.filter(Boolean);if(value.length){if(areaIdeasCache.size>=100)areaIdeasCache.delete(areaIdeasCache.keys().next().value);areaIdeasCache.set(cacheKey,{at:now(),value});}return value;
+      const value=matches;if(value.length){if(areaIdeasCache.size>=100)areaIdeasCache.delete(areaIdeasCache.keys().next().value);areaIdeasCache.set(cacheKey,{at:now(),value});}return value;
     },
     async discover({ signalIds, area,locationId,tagSignals=[],contextSignals,includeActivity=false,includeDrinks=false,includeDining=false,radiusKm=0 }) {
       const chosen=locationId?await getLocation(locationId):null;

@@ -15,7 +15,7 @@ export function tasteFromSwipe(person, card, like) {
   const key=card.kind==='artist'?'artists':'vibes', value=card.kind==='artist'?card.label:card.id;
   const values=person[key].filter(v=>v!==value);
   if(like) values.push(value);
-  if(values.length>(key==='artists'?6:18)) throw new Error(key==='artists'?'Keep up to six artists. Remove one to make room.':'Keep up to eighteen food, activity and mood preferences.');
+  if(values.length>(key==='artists'?6:64)) throw new Error(key==='artists'?'Keep up to six artists. Remove one to make room.':'Keep up to 64 food, activity and mood preferences.');
   return {...person,[key]:values};
 }
 export function planChanges(before, after) {

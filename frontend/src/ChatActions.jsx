@@ -33,7 +33,7 @@ export function TasteAction({person,people,deck,onChange,onPerson,onDone,editabl
   function addArtist(event){event.preventDefault();const label=custom.trim();if(!label)return;try{change(tasteFromSwipe(current.current,{kind:'artist',label},true));setCustom('');}catch(e){setError(e.message);}}
   function decideCard(id,like){
     const index=ordered.findIndex(card=>card.id===id);
-    if(index<history.length||!editable||decisionLock.current)return;
+    if(index<history.length||!editable||decisionLock.current)return false;
     decisionLock.current=true;
     const card=ordered[index];
     try{
@@ -42,9 +42,10 @@ export function TasteAction({person,people,deck,onChange,onPerson,onDone,editabl
       const arranged=bringCardToFront(ordered,history.length,id);
       setOrders(old=>({...old,[scope]:arranged.map(item=>item.id)}));
       setHistory(list=>[...list,{id:card.id,like,key,before}]);
-    }catch(e){decisionLock.current=false;setError(e.message);}
+      return true;
+    }catch(e){decisionLock.current=false;setError(e.message);return false;}
   }
-  function decide(like){const card=ordered[history.length];if(card)decideCard(card.id,like);}
+  function decide(like){const card=ordered[history.length];return card?decideCard(card.id,like):false;}
   function undo(){const last=history.at(-1);if(last){change({...current.current,[last.key]:last.before});setHistory(list=>list.slice(0,-1));}}
   function toggleVibe(card){try{change(tasteFromSwipe(current.current,card,!current.current.vibes.includes(card.id)));}catch(e){setError(e.message);}}
   function spending(patch){change({...current.current,spending:{style:'balanced',priority:'even',...current.current.spending,...patch}});}

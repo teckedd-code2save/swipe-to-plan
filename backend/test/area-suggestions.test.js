@@ -43,3 +43,13 @@ test('global discovery falls back to Qloo place search for an explicit topic',as
   }});
   const result=await client.findMatchingAreas({experience:{searchTags:['v-art']},activities:['activity']});assert.equal(usedSearch,true);assert.equal(result[0].name,'Kumasi');
 });
+
+test('empty global insights try topic search and resolve an unambiguous city without a country code',async()=>{
+  const client=createQlooClient({getKey:()=> 'test',fetchImpl:async input=>{const url=new URL(input);let entities=[];
+    if(url.pathname==='/v2/tags')return {ok:true,json:async()=>({results:{tags:[]}})};
+    if(url.pathname==='/search'&&url.searchParams.get('types')==='urn:entity:place')entities=[{entity_id:'p1',name:'Gallery',properties:{geocode:{city:'Kumasi'}}}];
+    if(url.pathname==='/search'&&url.searchParams.get('types')==='urn:entity:locality')entities=[{entity_id:'CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC',name:'Kumasi',types:['urn:entity:locality'],location:{lat:6.68,lon:-1.62},properties:{place:'city',ancestors:[{place:'country',name:'Ghana'}]}}];
+    return {ok:true,json:async()=>({results:{entities}})};
+  }});
+  const result=await client.findMatchingAreas({experience:{searchTags:['v-art']},activities:['activity']});assert.equal(result[0].name,'Kumasi');
+});

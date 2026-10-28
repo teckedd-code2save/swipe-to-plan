@@ -19,11 +19,10 @@ export default function SwipeDeck({ deck, history, onDecide, onUndo, onDone, don
   useEffect(() => () => clearTimeout(timer.current), []);
   function decide(like) {
     if (!card || locked.current || disabled) return;
+    if (onDecide(like) === false) { setDragging(false); setOffset({x:0,y:0}); return; }
     locked.current = true; setDragging(false); setOutgoingCard(card); setLeaving(true);
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     setOffset({ x: (like ? 1 : -1) * 650, y: -25 });
-    // Commit the choice before the animation: closing or switching people must not lose it.
-    onDecide(like);
     timer.current = setTimeout(() => {
       setOffset({ x: 0, y: 0 }); setLeaving(false); setOutgoingCard(null); locked.current = false;
     }, reduced ? 0 : 180);
@@ -62,7 +61,7 @@ export default function SwipeDeck({ deck, history, onDecide, onUndo, onDone, don
         onPointerUp={release} onPointerCancel={cancel} onLostPointerCapture={() => { if (pointer.current) cancel(); }}>
         <div className="card-orbit" aria-hidden="true"/>
         <div className="card-topline"><span className="card-glyph" aria-hidden="true">{card.emoji}</span><span>{savedIds.includes(card.id) ? 'Saved · ' : ''}{card.kind === 'artist' ? 'Artist' : card.group==='food'?'Food':card.group==='activity'?'Things to do':'Mood'}</span></div>
-        {offset.x > 28 && <span className="swipe-stamp love-stamp">LOVE IT</span>}{offset.x < -28 && <span className="swipe-stamp skip-stamp">PASS</span>}
+        {swipeDirection(offset.x,0,surface.current?.clientWidth||400)==='like' && <span className="swipe-stamp love-stamp">LOVE IT</span>}{swipeDirection(offset.x,0,surface.current?.clientWidth||400)==='skip' && <span className="swipe-stamp skip-stamp">PASS</span>}
         <div className="taste-card-copy"><span className="card-kind">{card.kind === 'artist' ? 'On repeat' : card.group==='food'?'At the table':card.group==='activity'?'Out in the world':'The feeling'}</span><h2>{card.promptLabel||card.label}</h2><p>{card.promptSub||card.sub}</p></div>
       </article> : <div className="deck-complete"><span className="complete-heart"><DeckIcon name="heart" size={42}/></span><h2>You've got taste.</h2><p>{completeText||`${likes} favorites. Let's find your places.`}</p><button className="primary" disabled={disabled} onClick={onDone}>{doneLabel}<DeckIcon name="arrow" size={18}/></button></div>}
     </div>
