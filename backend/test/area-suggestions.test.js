@@ -32,3 +32,14 @@ test('anywhere can query Qloo without a location or profile signals',async()=>{
   assert.equal(query.searchParams.get('filter.type'),'urn:entity:place');
   assert.equal(query.searchParams.has('signal.location'),false);assert.equal(query.searchParams.has('filter.location'),false);
 });
+
+test('global discovery falls back to Qloo place search for an explicit topic',async()=>{
+  let usedSearch=false;
+  const client=createQlooClient({getKey:()=> 'test',fetchImpl:async input=>{const url=new URL(input);
+    if(url.pathname==='/v2/insights')return {ok:false,status:400};
+    if(url.pathname==='/v2/tags')return {ok:true,json:async()=>({results:{tags:[]}})};
+    if(url.pathname==='/search'&&url.searchParams.get('types')==='urn:entity:place'){usedSearch=true;assert.equal(url.searchParams.get('query'),'art gallery');return {ok:true,json:async()=>({results:{entities:[{entity_id:'p',name:'Gallery',tags:[{id:'urn:tag:category:place:art_gallery'}],properties:{geocode:{city:'Kumasi',country_code:'GH'}}}]}})};}
+    return {ok:true,json:async()=>({results:{entities:[{entity_id:'CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC',name:'Kumasi',types:['urn:entity:locality'],location:{lat:6.68,lon:-1.62},properties:{place:'city',ancestors:[{place:'country',name:'Ghana'}]}}]}})};
+  }});
+  const result=await client.findMatchingAreas({experience:{searchTags:['v-art']},activities:['activity']});assert.equal(usedSearch,true);assert.equal(result[0].name,'Kumasi');
+});
