@@ -66,7 +66,7 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
   if (!Array.isArray(activities) || activities.length > 3 || activities.some((item) => !ACTIVITIES.includes(item)) || new Set(activities).size !== activities.length) {const error=new InputError('Choose up to three different outing categories.');error.modelFeedback='activities must be an array using only coffee, activity, dinner, drinks, without duplicates. Bars, cocktails and nightlife use drinks. These are retrieval categories, not a repeated sequence of venues; preserve the sequence in experience.notes.';throw error;}
   if (children && activities.includes('drinks')) throw new InputError('Choose coffee, discovery or a meal for a family outing with children.');
   const searchRadiusKm=body.searchRadiusKm??0;
-  if(![0,20].includes(searchRadiusKm))throw new InputError('Choose the selected area or nearby suggestions within 20 km.');
+  if(![0,20,50,100].includes(searchRadiusKm))throw new InputError('Choose the selected area or a nearby search distance.');
   let route;
   if(body.route!==undefined){
     if(!Array.isArray(body.route)||!body.route.length||body.route.length>3)throw new InputError('Choose one to three places for this outing.');
@@ -234,13 +234,16 @@ export async function buildItinerary(discovery, request, {deferNearby=false}={})
   if(!deferNearby&&!filled.length&&!request.searchRadiusKm&&request.locationId&&discovery.location){
     nearbyStatus='empty';
     try{
-      const nearby=await Promise.all(participating.map(async({person,index})=>({index,results:await discovery.byIntents(parseRequest({location:{area:request.area,id:request.locationId},taste:{artists:person.artists,vibes:person.vibes,context:person.context},constraints:{excludeHotels:true,excludeIds:request.excludeIds,excludeTags:request.party.children?['nightclub','night_club','dance_club','adult_entertainment']:[],...(request.maxPriceLevel?{maxPriceLevel:request.maxPriceLevel}:{})}}),request.activities,{radiusKm:20,experience:request.experience,openDiscovery:request.experience?.explore===true&&request.activities.length===1&&request.activities[0]==='activity'&&!request.route})})));
+      for(const radiusKm of [20,50,100]){
+      const nearby=await Promise.all(participating.map(async({person,index})=>({index,results:await discovery.byIntents(parseRequest({location:{area:request.area,id:request.locationId},taste:{artists:person.artists,vibes:person.vibes,context:person.context},constraints:{excludeHotels:true,excludeIds:request.excludeIds,excludeTags:request.party.children?['nightclub','night_club','dance_club','adult_entertainment']:[],...(request.maxPriceLevel?{maxPriceLevel:request.maxPriceLevel}:{})}}),request.activities,{radiusKm,experience:request.experience,openDiscovery:request.experience?.explore===true&&request.activities.length===1&&request.activities[0]==='activity'&&!request.route})})));
       let nearbyPools=request.activities.map((intent,i)=>{
         const items=nearby.length===1?nearby[0].results[i].ranked:mergeGroup(nearby.map(({results,index})=>({...results[i],id:request.people[index].id||`person-${index}`,name:request.people[index].name})),20).items;
         return rerankForExperience(items,request.experience,intent);
       });
       if(discovery.reviewCandidates&&(request.experience||request.people.some(p=>p.context)))nearbyPools=(await reviewCandidatePools(nearbyPools,{...request,pins:{},route:undefined},discovery.reviewCandidates)).pools;
       nearbySuggestions=[...new Map(nearbyPools.flatMap((items,i)=>items.slice(0,8).map(item=>[item.id,{intent:request.activities[i],item}]))).values()].slice(0,8);nearbyStatus=nearbySuggestions.length?'ready':'empty';
+      if(nearbySuggestions.length)break;
+      }
     }catch{nearbyStatus='unavailable';}
   }
   const provider = members[0][0].provenance.provider;
