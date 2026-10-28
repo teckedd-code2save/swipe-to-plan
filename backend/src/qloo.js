@@ -21,7 +21,7 @@ function entities(data) {
 export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => process.env.QLOO_API_KEY, baseUrl = process.env.QLOO_API_URL || "https://hackathon.api.qloo.com", now = Date.now, sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)) } = {}) {
   const cache = new Map();
   let audienceCache;
-  const tagsCache=new Map(), locationCache=new Map(), searchCache=new Map();
+  const tagsCache=new Map(), locationCache=new Map(), searchCache=new Map(), areaIdeasCache=new Map();
   let active=0;const waiting=[];
   async function limitedFetch(url,headers,timeout){
     if(active>=2)await new Promise(resolve=>waiting.push(resolve));else active++;
@@ -194,6 +194,30 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
         return area?{...area,example:candidate.place}:null;
       }));
       return matches.filter(Boolean).slice(0,3);
+    },
+    async findMatchingAreas({locationId,artists=[],vibes=[],experience={},activities=[]}){
+      const cacheKey=JSON.stringify([locationId||'',artists,vibes,experience,activities]);
+      const cached=areaIdeasCache.get(cacheKey);if(cached&&now()-cached.at<21600000)return cached.value;
+      const origin=locationId?await getLocation(locationId):null;
+      const [artistsFound,tasteSignals,experienceSignals]=await Promise.all([
+        Promise.all(artists.slice(0,6).map(name=>this.resolveArtist(name).catch(()=>null))),
+        this.resolveTasteTags(vibes).catch(()=>[]),this.resolveExperienceTags(experience).catch(()=>[]),
+      ]);
+      const signalIds=artistsFound.filter(x=>x?.status==='resolved').map(x=>x.entityId);
+      const tags=[...new Set([...tasteSignals,...experienceSignals].flatMap(x=>x.tagIds))];
+      const places=await call('/v2/insights',{'filter.type':'urn:entity:place','signal.interests.entities':signalIds.join(','),'signal.interests.tags':tags.join(','),...(origin?.center?{'signal.location':`POINT(${origin.center.longitude} ${origin.center.latitude})`,'signal.location.weight':0.1}:{}),'diversify.by':'properties.geocode.city','diversify.take':3,take:30});
+      const candidates=[];
+      for(const place of places){
+        const categories=(place.tags||[]).map(t=>t?.id||'').filter(id=>/^urn:tag:(category|genre):(place|qloo):/.test(id));
+        const relevant=activities.some(activity=>categories.some(id=>({coffee:/(cafe|coffee_shop|coffeehouse|tea_room)/,dinner:/(restaurant|bistro|eatery|pizzeria)/,drinks:/(bar|pub|nightclub|lounge)/,activity:/(museum|gallery|park|garden|beach|theater|cinema|market|hiking|landmark)/}[activity]||/$a/).test(id.split(':').at(-1))));
+        if(activities.length&&!relevant)continue;
+        const geo=place.properties?.geocode||{},city=geo.city||place.location?.city,code=geo.country_code;
+        if(typeof city!=='string'||!city.trim()||!place.entity_id||typeof place.name!=='string'||typeof code!=='string'||!/^[a-z]{2}$/i.test(code))continue;
+        if(candidates.some(c=>norm(c.city)===norm(city)&&c.code===code.toUpperCase()))continue;
+        candidates.push({city:city.trim(),code:code.toUpperCase(),place:place.name.slice(0,120)});if(candidates.length===4)break;
+      }
+      const matches=await Promise.all(candidates.map(async c=>{const country=new Intl.DisplayNames(['en'],{type:'region'}).of(c.code);const found=await this.searchLocations([c.city,country].join(', ')).catch(()=>[]);const area=found.find(x=>norm(x.name)===norm(c.city)&&x.countryCode===c.code);return area?{...area,example:c.place}:null;}));
+      const value=matches.filter(Boolean);if(value.length){if(areaIdeasCache.size>=100)areaIdeasCache.delete(areaIdeasCache.keys().next().value);areaIdeasCache.set(cacheKey,{at:now(),value});}return value;
     },
     async discover({ signalIds, area,locationId,tagSignals=[],contextSignals,includeActivity=false,includeDrinks=false,includeDining=false,radiusKm=0 }) {
       const chosen=locationId?await getLocation(locationId):null;
