@@ -1,3 +1,4 @@
+import {compareOpenAreas} from './open-location.js';
 import {createMenuEvidence} from './menu-evidence.js';
 import {withActionMessages} from './agent-conversation.js';
 import {nearbyRequest} from './locations.js';
@@ -86,6 +87,13 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     strictFields(req.body,['locationId','brief']);const brief=parseItinerary(req.body.brief,{allowMissingLocation:true});
     if(!provider.findMatchingAreas)return res.json({locations:[]});const person=brief.people[0];
     res.json({locations:await provider.findMatchingAreas({locationId:req.body.locationId,artists:person.artists,vibes:person.vibes,experience:brief.experience,activities:brief.activities}),source:'qloo'});
+  }));
+  app.post('/api/locations/compare',limit(10),route(async(req,res)=>{
+    strictFields(req.body,['brief']);
+    const brief=parseItinerary(req.body.brief,{allowMissingLocation:true});
+    if(!provider.findMatchingAreas)return res.json({area:null,areasCompared:0,areasUnavailable:0});
+    const result=await compareOpenAreas({brief,findAreas:args=>provider.findMatchingAreas(args),build:request=>buildItinerary({...discovery,reviewCandidates:undefined},request,{deferNearby:true})});
+    res.json(result);
   }));
   app.get('/api/locations/:id',limit(60),route(async(req,res)=>{if(!provider.getLocation)throw new InputError('Location search is unavailable on this server.');res.json(await provider.getLocation(req.params.id));}));
   app.get("/api/deck", (_req, res) => res.json(publicDeck()));

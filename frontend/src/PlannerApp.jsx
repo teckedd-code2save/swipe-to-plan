@@ -195,7 +195,7 @@ export default function PlannerApp() {
     planningZone.current=selected.timeZone||null;
     locationConfirmed.current=true;planningPaused.current=true;setDraftChanged(!!planRef.current);replaceBrief(next);
     locationDraft.current=null;
-    if(selected.openMatch)append('assistant', `I found a promising match in ${selected.name}${selected.country?', '+selected.country:''}. I’ll start there; you can change the area anytime.`);
+    if(selected.openMatch)append('assistant', `I compared places in ${selected.areasCompared} ${selected.areasCompared===1?'area':'areas'} and found a promising match in ${selected.name}${selected.country?', '+selected.country:''}. You can change the area anytime.${selected.areasUnavailable?' Some areas could not be checked.':''}`);
     if(autopilotRef.current&&autopilotPending.current){await continueAutopilot(next);return;}
     // Location is context, not consent to begin an onboarding questionnaire.
     toolRef.current=null;setTool(null);setAutopilotPhase('');

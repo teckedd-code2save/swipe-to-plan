@@ -13,6 +13,7 @@ export const api = {
   nearbyLocations:(point,signal)=>json('/api/locations/nearby',{...post(point),signal}),
   suggestLocations:(locationId,brief,signal)=>json('/api/locations/suggest',{...post({locationId,brief}),signal}),
   matchingLocations:(locationId,brief,signal)=>json('/api/locations/ideas',{...post({locationId,brief}),signal}),
+  compareLocations:(brief,signal)=>json('/api/locations/compare',{...post({brief}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(45000)]):AbortSignal.timeout(45000)}),
   location:id=>json(`/api/locations/${encodeURIComponent(id)}`),
   planningLocation:id=>json('/api/account/planning-location',{method:'PATCH',body:JSON.stringify({locationId:id})}),
   forgetPlanningLocation:id=>json('/api/account/planning-location',{method:'PATCH',body:JSON.stringify({removeLocationId:id})}),
