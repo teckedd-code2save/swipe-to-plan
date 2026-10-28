@@ -82,3 +82,11 @@ test('named afternoon windows are deterministic even if the model supplies a fix
   assert.equal(result.request.startTime,'12:00');assert.equal(result.request.endTime,'17:00');assert.equal(result.request.timing.mode,'flexible');assert.equal(result.request.date,context.date);
 });
 
+
+test('weekend choices respect the current conversation and destination date', async()=>{
+  const {weekendChoices}=await import('../../frontend/src/timing.js');
+  const now=Date.parse('2026-10-28T12:00:00Z');
+  assert.deepEqual(weekendChoices([{role:'user',text:'Some pizza would be nice'},{role:'user',text:'I said this weekend'}],'Africa/Accra',now),[['2026-10-31','Saturday'],['2026-11-01','Sunday']]);
+  assert.deepEqual(weekendChoices([{role:'user',text:'this weekend'},{role:'user',text:'make it Monday'}],'Africa/Accra',now),[]);
+  assert.deepEqual(weekendChoices([{role:'user',text:'this weekend'}],'Africa/Accra',Date.parse('2026-11-01T12:00:00Z')),[['2026-11-01','Sunday']]);
+});
