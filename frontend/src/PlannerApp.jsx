@@ -1,3 +1,4 @@
+import {resultPlaceLabel,updateResultReceipt} from './result-receipt.js';
 import {Button, Flex, IconButton} from '@radix-ui/themes';
 import {useQueryClient} from '@tanstack/react-query';
 import {agentPlanContext} from './agent-plan-context.js';
@@ -165,11 +166,10 @@ export default function PlannerApp() {
   function replaceBrief(value){const next=withPeopleIds(value);briefRef.current=next;setBrief(next);return next;}
   useEffect(()=>{if(!plan?.savedPlan?.id||!account.ready||shared.linked||!chat.length)return;try{sessionStorage.setItem(`outing.chat:${account.user?.id||'guest'}:${plan.savedPlan.id}`,JSON.stringify(chat.slice(-60)));}catch{/* Storage restrictions must not interrupt planning. */}},[chat,plan?.savedPlan?.id,account.user?.id,account.ready,shared.linked]);
   function append(role,text,extra={}){const turn={id:identity(),role,text,...extra};setChat(c=>[...c,turn].slice(-60));return turn.id;}
-  function resultReceipt(result,text){
+  function resultReceipt(result,text,update=false){
     const summary=partialPlanSummary(result)||text||(result.phase==='discovery'?'Here are places to explore.':'Your day is ready.');
-    const count=result.stops.filter(s=>s.item).length,nearby=result.nearbySuggestions?.length||0;
-    const places=!count&&nearby?`${nearby} nearby places to explore`:`${count} ${count===1?'stop':'stops'}`;
-    append('assistant',summary,{result:{title:planTitle(result.request),detail:`${places} · ${result.request.timing?.dateConfirmed?dateLabel(result.request.date):'Date to choose'} · ${result.request.budget==null?'Budget not set':formatMoney(result.request.budget,result.request.currency)}`}});
+    const receipt={text:summary,result:{title:planTitle(result.request),detail:`${resultPlaceLabel(result)} · ${result.request.timing?.dateConfirmed?dateLabel(result.request.date):'Date to choose'} · ${result.request.budget==null?'Budget not set':formatMoney(result.request.budget,result.request.currency)}`}};
+    if(update)setChat(turns=>updateResultReceipt(turns,receipt));else append('assistant',summary,{result:receipt.result});
   }
 
   function presentTool(kind,text,options={}){const id=kind==='location'?locationPromptId(chat,identity()):identity();toolRef.current={id,kind,...options};setTool(toolRef.current);setPlanOpen(false);const turn={id,role:'assistant',text:text||({tastes:'Let’s find a few favorites.',circles:'Bring your people’s tastes together.',people:'Here’s who’s in the day.',share:'Here’s the day, ready to share.',location:'Where are you thinking?',timing:'Let’s settle the timing when you’re ready.',review:'Your outing so far. Change anything here or in chat.',profile:'A little passport to what you love. Your circles will see your latest tastes.'}[kind]),widget:kind};setChat(c=>kind==='location'?upsertLocationPrompt(c,turn):[...c,turn].slice(-60));}
@@ -236,6 +236,7 @@ export default function PlannerApp() {
       if(!old)resultReceipt(result,result.phase==='needs_timing'?'I found relevant places, but the requested time doesn’t fit their reported hours. The places are shown without a scheduled visit.':!filled?(result.stops.some(s=>s.reason==='time_in_past')?'That planning window has already passed. You can try tomorrow without changing the rest of your request.':result.stops.some(s=>s.reason==='no_open_place')?'I found places, but none fit the requested time and reported hours. Try another time.':'I haven’t found a place matching this request in the selected area. No venue is confirmed.'):result.status==='partial'?`I found ${filled} of ${result.stops.length} stops. The missing parts are marked on your day.`:result.phase==='discovery'?'Here are places to explore.':'Your day is ready.');
       showWhenReady.current=false;
     }
+    if(old)resultReceipt(result,undefined,true);
   }
   useEffect(()=>{planner.current=createLatestPlanner({run:(request,{signal,onPreview})=>api.itinerary(request,savingHeaders(),{signal,onDiscovery:onPreview}),onPreview:result=>{setOutageOptions(null);if(!previewBase.current)previewBase.current={plan:planRef.current};planRef.current=result;setPlan(result);setDraftChanged(false);if(showWhenReady.current&&!toolRef.current&&result.stops?.some(stop=>stop.item))setPlanOpen(true);},onStart:()=>setBusy(true),onIdle:()=>{setBusy(false);if(!autoTimer.current)setPending(false);},onError:e=>{if(planRef.current?.qualityReview?.status==='pending'){planRef.current={...planRef.current,qualityReview:{...planRef.current.qualityReview,status:'unavailable'}};setPlan(planRef.current);}setError(e.message==='Failed to fetch'?'Couldn’t refresh the places. Your current results are still here.':e.message);setRevisionFailed(true);setAutopilotPhase('');autopilotPending.current=null;},onResult:result=>{showPlan(result);replaceBrief(result.request);}});return()=>{clearTimeout(autoTimer.current);autoTimer.current=null;clearTimeout(profileTimer.current);planner.current.dispose();};},[]);
   useEffect(()=>{api.deck().then(setDeck).catch(e=>setError(e.message));},[]);
