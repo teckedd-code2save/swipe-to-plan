@@ -123,7 +123,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     res.json(await accounts.keepPlan(target,await buildItinerary(discovery,request)));
   }));
   app.post("/api/agent", limit(10), route(async(req,res)=>{
-    strictFields(req.body,['message','context','history','circles','contacts','planContext','locationContext','mode']);
+    strictFields(req.body,['message','context','history','circles','contacts','planContext','locationContext','mode','task']);
     if(!agent)throw new AgentError('agent_not_configured');
     const [target,audienceCatalog,planningPeople]=await Promise.all([accounts.planTarget(req),provider.audienceCatalog?provider.audienceCatalog().catch(()=>[]):Promise.resolve([]),accounts.planningPeople(req)]);
     let interpretation=await agent.interpret({...req.body,...planningPeople,audienceCatalog});

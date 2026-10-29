@@ -421,3 +421,13 @@ test('post-discovery choice uses existing option IDs and preserves planning cont
  await assert.rejects(invoke(['invented']),e=>e.status===400);
  await assert.rejects(invoke(['real-one','real-one']),e=>e.status===400);
 });
+test('explicit comparison permits only a reply and keeps the existing plan unchanged',async()=>{
+ const context=parseItinerary({area:'Accra'}),before=JSON.stringify(context);
+ const planContext={stops:[],options:[{id:'a',intent:'dinner',name:'A',connections:[],practical:'{"menu":["Rice"]}'}],warnings:[]};
+ let sent;const agent=createAgent({getKey:()=> 'test',fetchImpl:async(_,options)=>{sent=JSON.parse(options.body);return response('reply',{text:'A has rice; check its current price.'});}});
+ const result=await agent.interpret({message:'Help me compare',context,planContext,task:'compare',mode:'autopilot'});
+ assert.equal(result.status,'reply');assert.deepEqual(sent.tools.map(t=>t.function.name),['reply']);assert.equal(sent.tool_choice.function.name,'reply');assert.equal(JSON.stringify(context),before);
+ await assert.rejects(agent.interpret({message:'Compare',context,task:'compare'}),e=>e.status===400);
+ const wrong=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('show_ui',{panel:'compare'})});
+ await assert.rejects(wrong.interpret({message:'Compare',context,planContext,task:'compare'}));
+});
