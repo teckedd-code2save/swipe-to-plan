@@ -259,3 +259,5 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
  .chat-studio .cs-day-content .pl-stop-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
  .chat-studio .cs-day-content .pl-stop-actions>button{min-height:44px;padding:8px 10px;border:1px solid var(--cs-line);border-radius:9px;font-size:12px;line-height:1.4}
 }
+
+.cs-tastes-open-layout{display:block}.cs-tastes-open-layout>div{width:100%}

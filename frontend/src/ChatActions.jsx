@@ -16,9 +16,8 @@ export function TasteAction({person,people,deck,onChange,onPerson,onDone,editabl
   // Keep the choices present when this panel opens separate from new swipes.
   const initialFavorites=useRef({vibes:[...person.vibes],artists:[...person.artists]});
   const [exploring,setExploring]=useState(false);
-  const [orders,setOrders]=useState({}),[histories,setHistories]=useState({}),[category,setCategory]=useState(focus||'food'),[error,setError]=useState(''),[custom,setCustom]=useState(''),[name,setName]=useState(person.name);
+  const [orders,setOrders]=useState({}),[histories,setHistories]=useState({}),[category,setCategory]=useState(focus||'food'),[error,setError]=useState('');
   const current=useRef(person);current.current=person;
-  useEffect(()=>setName(person.name),[person.id,person.name]);
   const scope=`${person.id}:${category}`;
   const initial=initialFavorites.current;
   const savedCards=deck.filter(card=>card.kind==='artist'?initial.artists.includes(card.label):initial.vibes.includes(card.id));
@@ -30,7 +29,6 @@ export function TasteAction({person,people,deck,onChange,onPerson,onDone,editabl
   useEffect(()=>{decisionLock.current=false;},[scope,history.length]);
   const setHistory=update=>setHistories(state=>({...state,[scope]:update(state[scope]||[])}));
   function change(value){onChange(value);setError('');}
-  function addArtist(event){event.preventDefault();const label=custom.trim();if(!label)return;try{change(tasteFromSwipe(current.current,{kind:'artist',label},true));setCustom('');}catch(e){setError(e.message);}}
   function decideCard(id,like){
     const index=ordered.findIndex(card=>card.id===id);
     if(index<history.length||!editable||decisionLock.current)return false;
@@ -47,39 +45,17 @@ export function TasteAction({person,people,deck,onChange,onPerson,onDone,editabl
   }
   function decide(like){const card=ordered[history.length];return card?decideCard(card.id,like):false;}
   function undo(){const last=history.at(-1);if(last){change({...current.current,[last.key]:last.before});setHistory(list=>list.slice(0,-1));}}
-  function toggleVibe(card){try{change(tasteFromSwipe(current.current,card,!current.current.vibes.includes(card.id)));}catch(e){setError(e.message);}}
-  function spending(patch){change({...current.current,spending:{style:'balanced',priority:'even',...current.current.spending,...patch}});}
-  const style=person.spending?.style||'balanced',priority=person.spending?.priority||'even',favorites=person.artists.length+person.vibes.length;
+  const favorites=person.artists.length+person.vibes.length;
   return <section className={`cs-tool cs-tastes cs-tastes-open ${focus==='request'?'cs-tastes-request':''}`} aria-label={`${person.name}'s tastes`}>
     <div className="cs-tool-head"><span><Icon name="music" size={18}/>{personal?'My tastes':focus?({food:'Food for this outing',activity:'What would you enjoy?',mood:'The setting you want',music:'Music you enjoy',request:'Your kind of outing'})[focus]:'Shape the tastes'}</span><button type="button" className="cs-icon-button" aria-label="Close taste choices" onClick={onDone}><Icon name="close" size={17}/></button></div>
     <div className="cs-taste-person">{personal?<strong>{person.name}</strong>:<select aria-label="Whose tastes" value={person.id} onChange={e=>onPerson?.(e.target.value)}>{people.map(p=><option key={p.id} value={p.id}>{p.name==='You'?'Your tastes':`${p.name}’s tastes`}</option>)}</select>}<small>{focus==='request'?(initial.artists.length||initial.vibes.length?'Your saved tastes are part of this outing':'Optional · add a few tastes for this outing'):`${favorites} favorites · changes saved as you go`}</small></div>
-    <div className="cs-tastes-open-layout" style={focus?{display:'block'}:undefined}>
+    <div className="cs-tastes-open-layout">
       <div className="cs-tastes-discover"><div className="cs-taste-section-heading"><h3>{focus==='request'?'A little more about this outing':focus?'Explore what you enjoy':'Discover'}</h3></div>
         {focus==='request'&&<Card size="2" variant="surface" mt="3" mb="3"><Flex direction="column" gap="3"><Text as="p" size="2">{relevantSaved.length?'You’ve already told us you enjoy these. They’re part of this search.':savedCards.length||initial.artists.length||initial.vibes.length?'Your saved tastes are already part of this search.':'Your request is enough to get started. Add a few tastes if you like.'}</Text>{savedCards.length>0&&<Flex wrap="wrap" gap="2">{(relevantSaved.length?relevantSaved:savedCards.slice(0,6)).map(card=><Badge key={card.id} color="green" variant="soft">{card.label}</Badge>)}</Flex>}<Flex gap="2" wrap="wrap">{editable&&!exploring&&<Button type="button" size="2" variant="soft" onClick={()=>{setExploring(true);if(!original.length)setCategory('food');}}>Explore more tastes</Button>}</Flex></Flex></Card>}
         {(!focus||(focus==='request'&&exploring))&&<div className="cs-taste-categories" role="group" aria-label="Explore taste categories">{[...(focus==='request'&&suggestedIds.length?[['request','For this outing']]:[]),['food','Food'],['activity','Things to do'],['mood','Mood'],['music','Music']].map(([id,label])=><button key={id} type="button" aria-pressed={category===id} onClick={()=>setCategory(id)}>{label}</button>)}</div>}
         {editable&&(focus!=='request'||exploring)?<SwipeDeck key={scope} deck={ordered} history={history} savedIds={savedCards.map(card=>card.id)} agentic={focus==='request'} onDecide={decide} onDecideCard={decideCard} onUndo={undo} onDone={onDone} doneLabel={focus==='request'?'Done':'Done exploring'} onAddMissing={category==='music'?(label)=>{try{change(tasteFromSwipe(current.current,{kind:'artist',label},true));}catch(e){setError(e.message);}}:undefined} completeText={focus==='request'?"Your choices are part of this outing.":"Your favorites are saved. Explore another category or continue chatting."}/>:!editable?<p className="cs-muted">Only this person can edit their own tastes.</p>:null}
       </div>
-      {!focus&&<div className="cs-tastes-preferences">
-        <section className="cs-taste-picked" aria-label="Selected favorites">
-          <div className="cs-taste-section-heading"><h3>Your favorites</h3><span>{favorites} saved</span></div>
-          {editable&&<label className="cs-name-edit">Name<input aria-label="Person’s name" maxLength={24} value={name} onChange={e=>setName(e.target.value)} onBlur={()=>{if(name.trim()&&name.trim()!==person.name)change({...current.current,name:name.trim()});else setName(person.name);}}/></label>}
-          {personal&&editable&&person.context&&<details><summary>Your saved context</summary><p>{person.context.role||'Cultural interests'}{person.context.interests?.length?`: ${person.context.interests.map(i=>i.name).join(', ')}`:''}</p><button type="button" onClick={()=>change({...current.current,context:undefined})}>Remove saved context</button></details>}
-          <div className="cs-taste-chips">{person.artists.map(artist=><button type="button" disabled={!editable} key={artist} aria-label={`Remove ${artist}`} onClick={()=>change({...current.current,artists:current.current.artists.filter(v=>v!==artist)})}><Icon name="music" size={12}/>{artist}<Icon name="close" size={12}/></button>)}{person.vibes.map(id=><button type="button" disabled={!editable} key={id} aria-label={`Remove ${deck.find(c=>c.id===id)?.label||id}`} onClick={()=>change({...current.current,vibes:current.current.vibes.filter(v=>v!==id)})}>{deck.find(c=>c.id===id)?.label||id}<Icon name="close" size={12}/></button>)}</div>
-          {!favorites&&<p className="cs-muted">Choose a few cards. Food, places, music and mood all help.</p>}
-          {editable&&<form className="cs-inline-form cs-any-artist" onSubmit={addArtist}><input aria-label="Favorite artist" placeholder="Add an artist by name…" maxLength={160} value={custom} onChange={e=>setCustom(e.target.value)}/><button type="submit" aria-label="Add artist" disabled={!custom.trim()}><Icon name="plus" size={16}/></button></form>}
-        </section>
-        <section className="cs-taste-direct" aria-label="Choose preferences directly">
-          <div className="cs-taste-section-heading"><h3>Choose directly</h3><span>No swiping required</span></div>
-          {deck.filter(card=>card.kind==='vibe'&&(card.group||'mood')===category).map(card=><button type="button" className="cs-taste-direct-chip" key={card.id} disabled={!editable} aria-pressed={person.vibes.includes(card.id)} onClick={()=>toggleVibe(card)}>{card.label}{person.vibes.includes(card.id)&&<Icon name="check" size={12}/>}</button>)}
-          {category==='music'&&<p className="cs-muted">Search the music stack, or add any artist above.</p>}
-        </section>
-        <section className="cs-taste-spending" aria-label="Spending preferences">
-          <div className="cs-taste-section-heading"><h3>Spending style</h3><span>Guides allowances, not quotes</span></div>
-          <div className="cs-taste-style-choices">{[['mindful','Keep it light'],['balanced','Balanced'],['treat','Make it special']].map(([id,label])=><button key={id} type="button" disabled={!editable} aria-pressed={style===id} onClick={()=>spending({style:id})}>{label}</button>)}</div>
-          <label className="cs-field-label" htmlFor="cs-spend-priority">Where would you spend more?</label>
-          <select id="cs-spend-priority" disabled={!editable} value={priority} onChange={e=>spending({priority:e.target.value})}>{[['even','A bit of everything'],['coffee','Coffee'],['dinner','A great meal'],['activity','Experiences'],['drinks','Drinks']].map(([id,label])=><option key={id} value={id}>{label}</option>)}</select>
-        </section>
-      </div>}
+
     </div>
     <p className="cs-spend-note">Tastes guide discovery, not verified allergies, affordability or venue suitability.</p>
     {personal&&<small className="cs-tool-foot">Saved to your account. Your circle members see your latest tastes.</small>}

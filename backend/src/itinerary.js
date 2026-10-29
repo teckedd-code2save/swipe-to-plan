@@ -211,7 +211,7 @@ export async function buildItinerary(discovery, request, {deferNearby=false}={})
   // Expand only when an initial shortlist cannot fill the outing. Preserve hard
   // constraints, pinned venues, and the previous result if the retry is no better.
   if(fitted.stops.some(stop=>!stop.item)&&fitted.stops.some(stop=>stop.reason!=='time_in_past')&&ranked.some((items,index)=>items.length>pools[index].length)){
-    const expanded=await fit(makePools(14));
+    const expanded=await fit(makePools(30));
     if(expanded.stops.filter(stop=>stop.item).length>fitted.stops.filter(stop=>stop.item).length)fitted=expanded;
   }
   // A timing conflict must not erase useful venue recommendations. Keep the

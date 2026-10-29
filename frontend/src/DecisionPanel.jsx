@@ -10,7 +10,7 @@ import {formatMoney} from './money.js';
 import {routeLink} from './route-links.js';
 import './decision-panel.css';
 
-export default function DecisionPanel({plan,checks,onDone,onDetails,onTool,selected=[],onSelectionChange,mode='compare'}) {
+export default function DecisionPanel({plan,checks,onDone,onDetails,onTool,selected=[],onSelectionChange,onAskAgent,mode='compare'}) {
   const stops=decisionStops(plan),[visible,setVisible]=useState(4);
   const shown=stops.slice(0,visible);
   const queries=useQueries({queries:shown.map(stop=>({queryKey:['venue',stop.item.entityId],queryFn:({signal})=>api.place(stop.item.entityId,AbortSignal.any([signal,AbortSignal.timeout(12000)])),enabled:!!stop.item.entityId,staleTime:300000,retry:1,refetchOnWindowFocus:false,initialData:checks?.data?.stops.find(s=>s.entityId===stop.item.entityId)?.place}))});
@@ -22,6 +22,7 @@ export default function DecisionPanel({plan,checks,onDone,onDetails,onTool,selec
   const subtotal=selectedMenuTotal(selected,spend?.currency);
   return <section className="decision-panel" aria-label={mode==='menus'?'Menus and prices':'Compare places'}>
     <Flex justify="between" align="center" gap="3"><Heading size="5">{mode==='menus'?'Food, drinks & prices':'Find your best fit'}</Heading><IconButton variant="ghost" aria-label="Close comparison" onClick={onDone}><Icon name="close" size={18}/></IconButton></Flex>
+    {mode==='menus'&&<Card size="2" variant="soft" mt="4"><Flex direction="column" gap="2"><Text as="p" size="2">I’ll help you weigh the available menus, prices and what matters for this outing. Missing prices stay unknown.</Text><Flex><Button type="button" variant="solid" disabled={!shown.length||queries.some(q=>q.isFetching)||menus.some(q=>q.isFetching)} onClick={onAskAgent}>Ask me to compare</Button></Flex><Text size="1" color="gray">{queries.some(q=>q.isFetching)||menus.some(q=>q.isFetching)?'Gathering available menu details…':'You can also select dishes below to include in the conversation.'}</Text></Flex></Card>}
     {spend&&<Flex className="decision-budget" align="center" justify="between" wrap="wrap" gap="3"><div><Badge color={spend.suggested?'amber':'green'}>{spend.suggested?'Suggested spending':'Your spending limit'}</Badge><Text as="p" size="4" weight="bold">{spend.amount!=null?formatMoney(spend.amount,spend.currency):'No amount set'}{spend.people>1?' total':' for you'}</Text><Text as="p" size="2" color="gray">{spend.suggested?'A planning suggestion, not venue prices.':'For the whole outing, including travel.'}</Text></div>{onTool&&<Button variant="soft" onClick={()=>onTool('budget')}>Edit spending</Button>}</Flex>}
     {!shown.length&&<Text as="p">Places will appear here when your search returns.</Text>}
     <div className="decision-grid">{shown.map((stop,index)=>{

@@ -29,7 +29,7 @@ export function Stop({stop,plan,busy,onPin,onSwap,onTrace,onBudget,onDetails,onM
       <Heading as="h3" size="5" mt="3"><button className="outing-place-name" onClick={()=>onDetails(stop)}>{item.name}</button></Heading>
       <Text as="p" size="2" color="gray" mt="2">{item.address}</Text>
       {item.description&&<Text as="p" size="2" mt="3" className="outing-place-description">{item.description}</Text>}
-      {stop.timeStatus==='needs_time'&&<Text as="p" size="2" color="amber">Your requested time falls outside reported hours.</Text>}
+      {stop.timeStatus==='needs_time'&&<Text as="p" size="2" color="amber">{stop.reason==='time_in_past'?'Your requested time has passed. Choose another time to visit.':'I couldn’t fit this place into your requested time. Its reported hours may not match; explore other places or change the time.'}</Text>}
       {names.length>0&&onTrace&&<button className="outing-fit" onClick={()=>onTrace(stop.id)}><Icon name="nodes" size={14}/>Taste connections for {names.join(', ')}<Icon name="arrow" size={14}/></button>}
       <Flex gap="2" wrap="wrap" mt="4"><Button variant="soft" onClick={()=>onDetails(stop,'practical')}>Menu & details</Button><Button asChild variant="outline"><a href={routeLink({stop},'driving')} target="_blank" rel="noreferrer">Directions ↗</a></Button>{!discovery&&onSwap&&<Button variant="ghost" disabled={busy||pinned} onClick={()=>onSwap(stop)}>Find another</Button>}</Flex>
       {!discovery&&onPin&&!plan.request.route&&<button className="outing-keep" disabled={busy} aria-pressed={pinned} onClick={()=>onPin(stop.intent,item.id)}><Icon name={pinned?'check':'bookmark'} size={14}/>{pinned?'Kept in your outing':'Keep this place'}</button>}

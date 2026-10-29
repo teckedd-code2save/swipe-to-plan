@@ -1,12 +1,12 @@
 import {ACTIVITY_NAMES,Icon} from './PlannerIcons.jsx';
 
-export default function ActivityChoices({activities,children=0,disabled=false,onChange}) {
+export default function ActivityChoices({activities,children=0,disabled=false,onChange,maxChoices=3}) {
   return <fieldset className="pl-fieldset cs-activity-choices">
     <legend>What would you like to do?</legend>
-    <p className="pl-help">Choose 1–3, in the order you want them. One place can be plenty.</p>
+    <p className="pl-help">{maxChoices===1?'Choose one moment for your outing.':'Choose 1–3, in the order you want them. One place can be plenty.'}</p>
     <div className="pl-choice-row">{Object.entries(ACTIVITY_NAMES).map(([key,name])=>{
       const selected=activities.includes(key);
-      return <button type="button" key={key} disabled={disabled||(key==='drinks'&&!!children)||(!selected&&activities.length>=3)} className={`pl-choice ${selected?'selected':''}`} aria-pressed={selected} onClick={()=>onChange(selected?activities.filter(a=>a!==key):[...activities,key])}><Icon name={key} size={17}/>{name}{selected&&<span>{activities.indexOf(key)+1}</span>}</button>;
+      return <button type="button" key={key} disabled={disabled||(key==='drinks'&&!!children)||(!selected&&maxChoices>1&&activities.length>=maxChoices)} className={`pl-choice ${selected?'selected':''}`} aria-pressed={selected} onClick={()=>onChange(maxChoices===1?[key]:selected?activities.filter(a=>a!==key):[...activities,key])}><Icon name={key} size={17}/>{name}{selected&&<span>{activities.indexOf(key)+1}</span>}</button>;
     })}</div>
   </fieldset>;
 }
