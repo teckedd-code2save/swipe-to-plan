@@ -1,5 +1,6 @@
 import {displayMenuPrice,selectedMenuTotal,pricedMenuSelections} from './menu-prices.js';
-import {useState,useEffect} from 'react';
+import {useState,useEffect,useRef} from 'react';
+import AgentReply from './AgentReply.jsx';
 import {useQueries} from '@tanstack/react-query';
 import {Badge,Button,Card,Flex,Heading,IconButton,Text,CheckboxCards} from '@radix-ui/themes';
 import {api} from './api.js';
@@ -20,9 +21,19 @@ export default function DecisionPanel({plan,checks,onDone,onDetails,onTool,selec
   useEffect(()=>{if(onSelectionChange&&enrichedKey!==JSON.stringify(selected))onSelectionChange(enriched);},[enrichedKey]);
   const spend=plan?spendingSummary(plan):null;
   const subtotal=selectedMenuTotal(selected,spend?.currency);
+  const [comparison,setComparison]=useState({status:'waiting',text:''}),[retry,setRetry]=useState(0);
+  const compareRef=useRef(onAskAgent);compareRef.current=onAskAgent;
+  const waiting=shown.some((stop,i)=>stop.item.entityId&&((queries[i]?.isPending||queries[i]?.isFetching)||((queries[i]?.data?.links?.menu||queries[i]?.data?.links?.website)&&(menus[i]?.isPending||menus[i]?.isFetching))));
+  const comparisonKey=JSON.stringify([shown.map(stop=>stop.item.id),enriched]);
+  useEffect(()=>{
+    if(mode!=='menus'||!shown.length||waiting||!compareRef.current)return;
+    const controller=new AbortController();setComparison({status:'loading',text:''});
+    compareRef.current(shown.map(stop=>stop.item.id),enriched,controller.signal).then(text=>{if(!controller.signal.aborted)setComparison({status:'ready',text});}).catch(error=>{if(!controller.signal.aborted)setComparison({status:'error',text:error.message});});
+    return()=>controller.abort();
+  },[mode,comparisonKey,waiting,retry]);
   return <section className="decision-panel" aria-label={mode==='menus'?'Menus and prices':'Compare places'}>
     <Flex justify="between" align="center" gap="3"><Heading size="5">{mode==='menus'?'Food, drinks & prices':'Find your best fit'}</Heading><IconButton variant="ghost" aria-label="Close comparison" onClick={onDone}><Icon name="close" size={18}/></IconButton></Flex>
-    {mode==='menus'&&<Card size="2" variant="soft" mt="4"><Flex direction="column" gap="2"><Text as="p" size="2">I’ll help you weigh the available menus, prices and what matters for this outing. Missing prices stay unknown.</Text><Flex><Button type="button" variant="solid" disabled={!shown.length||queries.some(q=>q.isFetching)||menus.some(q=>q.isFetching)} onClick={()=>onAskAgent(shown.map(stop=>stop.item.id))}>Ask me to compare</Button></Flex><Text size="1" color="gray">{queries.some(q=>q.isFetching)||menus.some(q=>q.isFetching)?'Gathering available menu details…':'You can also select dishes below to include in the conversation.'}</Text></Flex></Card>}
+    {mode==='menus'&&<Card size="3" variant="soft" mt="4"><Flex direction="column" gap="3"><Heading size="3" as="h3">Let’s find your best fit</Heading>{comparison.status==='ready'?<AgentReply text={comparison.text} stops={shown} onPlace={onDetails}/>:comparison.status==='error'?<><Text as="p" size="2" role="alert">I couldn’t finish comparing these places. Their available details are below.</Text><Flex><Button type="button" size="2" variant="soft" onClick={()=>setRetry(value=>value+1)}>Try comparison again</Button></Flex></>:<Text as="p" size="2" role="status">{waiting?'Gathering menus, prices and hours…':'Comparing the places for your outing…'}</Text>}</Flex></Card>}
     {spend&&<Flex className="decision-budget" align="center" justify="between" wrap="wrap" gap="3"><div><Badge color={spend.suggested?'amber':'green'}>{spend.suggested?'Suggested spending':'Your spending limit'}</Badge><Text as="p" size="4" weight="bold">{spend.amount!=null?formatMoney(spend.amount,spend.currency):'No amount set'}{spend.people>1?' total':' for you'}</Text><Text as="p" size="2" color="gray">{spend.suggested?'A planning suggestion, not venue prices.':'For the whole outing, including travel.'}</Text></div>{onTool&&<Button variant="soft" onClick={()=>onTool('budget')}>Edit spending</Button>}</Flex>}
     {!shown.length&&<Text as="p">Places will appear here when your search returns.</Text>}
     <div className="decision-grid">{shown.map((stop,index)=>{

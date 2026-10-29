@@ -431,3 +431,10 @@ test('explicit comparison permits only a reply and keeps the existing plan uncha
  const wrong=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('show_ui',{panel:'compare'})});
  await assert.rejects(wrong.interpret({message:'Compare',context,planContext,task:'compare'}));
 });
+test('comparison retries a different weekday and uses the confirmed outing date',async()=>{
+ const context=parseItinerary({area:'Accra',date:'2026-10-29',timing:{dateConfirmed:true,timeConfirmed:true,mode:'fixed'}});
+ const planContext={stops:[],options:[{id:'a',intent:'dinner',name:'Restaurant A',connections:[],practical:'{}'}],warnings:[]};
+ let calls=0;const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('reply',{text:++calls===1?'Restaurant A is open Friday.':'Restaurant A reports hours for Thursday; confirm with them.'})});
+ const result=await agent.interpret({message:'Compare these',context,planContext,task:'compare'});
+ assert.equal(calls,2);assert.match(result.text,/Thursday/);
+});

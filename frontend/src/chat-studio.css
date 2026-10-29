@@ -261,3 +261,5 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 }
 
 .cs-tastes-open-layout{display:block}.cs-tastes-open-layout>div{width:100%}
+
+.agent-reply p{white-space:pre-line;margin:0 0 .85em}.agent-reply p:last-child{margin-bottom:0}.agent-reply strong{font-weight:650}
