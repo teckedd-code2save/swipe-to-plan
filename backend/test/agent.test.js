@@ -187,6 +187,13 @@ test('interactive chat tools validate panels and participant IDs',async()=>{
   for(const args of [{panel:'tastes',personId:'invented'},{panel:'email_everyone'},{panel:'share',personId:'sam'},{panel:'tastes',token:'secret'}])await assert.rejects(invoke(args),e=>e.status===400);
 });
 
+test('comparison panels ignore accidental taste changes without mutating the outing',async()=>{
+  const context=parseItinerary({area:'Accra'}),before=JSON.stringify(context);
+  const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('show_ui',{panel:'compare',changes:{activities:['drinks']}})});
+  assert.deepEqual(await agent.interpret({message:'Compare these places',context}),{status:'show_ui',panel:'compare'});
+  assert.equal(JSON.stringify(context),before);
+});
+
 test('replies receive bounded participant-to-preference evidence, with malformed context rejected before the model',async()=>{
   let payload,calls=0;
   const context=parseItinerary({people:[{id:'sam',name:'Sam',artists:['Tems']}]});
