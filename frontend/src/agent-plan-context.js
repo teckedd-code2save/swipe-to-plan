@@ -14,7 +14,7 @@ function practicalEvidence(stop,place,report,picks,menu,request){
     publishedMenuPrices:(menu?.items||[]).slice(0,4).map(i=>({name:i.name.slice(0,50),price:i.price,currency:i.currency})),
     menuPriceSource:menu?.sourceUrl?.slice(0,160),
     menuEvidence:menu?'lookup completed; absence of prices is not evidence of affordability':'not available or not checked',
-    relativePriceBand:place.facts?.price?.level??null,
+    relativePriceBand:stop.item.facts?.price?.level??place.facts?.price?.level??null,
     priceVerified:false,source:'provider data; current availability unverified'
   };
   let encoded=JSON.stringify(evidence);
@@ -34,3 +34,4 @@ export function agentPlanContext(plan,checks={},picks=[],venues=new Map(),menus=
   const selected=new Set(plan.stops.filter(s=>s.item).map(s=>s.item.id));
   return {stops:options.filter(s=>selected.has(s.id)).slice(0,3),options,warnings:plan.warnings||[]};
 }
+
