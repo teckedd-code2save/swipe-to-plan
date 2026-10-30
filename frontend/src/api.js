@@ -20,6 +20,9 @@ export const api = {
   usage:days=>json(`/api/admin/usage?days=${days}`),
   account:()=>json('/api/account'),
   savedPlans:()=>json('/api/account/plans'),
+  circlePlans:()=>json('/api/account/circle-plans'),
+  circlePlan:(ownerId,id)=>json(`/api/account/circle-plans/${encodeURIComponent(ownerId)}/${encodeURIComponent(id)}`),
+  attachPlanCircle:(id,circleId)=>json(`/api/account/plans/${encodeURIComponent(id)}/circles`,post({circleId})),
   savedPlan:id=>json(`/api/account/plans/${encodeURIComponent(id)}`),
   editSavedPlan:(id,body)=>json(`/api/account/plans/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify(body)}),
   deleteSavedPlan:id=>json(`/api/account/plans/${encodeURIComponent(id)}`,{method:'DELETE',body:'{}'}),
@@ -28,6 +31,7 @@ export const api = {
   signOut:()=>json('/api/auth/logout',post({})),
   profile:person=>json('/api/account/profile',{method:'PATCH',body:JSON.stringify(person)}),
   saveCircle:body=>json('/api/account/circles',post(body)),
+  renameCircle:(id,name)=>json(`/api/account/circles/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({name})}),
   emailCircleInvite:(id,email)=>json(`/api/account/circles/${encodeURIComponent(id)}/email-invites`,post({email})),
   acceptEmailCircleInvite:(id,token)=>json(`/api/account/circles/${encodeURIComponent(id)}/email-invites/accept`,post({token})),
   removeCircleMember:(id,memberId)=>json(`/api/account/circles/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}`,{method:'DELETE',body:'{}'}),
@@ -61,4 +65,5 @@ export const api = {
   join: (code, body) => json(`/api/rooms/${encodeURIComponent(code)}/members`, post(body)),
   plan: (code, body = {}) => json(`/api/rooms/${encodeURIComponent(code)}/plan`, post(body)),
 };
+
 
