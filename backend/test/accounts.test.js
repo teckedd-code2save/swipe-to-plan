@@ -266,3 +266,66 @@ test('email circle invitations are recipient-bound and require explicit acceptan
   }
 });
 
+
+
+test('circle plans follow membership, revisions and renames without exposing private plans',async()=>{
+  const f=fixture(),a=await f.login('Organizer'),b=await f.login('Member'),outsider=await f.login('Stranger');
+  const organizer=(await f.accounts.current(a.session)).user, member=(await f.accounts.current(b.session)).user;
+  const circle=await f.accounts.createCircle(a.session,{name:'Weekend',people:[organizer.profile]});
+  const plan=await generatedPlan();
+  await f.accounts.keepPlan({session:a.session,id:libraryId,revision:1},plan);
+  await f.accounts.attachCircle(a.session,libraryId,{circleId:circle.id});
+  assert.deepEqual(await f.accounts.listCirclePlans(b.session),[]);
+  await assert.rejects(f.accounts.getCirclePlan(outsider.session,organizer.id,libraryId),e=>e.status===404);
+  await f.accounts.joinCircle(b.session,circle.id,{inviteToken:circle.inviteToken});
+  assert.equal((await f.accounts.listCirclePlans(b.session))[0].circleName,'Weekend');
+  const visible=await f.accounts.getCirclePlan(b.session,organizer.id,libraryId);
+  assert.deepEqual(visible.stops,plan.stops);assert.equal(visible.savedPlan,undefined);
+  await assert.rejects(f.accounts.editSavedPlan(b.session,libraryId,{revision:1,pins:{}}),e=>e.status===404);
+  const updated=await generatedPlan({budget:1200});
+  await f.accounts.keepPlan({session:a.session,id:libraryId,revision:2},updated);
+  assert.equal((await f.accounts.getCirclePlan(b.session,organizer.id,libraryId)).request.budget,1200);
+  await f.accounts.renameCircle(b.session,circle.id,{name:'Night Owls'});
+  assert.equal((await f.accounts.listCirclePlans(b.session))[0].circleName,'Night Owls');
+  await assert.rejects(f.accounts.renameCircle(outsider.session,circle.id,{name:'No'}),e=>e.status===404);
+  await f.accounts.removeCircleMember(a.session,circle.id,member.id);
+  assert.deepEqual(await f.accounts.listCirclePlans(b.session),[]);
+  await assert.rejects(f.accounts.getCirclePlan(b.session,organizer.id,libraryId),e=>e.status===404);
+  await f.accounts.joinCircle(b.session,circle.id,{inviteToken:circle.inviteToken});
+  assert.equal((await f.accounts.listCirclePlans(b.session)).length,1);
+  await f.accounts.removePlan(a.session,libraryId);
+  assert.deepEqual(await f.accounts.listCirclePlans(b.session),[]);
+});
+
+test('new plans can be associated at save time only by an actual circle member',async()=>{
+  const f=fixture(),a=await f.login('Organizer'),b=await f.login('Member'),c=await f.login('Outsider');
+  const organizer=(await f.accounts.current(a.session)).user;
+  const circle=await f.accounts.createCircle(a.session,{name:'Dinner',people:[organizer.profile]});
+  await f.accounts.joinCircle(b.session,circle.id,{inviteToken:circle.inviteToken});
+  const plan=await generatedPlan();
+  const result=await f.accounts.keepPlan({session:a.session,id:libraryId,revision:1,circleId:circle.id},plan);
+  assert.deepEqual(result.savedPlan.circleIds,[circle.id]);
+  assert.equal((await f.accounts.listCirclePlans(b.session)).length,1);
+  const rejected=await f.accounts.keepPlan({session:c.session,id:libraryId,revision:1,circleId:circle.id},plan);
+  assert.ok(rejected.saveError);assert.equal((await f.accounts.listPlans(c.session)).length,0);
+  await f.accounts.removeCircle(a.session,circle.id);
+  assert.deepEqual(await f.accounts.listCirclePlans(b.session),[]);
+});
+
+test('circle plan HTTP endpoints authorize sessions and reject cross-origin sharing and renaming',async t=>{
+  const f=fixture(),a=await f.login('Organizer'),b=await f.login('Member'),c=await f.login('Stranger');
+  const organizer=(await f.accounts.current(a.session)).user;
+  const circle=await f.accounts.createCircle(a.session,{name:'Friends',people:[organizer.profile]});
+  await f.accounts.joinCircle(b.session,circle.id,{inviteToken:circle.inviteToken});
+  const server=createApp({provider:{name:'demo'},accounts:f.accounts,rateLimit:false}).listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));t.after(()=>server.close());
+  const base=`http://127.0.0.1:${server.address().port}`, headers=session=>({'content-type':'application/json',origin:'http://localhost:5173',cookie:`outing-session=${session}`});
+  await f.accounts.keepPlan({session:a.session,id:libraryId,revision:1},await generatedPlan());
+  const attach=await fetch(`${base}/api/account/plans/${libraryId}/circles`,{method:'POST',headers:headers(a.session),body:JSON.stringify({circleId:circle.id})});assert.equal(attach.status,200);
+  const list=await fetch(`${base}/api/account/circle-plans`,{headers:headers(b.session)});assert.equal((await list.json()).plans.length,1);
+  const path=`${base}/api/account/circle-plans/${organizer.id}/${libraryId}`;
+  assert.equal((await fetch(path,{headers:headers(b.session)})).status,200);
+  assert.equal((await fetch(path,{headers:headers(c.session)})).status,404);
+  assert.equal((await fetch(`${base}/api/account/circles/${circle.id}`,{method:'PATCH',headers:{...headers(b.session),origin:'https://evil.test'},body:JSON.stringify({name:'Wrong'})})).status,403);
+  assert.equal((await fetch(`${base}/api/account/circles/${circle.id}`,{method:'PATCH',headers:headers(b.session),body:JSON.stringify({name:'New name'})})).status,200);
+  assert.equal((await f.accounts.current(a.session)).circles[0].name,'New name');
+});
