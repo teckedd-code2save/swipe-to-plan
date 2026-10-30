@@ -199,3 +199,14 @@ test('streamed discovery publishes places before candidate review resolves', {ti
  });
  const early=await preview;assert.ok(early.shortlist.length);assert.equal(early.qualityReview.status,'pending');assert.equal(events.length,1);await reviewStarted;finishReview();await completed;assert.equal(events.at(-1).type,'complete');assert.equal(events.at(-1).plan.qualityReview.status,'reviewed');assert.equal(events.at(-1).plan.request.budget,null);assert.equal(events.at(-1).plan.allowance.kind,'suggested');
 });
+
+
+test('shared-day polling does not consume the edit rate limit',async t=>{
+  const call=await serve(t,{rateLimit:true});
+  const created=await call('/api/days',{request:{area:'Osu',activities:['drinks'],party:{adults:1},people:[{name:'You'}]}});
+  assert.equal(created.status,201);
+  const {id,token,revision,request}=created.body,headers={authorization:`Bearer ${token}`};
+  for(let i=0;i<25;i++)assert.equal((await call(`/api/days/${id}`,undefined,'GET',headers)).status,200);
+  const updated=await call(`/api/days/${id}`,{request,revision},'PATCH',headers);
+  assert.equal(updated.status,200);
+});
