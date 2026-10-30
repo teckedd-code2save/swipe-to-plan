@@ -11,6 +11,7 @@ export default function useAccount(){
     try{const result=await job;if(alive.current&&generation===version.current)setData(d=>({...d,user:result.user}));}catch(e){if(alive.current)setError(`Your tastes could not be saved: ${e.message}`);throw e;}finally{pending.current--;if(!pending.current)refresh();}
   }
   async function createCircle(body){await writes.current;const result=await api.saveCircle(body);await refresh();return result;}
+  async function renameCircle(id,name){const result=await api.renameCircle(id,name);await refresh();return result;}
   async function inviteCircleByEmail(id,email){return api.emailCircleInvite(id,email);}
   async function acceptCircleEmailInvite(id,token){const result=await api.acceptEmailCircleInvite(id,token);await refresh();return result;}
   async function removeCircleMember(id,memberId){await api.removeCircleMember(id,memberId);await refresh();}
@@ -25,5 +26,5 @@ export default function useAccount(){
   async function changePlanningLocation(id){++version.current;pending.current++;const job=writes.current.catch(()=>{}).then(()=>api.planningLocation(id));writes.current=job;try{const result=await job;if(alive.current)setData(d=>({...d,user:result.user}));return result.user.planningLocation;}finally{pending.current--;if(!pending.current)refresh();}}
   async function forgetPlanningLocation(id){++version.current;pending.current++;const job=writes.current.catch(()=>{}).then(()=>api.forgetPlanningLocation(id));writes.current=job;try{const result=await job;if(alive.current)setData(d=>({...d,user:result.user}));return result.user;}finally{pending.current--;if(!pending.current)refresh();}}
   async function signOut(){await writes.current;await api.signOut();version.current++;setData(d=>({...d,user:null,circles:[]}));}
-  return {...data,ready,error,refresh,changeProfile,createCircle,inviteCircleByEmail,acceptCircleEmailInvite,removeCircleMember,removeCircle,joinCircle,changeCirclePerson,changePlanningLocation,forgetPlanningLocation,signOut,clearError:()=>setError('')};
+  return {...data,ready,error,refresh,changeProfile,createCircle,renameCircle,inviteCircleByEmail,acceptCircleEmailInvite,removeCircleMember,removeCircle,joinCircle,changeCirclePerson,changePlanningLocation,forgetPlanningLocation,signOut,clearError:()=>setError('')};
 }
