@@ -15,7 +15,7 @@ export function Budget({ plan,onEdit,onBudget,onPerson,disabled }) {
 
 export { BeforeGoing } from './PlaceGuide.jsx';
 
-export function Stop({stop,plan,busy,onPin,onSwap,onTrace,onBudget,onDetails,onMenus,discovery=false}) {
+export function Stop({stop,plan,busy,onPin,onSwap,onTrace,onBudget,onDetails,onMenus,onRemove,actions,discovery=false}) {
   const [imageFailed,setImageFailed]=useState(false),item=stop.item;
   if(!item)return <Card className="outing-empty"><Heading size="3">{stop.label||'A place still to find'}</Heading><Text as="p">{stop.reason==='no_open_place'?'The places found don’t fit this time. Change the time or explore another option.':'No matching place returned for this part of your request.'}</Text></Card>;
   const pinned=!!plan.request.pins?.[stop.intent];
@@ -31,8 +31,9 @@ export function Stop({stop,plan,busy,onPin,onSwap,onTrace,onBudget,onDetails,onM
       {item.description&&<Text as="p" size="2" mt="3" className="outing-place-description">{item.description}</Text>}
       {stop.timeStatus==='needs_time'&&<Text as="p" size="2" color="amber">{stop.reason==='time_in_past'?'Your requested time has passed. Choose another time to visit.':'I couldn’t fit this place into your requested time. Its reported hours may not match; explore other places or change the time.'}</Text>}
       {names.length>0&&onTrace&&<button className="outing-fit" onClick={()=>onTrace(stop.id)}><Icon name="nodes" size={14}/>Taste connections for {names.join(', ')}<Icon name="arrow" size={14}/></button>}
-      <Flex gap="2" wrap="wrap" mt="4"><Button variant="soft" onClick={()=>onDetails(stop,'practical')}>Menu & details</Button><Button asChild variant="outline"><a href={routeLink({stop},'driving')} target="_blank" rel="noreferrer">Directions ↗</a></Button>{!discovery&&onSwap&&<Button variant="ghost" disabled={busy||pinned} onClick={()=>onSwap(stop)}>Find another</Button>}</Flex>
+      <Flex gap="2" wrap="wrap" mt="4"><Button variant="soft" onClick={()=>onDetails(stop,'practical')}>Menu & details</Button><Button asChild variant="outline"><a href={routeLink({stop},'driving')} target="_blank" rel="noreferrer">Directions ↗</a></Button>{!discovery&&onSwap&&<Button variant="ghost" disabled={busy||pinned} onClick={()=>onSwap(stop)}>Find another</Button>}{onRemove&&<Button variant="ghost" disabled={busy} onClick={()=>onRemove(stop)}>Remove stop</Button>}{actions}</Flex>
       {!discovery&&onPin&&!plan.request.route&&<button className="outing-keep" disabled={busy} aria-pressed={pinned} onClick={()=>onPin(stop.intent,item.id)}><Icon name={pinned?'check':'bookmark'} size={14}/>{pinned?'Kept in your outing':'Keep this place'}</button>}
     </div>
   </Card>;
 }
+
