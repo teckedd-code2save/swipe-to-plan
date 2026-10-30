@@ -210,3 +210,11 @@ test('shared-day polling does not consume the edit rate limit',async t=>{
   const updated=await call(`/api/days/${id}`,{request,revision},'PATCH',headers);
   assert.equal(updated.status,200);
 });
+
+test('a shared outing can add a second place with the same activity',async t=>{
+  const call=await serve(t,{rateLimit:true});
+  const created=await call('/api/days',{request:{area:'Osu',activities:['drinks'],party:{adults:1},people:[{name:'You'}]}});
+  const {id,token,revision,request}=created.body,headers={authorization:`Bearer ${token}`};
+  const updated=await call(`/api/days/${id}`,{request:{...request,activities:['drinks'],route:[{intent:'drinks',placeId:'qloo:first'},{intent:'drinks',placeId:'qloo:second'}],pins:{}},revision},'PATCH',headers);
+  assert.equal(updated.status,200);assert.equal(updated.body.request.route.length,2);
+});
