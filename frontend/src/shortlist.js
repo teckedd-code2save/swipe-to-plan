@@ -1,6 +1,6 @@
 export function shortlistCandidates(plan){
   if(!plan)return [];
-  const direct=plan.shortlist||plan.stops.filter(s=>s.item).map(s=>({intent:s.intent,item:s.item}));
+  const direct=[...plan.stops.filter(s=>s.item).map(s=>({intent:s.intent,item:s.item})),...(plan.shortlist||[])];
   return [...new Map([...direct,...(plan.nearbySuggestions||[])].map(choice=>[choice.item.id,choice])).values()];
 }
 export function routeFromChoices(plan,ids){
@@ -13,3 +13,4 @@ export function alternativeCandidates(plan){
   const current=new Set(plan?.stops.filter(stop=>stop.item).map(stop=>stop.item.id)||[]);
   return shortlistCandidates(plan).filter(choice=>!current.has(choice.item.id));
 }
+
