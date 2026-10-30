@@ -35,7 +35,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   const hits = new Map();
   const limit = (max) => (req, res, next) => {
     if (!rateLimit) return next();
-    const key = req.ip + req.path;
+    const key = `${req.ip}:${req.method}:${req.path}`;
     const recent = (hits.get(key) ?? []).filter((t) => now() - t < 60000);
     if (recent.length >= max) return res.status(429).json({ code: "rate_limited", error: "Please wait a minute and try again." });
     if (hits.size > 5000) hits.delete(hits.keys().next().value);
@@ -223,4 +223,5 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   }
   return app;
 }
+
 
