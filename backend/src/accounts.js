@@ -41,8 +41,13 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
   const circleView=(data,circle,user)=>({id:circle.id,name:circle.name,owner:circle.ownerId===user.id,people:circle.members.map(m=>m.userId?data.users[m.userId].profile:m.profile),accountIds:circle.members.flatMap(m=>m.userId?[m.userId]:[]),...(circle.ownerId===user.id?{inviteToken:circle.inviteToken}:{})});
   const myCircles=(data,user)=>Object.values(data.circles).filter(c=>c.members.some(m=>m.userId===user.id)).map(c=>circleView(data,c,user));
   function returnPath(raw){if(raw==='/'||raw===undefined)return '/';if(typeof raw==='string'&&(/^\/#\/(?:day|circle)\/[a-zA-Z0-9_-]{1,64}\?(?:key|invite)=[a-zA-Z0-9_-]{20,64}$/.test(raw)||/^\/#\/plan\/[a-zA-Z0-9_-]{1,64}$/.test(raw)))return raw;throw new InputError('Return to the planner after signing in.');}
-  const planSummary=entry=>({id:entry.id,revision:entry.revision,savedAt:entry.savedAt,title:entry.plan.request.title,date:entry.plan.request.date,area:entry.plan.request.area,budget:entry.plan.request.budget,currency:entry.plan.request.currency});
+  const planSummary=entry=>({id:entry.id,revision:entry.revision,savedAt:entry.savedAt,title:entry.plan.request.title,date:entry.plan.request.date,area:entry.plan.request.area,budget:entry.plan.request.budget,currency:entry.plan.request.currency,...(entry.circleIds?.length?{circleIds:entry.circleIds}: {})});
   const savedPlan=(user,id)=>{if(!Object.hasOwn(user.savedPlans||{},id))throw fail('This saved day is not in your account.',404);return user.savedPlans[id];};
+  const member=(circle,userId)=>!!circle?.members.some(m=>m.userId===userId);
+  const sharedPlans=(data,user)=>Object.values(data.users).filter(owner=>owner.id!==user.id).flatMap(owner=>Object.values(owner.savedPlans||{}).flatMap(entry=>{
+    const circles=(entry.circleIds||[]).map(id=>data.circles[id]).filter(c=>member(c,owner.id)&&member(c,user.id));
+    return circles.length?[{ownerId:owner.id,entry,circle:circles[0],circles}]:[];
+  }));
   return {
     enabled,origin,redirectUri,
     // Only server-generated plans enter this store; clients cannot upload venue/evidence snapshots.
@@ -55,7 +60,9 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       // Reworking an archived shared-day snapshot starts a private copy. Live
       // participant updates must never overwrite that independent revision.
       if(!shared&&await store.read(data=>!!resolve(data,session)?.savedPlans?.[id]?.sourceDayId))return {session,id:randomUUID(),revision:1};
-      return {session,id,revision};
+      const circleId=req.get('x-unstressed-circle-id');
+      if(circleId)await store.read(data=>{const user=requireUser(data,session);if(!member(data.circles[circleId],user.id))throw fail('That circle is no longer available.',404);});
+      return {session,id,revision,...(circleId?{circleId}:{})};
     },
     async keepPlan(target,plan){
       if(!target)return plan;
@@ -65,7 +72,9 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
           if(previous&&target.revision===previous.revision&&JSON.stringify(plan)===JSON.stringify(previous.plan))return planSummary(previous);
           if(previous&&target.revision<=previous.revision)throw fail('A newer version is already saved. Reopen it from Saved days.',409);
           if(!previous&&Object.keys(entries).length>=100)throw fail('Your account holds 100 days. Remove an old saved day to make room.',409);
-          const entry={id:target.id,revision:target.revision,savedAt:new Date(now()).toISOString(),plan:structuredClone(plan),previous:previous?{plan:previous.plan,revision:previous.revision}:null,...(target.sourceDayId?{sourceDayId:target.sourceDayId}:{})};
+          if(target.circleId&&!member(data.circles[target.circleId],user.id))throw fail('That circle is no longer available.',404);
+          const circleIds=[...new Set([...(previous?.circleIds||[]),...(target.circleId?[target.circleId]:[])])];
+          const entry={id:target.id,revision:target.revision,savedAt:new Date(now()).toISOString(),plan:structuredClone(plan),previous:previous?{plan:previous.plan,revision:previous.revision}:null,...(circleIds.length?{circleIds}:{}),...(target.sourceDayId?{sourceDayId:target.sourceDayId}:{})};
           delete entry.plan.savedPlan;delete entry.plan.saveError;
           entries[entry.id]=entry;user.savedPlans=entries;return planSummary(entry);
         });
@@ -74,6 +83,9 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
     },
     async listPlans(session){return store.read(data=>Object.values(requireUser(data,session).savedPlans||{}).sort((a,b)=>b.savedAt.localeCompare(a.savedAt)).map(planSummary));},
     async getPlan(session,id){return store.read(data=>{const entry=savedPlan(requireUser(data,session),id);return {...entry.plan,savedPlan:planSummary(entry)};});},
+    async listCirclePlans(session){return store.read(data=>{const user=requireUser(data,session);return sharedPlans(data,user).map(({ownerId,entry,circle,circles})=>({...planSummary(entry),circleIds:circles.map(c=>c.id),ownerId,circleName:circle.name})).sort((a,b)=>b.savedAt.localeCompare(a.savedAt));});},
+    async getCirclePlan(session,ownerId,id){return store.read(data=>{const user=requireUser(data,session),match=sharedPlans(data,user).find(x=>x.ownerId===ownerId&&x.entry.id===id);if(!match)throw fail('This circle plan is no longer available.',404);return {...match.entry.plan,circleAccess:{name:match.circle.name}};});},
+    async attachCircle(session,id,body){fields(body,['circleId']);return store.transact(data=>{const user=requireUser(data,session),circle=data.circles[body.circleId];if(!member(circle,user.id))throw fail('That circle is no longer available.',404);const entry=savedPlan(user,id);entry.circleIds=[...new Set([...(entry.circleIds||[]),circle.id])];return planSummary(entry);});},
     async editSavedPlan(session,id,body){
       fields(body,['revision','pins','restoreRevision']);
       return store.transact(data=>{
@@ -139,6 +151,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
         const circle={id:randomUUID(),name:body.name.trim(),ownerId:user.id,members,inviteToken:opaque()};data.circles[circle.id]=circle;return circleView(data,circle,user);
       });
     },
+    async renameCircle(session,id,body){fields(body,['name']);if(typeof body.name!=='string'||!body.name.trim()||body.name.trim().length>40)throw new InputError('Name your circle in up to 40 characters.');return store.transact(data=>{const user=requireUser(data,session),circle=data.circles[id];if(!member(circle,user.id))throw fail('Circle not found.',404);circle.name=body.name.trim();return circleView(data,circle,user);});},
     async inviteByEmail(session,id,body){
       fields(body,['email']);
       const email=String(body.email||'').trim().toLowerCase();
@@ -200,6 +213,9 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       const mutation=(fn)=>route(async(req,res)=>{checkOrigin(req);await fn(req,res);});
       app.get('/api/account',route(async(req,res)=>res.json(await this.current(session(req)))));
       app.get('/api/account/plans',route(async(req,res)=>res.json({plans:await this.listPlans(session(req))})));
+      app.get('/api/account/circle-plans',route(async(req,res)=>res.json({plans:await this.listCirclePlans(session(req))})));
+      app.get('/api/account/circle-plans/:ownerId/:id',route(async(req,res)=>res.json(await this.getCirclePlan(session(req),req.params.ownerId,req.params.id))));
+      app.post('/api/account/plans/:id/circles',limit(20),mutation(async(req,res)=>res.json(await this.attachCircle(session(req),req.params.id,req.body))));
       app.get('/api/account/plans/:id',route(async(req,res)=>res.json(await this.getPlan(session(req),req.params.id))));
       app.patch('/api/account/plans/:id',limit(45),mutation(async(req,res)=>res.json(await this.editSavedPlan(session(req),req.params.id,req.body))));
       app.delete('/api/account/plans/:id',limit(20),mutation(async(req,res)=>{await this.removePlan(session(req),req.params.id);res.json({ok:true});}));
@@ -212,6 +228,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       app.patch('/api/account/profile',limit(45),mutation(async(req,res)=>res.json({user:await this.updateProfile(session(req),req.body)})));
       app.patch('/api/account/planning-location',limit(20),mutation(async(req,res)=>res.json({user:await this.updatePlanningLocation(session(req),req.body,resolveLocation)})));
       app.post('/api/account/circles',limit(15),mutation(async(req,res)=>res.status(201).json(await this.createCircle(session(req),req.body))));
+      app.patch('/api/account/circles/:id',limit(20),mutation(async(req,res)=>res.json(await this.renameCircle(session(req),req.params.id,req.body))));
       app.post('/api/account/circles/:id/email-invites',limit(5),mutation(async(req,res)=>res.status(202).json(await this.inviteByEmail(session(req),req.params.id,req.body))));
       app.post('/api/account/circles/:id/email-invites/accept',limit(15),mutation(async(req,res)=>res.json(await this.acceptEmailInvite(session(req),req.params.id,req.body))));
       app.get('/api/circle-invites/:id',limit(30),route(async(req,res)=>res.json(await this.invite(req.params.id,req.get('x-circle-invite')))));
@@ -222,4 +239,5 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
     },
   };
 }
+
 
