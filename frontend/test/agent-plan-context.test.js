@@ -14,3 +14,11 @@ test('comparison contains only inspected places and preserves parseable bounded 
  assert.deepEqual(ctx.options.map(p=>p.id),['b']);assert.equal(ctx.stops.length,0);
  const practical=JSON.parse(ctx.options[0].practical);assert.equal(practical.publishedMenuPrices[0].price,45);assert.equal(practical.hours,'Not checked for this visit');assert.ok(ctx.options[0].practical.length<=1200);
 });
+
+test('comparison uses the same price band displayed on the result card when refreshed details disagree',()=>{
+ const place={id:'bar',entityId:'qbar',name:'Bar',facts:{price:{level:1}}};
+ const plan={stops:[{id:'stop-0',intent:'drinks',item:place,connections:[]}],warnings:[]};
+ const refreshed={...place,facts:{price:{level:2}}};
+ const context=agentPlanContext(plan,{},[],new Map([['qbar',refreshed]]));
+ assert.equal(JSON.parse(context.stops[0].practical).relativePriceBand,1);
+});
