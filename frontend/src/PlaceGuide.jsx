@@ -73,7 +73,7 @@ export function PlaceDetails({stop,plan,checks,onClose,onSwap,canSwap,initialVie
         {view==='overview'&&!!place.tagNames?.length&&<div className="pg-tags">{place.tagNames.map(tag=><span key={tag}>{tag}</span>)}</div>}
         {view==='booking'?<BookingAction scope={bookingScope} context={routeScope} plan={plan} stop={stop} place={place}/>:view==='route'?<RouteGuide routeScope={routeScope} plan={stop.id==='shortlist-place'?{...plan,stops:[stop]}:plan} checks={checks} initialStopId={stop.id} onTiming={onTiming}/>:<>
         {view==='practical'&&<VenueMenuEvidence place={place}/>}
-        <VenueLinks place={place}/><VenueContact place={place}/>
+        <VenueLinks place={place}/><VenueContact place={place} scope={bookingScope} context={[routeScope,stop.id,plan.request.date]}/>
         {checks.status==='error'&&<p className="pg-note" role="alert">Details couldn’t load. <button className="pg-link" onClick={checks.refresh}>Try again</button></p>}
         {stop.item?.experienceFit&&<section className="pg-detail-section pg-experience-fit"><span className="pg-eyebrow">HOW IT FITS YOUR REQUEST</span>
           {stop.item.experienceFit.cuisine&&<p><strong>{stop.item.experienceFit.cuisine.requested} cuisine:</strong> {stop.item.experienceFit.cuisine.status==='provider_text_signal'?'Mentioned in provider text, but dishes and menu are not confirmed.':'Not verified from available venue information.'}</p>}

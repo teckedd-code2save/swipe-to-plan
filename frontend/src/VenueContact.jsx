@@ -1,3 +1,4 @@
+import WebsiteContactEvidence from './WebsiteContactEvidence.jsx';
 import {contactForItem,safeContactWebsite} from '../../shared/venue-contact.js';
 
 function evidenceFor(place,contact) {
@@ -16,7 +17,7 @@ function Source({source}) {
   const date=source?.retrievedAt&&new Date(source.retrievedAt),valid=date&&Number.isFinite(date.getTime());
   return <small>Source: {source?.provider==='qloo'?'Qloo':source?.provider||'saved venue data'}{source?.field?` · ${source.field}`:''}. {valid?<>Retrieved <time dateTime={date.toISOString()}>{date.toLocaleString()}</time>.</>:'Retrieval time unknown.'} Provider update time unknown.</small>;
 }
-export default function VenueContact({place,contact,allowDial=true,allowWebsite=true,contacts}) {
+export default function VenueContact({place,contact,allowDial=true,allowWebsite=true,contacts,scope,context}) {
   const evidence=evidenceFor(place,contact),phone=evidence.phone,website=evidence.website;
   if(evidence.identityStatus==='conflicting')return <section className="pg-venue-contact" aria-label={`Contact ${place?.name||'venue'}`}><h3>Contact {place?.name||'venue'}</h3><p>Contact details do not match this venue. Verify its contact information manually before reaching out.</p></section>;
   const websiteUrl=contacts?contacts.website:website?.url;
@@ -31,5 +32,6 @@ export default function VenueContact({place,contact,allowDial=true,allowWebsite=
     <p className="pg-note">Ownership and reachability unverified. Details may be outdated. WhatsApp support unknown.</p>
     {allowDial&&<DialerLink place={place} contact={evidence} allowedUrl={contacts?.phone}/>}
     {phone?.dialUrl&&<small>Opens your dialer only. Confirm the venue identity, visit time, availability and any fees with the venue. Nothing is called or booked by Unstressed.</small>}
+    <WebsiteContactEvidence entityId={place?.entityId} scope={scope} context={context}/>
   </section>;
 }

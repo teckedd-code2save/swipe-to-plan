@@ -1,4 +1,5 @@
 import {compareOpenAreas} from './open-location.js';
+import {createContactEvidence} from './contact-evidence.js';
 import {createMenuEvidence} from './menu-evidence.js';
 import {withActionMessages} from './agent-conversation.js';
 import {nearbyRequest} from './locations.js';
@@ -19,7 +20,7 @@ import {createMetrics,CLIENT_EVENTS,visitorId} from './metrics.js';
 import { createPlaceGuide } from './place-guide.js';
 import { createRouteActions, RouteActionError } from './route-actions.js';
 
-export function createApp({ provider, prisma = null, agent = null, dayStore, metrics, accounts=createAccounts(), routeActions, rateLimit = true, trustProxy = process.env.TRUST_PROXY === '1' ? 1 : false, now = Date.now } = {}) {
+export function createApp({ provider, prisma = null, agent = null, dayStore, metrics, accounts=createAccounts(), routeActions, contactEvidenceReader, rateLimit = true, trustProxy = process.env.TRUST_PROXY === '1' ? 1 : false, now = Date.now } = {}) {
   metrics??=createMetrics({now});
   routeActions??=createRouteActions({now});
   const app = express();
@@ -28,6 +29,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   const discovery = createDiscovery({ provider, now,reviewCandidates:agent?.configured?.()&&agent.reviewCandidates?agent.reviewCandidates:undefined });
   const places = createPlaceGuide({provider,now});
   const menuEvidence=createMenuEvidence({places,now});
+  const contactEvidence=createContactEvidence({places,now,readPage:contactEvidenceReader});
   discovery.placeDetails=provider.getPlace?places.details:null;
   discovery.now=now;
   const days = createDays({ discovery, store: dayStore, now });
@@ -110,6 +112,11 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   }));
   app.get('/api/locations/:id',limit(60),route(async(req,res)=>{if(!provider.getLocation)throw new InputError('Location search is unavailable on this server.');res.json(await provider.getLocation(req.params.id));}));
   app.get("/api/deck", (_req, res) => res.json(publicDeck()));
+  app.head('/api/places/:id/contact-evidence',(_req,res)=>res.set('Allow','GET').status(405).end());
+  app.get('/api/places/:id/contact-evidence',limit(8,'contact_evidence'),route(async(req,res)=>{
+    if(Object.keys(req.query).length||Object.keys(req.body||{}).length)throw new InputError('Only an exact venue ID is accepted.');
+    res.json(await contactEvidence.get(req.params.id));
+  }));
   app.get('/api/places/:id/menu',limit(12),route(async(req,res)=>res.json(await menuEvidence.get(req.params.id))));
   app.get('/api/places/:id',limit(30),route(async(req,res)=>res.json(await places.details(req.params.id))));
   app.post('/api/place-checks',limit(15),route(async(req,res)=>res.json(await places.check(req.body))));
