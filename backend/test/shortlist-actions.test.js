@@ -11,5 +11,5 @@ test('adding another drinks place retains the chosen bar and produces an ordered
   assert.deepEqual(route.activities,['drinks']);assert.deepEqual(route.route,[{intent:'drinks',placeId:'first'},{intent:'drinks',placeId:'second'}]);
   const parsed=parseItinerary(route);assert.equal(parsed.budget,300);assert.equal(parsed.area,'East Legon');assert.equal(parsed.route.length,2);
   assert.deepEqual(routeFromChoices(plan,['second']).route,[{intent:'drinks',placeId:'second'}]);
-  assert.throws(()=>routeFromChoices(plan,['first','first']),/different places/);
+  assert.deepEqual(routeFromChoices(plan,['first','first']).route,[{intent:'drinks',placeId:'first'},{intent:'drinks',placeId:'first'}]);
 });

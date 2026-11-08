@@ -14,5 +14,5 @@ test('nearby scope is only adopted when a nearby suggestion is explicitly select
   assert.equal(shortlistCandidates(plan).length,3);
   assert.equal(routeFromChoices(plan,['c']).searchRadiusKm,20);
   assert.equal(plan.request.searchRadiusKm,undefined);
-  for(const ids of [[],['a','a'],['unknown'],['a','b','c','d']])assert.throws(()=>routeFromChoices(plan,ids));
+  for(const ids of [[],['unknown'],['a','b','c','d']])assert.throws(()=>routeFromChoices(plan,ids));
 });

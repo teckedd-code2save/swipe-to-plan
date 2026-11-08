@@ -62,7 +62,7 @@ test('spending tastes change reserves and priorities without raising the group b
   for(const spending of [{style:'rich'},{priority:'flight'},{style:'mindful',actualPrice:20},null])assert.throws(()=>parseItinerary({people:[{name:'Sam',spending}]}),e=>e.status===400);
 });
 test('malformed locations, dates, ambiguous activities and invalid family briefs fail before search', () => {
-  for (const r of [{ area: '' }, { date: '2026-02-30' }, { budget: 0 }, { date: null }, { endTime: '25:00' }, { startTime: '22:00', endTime: '01:00' }, { activities: ['coffee', 'coffee'] }, { activities: ['coffee','activity','dinner','drinks'] }, { party: { children: 1 }, activities: ['dinner', 'drinks'] }, { pins: { coffee: 'a', dinner: 'a' } }, { accessible: true }, { people: [{ name: 'Sam', artists: ['a','b','c','d','e','f','g'] }] }, { party: { adults: 1 }, people: [{ name: 'a' }, { name: 'b' }] }]) assert.throws(() => parseItinerary(r), e => e.status === 400);
+  for (const r of [{ area: '' }, { date: '2026-02-30' }, { budget: 0 }, { date: null }, { endTime: '25:00' }, { startTime: '22:00', endTime: '01:00' }, { activities: ['coffee', 'coffee'] }, { activities: ['coffee','activity','dinner','drinks'] }, { party: { children: 1 }, activities: ['dinner', 'drinks'] }, { accessible: true }, { people: [{ name: 'Sam', artists: ['a','b','c','d','e','f','g'] }] }, { party: { adults: 1 }, people: [{ name: 'a' }, { name: 'b' }] }]) assert.throws(() => parseItinerary(r), e => e.status === 400);
 });
 test('itinerary uses Qloo contributions per person and per entity; inputs are not invented evidence', async () => {
   const cafe = venue('cafe', ['cafe'], [{ entity_id: 'amaarae', score: .72 }, { entity_id: 'unrelated', score: 1 }]);
@@ -223,8 +223,8 @@ test('a selected route can visit several distinct bars, preserving order, eviden
   assert.deepEqual(restored.route,request.route);
 });
 
-test('route validation rejects duplicate places, unsupported categories and excess stops',()=>{
-  for(const route of [[],[{intent:'drinks',placeId:'qloo:a'},{intent:'drinks',placeId:'qloo:a'}],[{intent:'dinner',placeId:'qloo:a'}],Array.from({length:4},(_,i)=>({intent:'drinks',placeId:'qloo:'+i}))])assert.throws(()=>parseItinerary({activities:['drinks'],route}),e=>e.status===400);
+test('route validation rejects unsupported categories and excess stops',()=>{
+  for(const route of [[],[{intent:'dinner',placeId:'qloo:a'}],Array.from({length:4},(_,i)=>({intent:'drinks',placeId:'qloo:'+i}))])assert.throws(()=>parseItinerary({activities:['drinks'],route}),e=>e.status===400);
   assert.throws(()=>parseItinerary({activities:['drinks'],searchRadiusKm:200}),e=>e.status===400);
 });
 

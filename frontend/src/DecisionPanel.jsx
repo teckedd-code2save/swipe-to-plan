@@ -7,7 +7,7 @@ import {Badge,Button,Card,Flex,Heading,IconButton,Text,CheckboxCards} from '@rad
 import {api} from './api.js';
 import {Icon} from './PlannerIcons.jsx';
 import {menuHighlights} from './menu-highlights.js';
-import {decisionStops,reportedPrice,reportedHours,spendingSummary} from './decision-evidence.js';
+import {decisionStops,checkedVisit,reportedPrice,reportedHours,spendingSummary} from './decision-evidence.js';
 import {formatMoney} from './money.js';
 import {routeLink} from './route-links.js';
 import './decision-panel.css';
@@ -38,7 +38,7 @@ export default function DecisionPanel({plan,checks,onDone,onDetails,onTool,selec
     {spend&&<Flex className="decision-budget" align="center" justify="between" wrap="wrap" gap="3"><div><Badge color={spend.suggested?'amber':'green'}>{spend.suggested?'Suggested spending':'Your spending limit'}</Badge><Text as="p" size="4" weight="bold">{spend.amount!=null?formatMoney(spend.amount,spend.currency):'No amount set'}{spend.people>1?' total':' for you'}</Text><Text as="p" size="2" color="gray">{spend.suggested?'A planning suggestion, not venue prices.':'For the whole outing, including travel.'}</Text></div>{onTool&&<Button variant="soft" onClick={()=>onTool('budget')}>Edit spending</Button>}</Flex>}
     {!shown.length&&<Text as="p">Places will appear here when your search returns.</Text>}
     <div className="decision-grid">{shown.map((stop,index)=>{
-      const query=queries[index],place=query.data||stop.item,report=checks?.data?.stops.find(s=>s.entityId===stop.item.entityId),highlights=menuHighlights(place.highlights||report?.menu?.highlights||[]),hours=reportedHours(place),current=plan.stops.some(s=>s.item?.id===stop.item.id);
+      const query=queries[index],place=query.data||stop.item,report=checkedVisit(checks,stop),highlights=menuHighlights(place.highlights||report?.menu?.highlights||[]),hours=reportedHours(place),current=plan.stops.some(s=>s.item?.id===stop.item.id);
       const menu=menus[index],prices=menu?.data?.items||[];
       const choices=prices.length?prices.map(p=>({...p,key:`${p.name.toLocaleLowerCase()}|${p.currency}|${p.price}`,label:p.name})):highlights;
       const picks=selected.filter(s=>s.placeId===stop.item.id).map(s=>s.menuKey||s.label.toLocaleLowerCase());

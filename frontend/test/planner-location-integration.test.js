@@ -411,3 +411,130 @@ test('account switch during catalog resolution prevents saving into the new acco
   await mount();await click('Getting ready');await click(`Use ${paris.label} · approximate area`);await click('Save area as default');assert.ok(finish);
   state.user={...state.user,id:'other-account',profile:{...profile,id:'other-account'}};await act(async()=>window.dispatchEvent(new Event('focus')));await act(async()=>finish());assert.equal(state.writes,0);
 });
+
+for(const missing of [false,true])test(`return-visit chat uses actual ${missing?'partial':'complete'} itinerary, never the model's proposed completion`,async()=>{
+  account(london);
+  const initial=repeatedPlan({activities:['coffee','dinner'],stopIntents:['coffee','dinner']});
+  initial.stops[0]={...initial.stops[0],intent:'coffee',item:{...initial.stops[0].item,id:'baker',name:'Cafe A'}};
+  initial.stops[1]={...initial.stops[1],intent:'dinner',item:{...initial.stops[1].item,id:'dinner',name:"Dinner B"}};
+  state.savedPlan=initial;history.replaceState(null,'','/#/plan/saved-day');
+  const fetchBase=globalThis.fetch,builds=[];let release;const gate=new Promise(resolve=>release=resolve);
+  globalThis.fetch=async(input,options={})=>{
+    const path=new URL(input,location.origin).pathname;
+    if(path==='/api/agent'){if(JSON.parse(options.body).task==='compare')return new Response(JSON.stringify({status:'reply',text:'Synthetic comparison.'}),{headers:{'content-type':'application/json'}});
+      state.requests.push(JSON.parse(options.body));
+      return new Response(JSON.stringify({status:'action',action:'select_places',route:[{intent:'coffee',placeId:'baker'},{intent:'dinner',placeId:'dinner'},{intent:'coffee',placeId:'baker'}],assistantMessage:'I have already added the same venue twice successfully.'}),{headers:{'content-type':'application/json'}});
+    }
+    if(path==='/api/itineraries'){
+      const request=JSON.parse(options.body);builds.push(request);await gate;
+      const result={...initial,request,status:missing?'partial':'complete',stops:[...initial.stops,{...initial.stops[0],id:'stop-2',...(missing?{item:null,status:'unfilled',reason:'kept_place_unavailable'}:{})}],budget:{...initial.budget,allocations:[...initial.budget.allocations,{stopId:'stop-2',intent:'coffee',amount:null}]}};
+      return new Response(JSON.stringify(result),{headers:{'content-type':'application/json'}});
+    }
+    return fetchBase(input,options);
+  };
+  await mount();await input('textarea[aria-label="Message Unstressed"]','Add Cafe A again after dinner as a third stop, keeping the first two stops.');
+  await act(async()=>document.querySelector('form.cs-composer').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  assert.deepEqual(builds[0].route.map(s=>s.placeId),['baker','dinner','baker']);
+  assert.equal(document.body.textContent.includes('already added the same venue twice successfully'),false);
+  await act(async()=>release());
+  assert.match(document.body.textContent,missing?/Current outing: 1\. Cafe A → 2\. Dinner B → 3\. Still to find/:/Current outing: 1\. Cafe A → 2\. Dinner B → 3\. Cafe A/);
+  assert.equal(document.body.textContent.includes('already added the same venue twice successfully'),false);
+});
+
+test('removing one return visit in the rendered itinerary keeps the other occurrence and supports undo',async()=>{
+  account(london);const initial=repeatedPlan({activities:['coffee','dinner'],stopIntents:['coffee','dinner','coffee'],route:[{intent:'coffee',placeId:'a'},{intent:'dinner',placeId:'b'},{intent:'coffee',placeId:'a'}]});
+  initial.stops[0].intent='coffee';initial.stops[1].intent='dinner';initial.stops.push({...initial.stops[0],id:'stop-2'});initial.budget.allocations.push({stopId:'stop-2',intent:'coffee',amount:null});
+  state.savedPlan=initial;history.replaceState(null,'','/#/plan/saved-day');const fetchBase=globalThis.fetch,builds=[];
+  globalThis.fetch=async(input,options={})=>{
+    if(new URL(input,location.origin).pathname==='/api/itineraries'){
+      const request=JSON.parse(options.body);builds.push(request);
+      return new Response(JSON.stringify({...initial,request,stops:request.route.map((selected,index)=>({...initial.stops.find(s=>s.item.id===selected.placeId),id:`stop-${index}`}))}),{headers:{'content-type':'application/json'}});
+    }
+    return fetchBase(input,options);
+  };
+  await mount();const cards=()=>[...document.querySelectorAll('.outing-place')];assert.equal(cards().length,3);
+  await act(async()=>[...cards()[2].querySelectorAll('button')].find(button=>button.textContent==='Remove stop').click());
+  assert.deepEqual(builds.at(-1).route,[{intent:'coffee',placeId:'a'},{intent:'dinner',placeId:'b'}]);assert.equal(cards().length,2);
+  await click('Undo');assert.equal(cards().length,3);
+  await act(async()=>[...cards()[0].querySelectorAll('button')].find(button=>button.textContent==='Remove stop').click());
+  assert.deepEqual(builds.at(-1).route,[{intent:'dinner',placeId:'b'},{intent:'coffee',placeId:'a'}]);
+});
+
+test('adding another place keeps existing occurrence categories even when a venue supports both coffee and dinner',async()=>{
+  account(london);const initial=repeatedPlan({activities:['coffee','dinner'],stopIntents:['coffee','dinner'],route:[{intent:'coffee',placeId:'a'},{intent:'dinner',placeId:'a'}]});
+  initial.stops[0].intent='coffee';initial.stops[1]={...initial.stops[1],intent:'dinner',item:initial.stops[0].item};
+  initial.shortlist=[{intent:'dinner',item:initial.stops[0].item},{intent:'coffee',item:{id:'c',entityId:'fixture-c',name:'Fixture c',links:{}}}];
+  state.savedPlan=initial;history.replaceState(null,'','/#/plan/saved-day');const fetchBase=globalThis.fetch,builds=[];
+  globalThis.fetch=async(input,options={})=>{
+    if(new URL(input,location.origin).pathname==='/api/itineraries'){const request=JSON.parse(options.body);builds.push(request);return new Response(JSON.stringify({...initial,request}),{headers:{'content-type':'application/json'}});}
+    return fetchBase(input,options);
+  };
+  await mount();await click('Add stop');assert.deepEqual(builds.at(-1).route,[{intent:'coffee',placeId:'a'},{intent:'dinner',placeId:'a'},{intent:'coffee',placeId:'c'}]);
+});
+
+for(const polled of [true,false])test(`shared selection edits ${polled?'reject changed occurrence context':'send the captured revision across the last mutation race'}`,async()=>{
+  const initial=repeatedPlan({activities:['coffee','dinner'],stopIntents:['coffee','dinner']});initial.stops[0].intent='coffee';initial.stops[1].intent='dinner';
+  state.shared={id:'synthetic-shared',revision:1,planRevision:1,status:'ready',access:{role:'owner',memberId:'test-user'},request:initial.request,plan:initial,events:[]};
+  history.replaceState(null,'','/#/day/synthetic-shared?key=synthetic-only');
+  const fetchBase=globalThis.fetch,writes=[];let release;const gate=new Promise(resolve=>release=resolve);
+  globalThis.fetch=async(input,options={})=>{
+    const path=new URL(input,location.origin).pathname;
+    if(path==='/api/agent'){if(JSON.parse(options.body).task==='compare')return new Response(JSON.stringify({status:'reply',text:'Synthetic comparison.'}),{headers:{'content-type':'application/json'}});state.requests.push(JSON.parse(options.body));await gate;return new Response(JSON.stringify({status:'action',action:'select_places',route:[{intent:'coffee',placeId:'a'},{intent:'dinner',placeId:'b'},{intent:'coffee',placeId:'a'}]}),{headers:{'content-type':'application/json'}});}
+    if(path==='/api/days/synthetic-shared'&&options.method==='PATCH'){writes.push(JSON.parse(options.body));return new Response(JSON.stringify({error:'The shared day changed.'}),{status:409,headers:{'content-type':'application/json'}});}
+    return fetchBase(input,options);
+  };
+  await mount();await send();
+  const updated={...initial,request:{...initial.request,budget:90},stops:[{...initial.stops[1],id:'stop-0'},{...initial.stops[0],id:'stop-1'}]};
+  state.shared={...state.shared,revision:2,planRevision:2,request:updated.request,plan:updated};
+  if(polled)await act(async()=>document.dispatchEvent(new Event('visibilitychange')));
+  await act(async()=>release());
+  if(polled){assert.equal(writes.length,0);assert.match(document.body.textContent,/shared day changed while I was checking this edit/);}
+  else {assert.equal(writes.length,1);assert.equal(writes[0].revision,1);}
+});
+
+test('individual UI remove and add fail closed rather than dropping an unresolved visit',async()=>{
+  account(london);const initial=repeatedPlan({activities:['coffee','dinner'],stopIntents:['coffee','dinner','coffee']});
+  const cafe={...initial.stops[0],intent:'coffee'},missing={...initial.stops[1],intent:'dinner',item:null,status:'unfilled',reason:'no_eligible_places'};
+  initial.stops=[cafe,missing,{...cafe,id:'stop-2'}];initial.status='partial';initial.shortlist=[{intent:'coffee',item:{id:'c',entityId:'fixture-c',name:'Fixture c',links:{}}}];initial.budget.allocations.push({stopId:'stop-2',intent:'coffee',amount:null});
+  state.savedPlan=initial;history.replaceState(null,'','/#/plan/saved-day');const fetchBase=globalThis.fetch,builds=[];
+  globalThis.fetch=async(input,options={})=>{if(new URL(input,location.origin).pathname==='/api/itineraries'){builds.push(JSON.parse(options.body));return new Response(JSON.stringify(initial),{headers:{'content-type':'application/json'}});}return fetchBase(input,options);};
+  await mount();const finalVisit=document.querySelector('[data-stop-id="stop-2"]');
+  await act(async()=>[...finalVisit.querySelectorAll('button')].find(button=>button.textContent==='Remove stop').click());
+  assert.equal(builds.length,0);assert.match(document.body.textContent,/Some requested visits are still unfilled/);
+  await click('Add stop');assert.equal(builds.length,0);assert.ok(document.querySelector('[data-stop-id="stop-2"]'));
+});
+
+test('a shared pending-plan snapshot cannot expose or apply stale selected occurrences against its newer brief',async()=>{
+  const initial=repeatedPlan({activities:['coffee','dinner'],stopIntents:['coffee','dinner']});initial.stops[0].intent='coffee';initial.stops[1].intent='dinner';
+  state.shared={id:'synthetic-shared',revision:2,planRevision:1,status:'updating',access:{role:'owner',memberId:'test-user'},request:{...initial.request,budget:90},plan:initial,events:[]};
+  history.replaceState(null,'','/#/day/synthetic-shared?key=synthetic-only');const fetchBase=globalThis.fetch,writes=[];
+  globalThis.fetch=async(input,options={})=>{
+    const path=new URL(input,location.origin).pathname;
+    if(path==='/api/agent'){if(JSON.parse(options.body).task==='compare')return new Response(JSON.stringify({status:'reply',text:'Synthetic comparison.'}),{headers:{'content-type':'application/json'}});state.requests.push(JSON.parse(options.body));return new Response(JSON.stringify({status:'action',action:'select_places',route:[{intent:'coffee',placeId:'a'},{intent:'dinner',placeId:'b'},{intent:'coffee',placeId:'a'}]}),{headers:{'content-type':'application/json'}});}
+    if(path==='/api/days/synthetic-shared'&&options.method==='PATCH'){writes.push(JSON.parse(options.body));return new Response(JSON.stringify(state.shared),{headers:{'content-type':'application/json'}});}
+    return fetchBase(input,options);
+  };
+  await mount();const request=await send();assert.equal(request.planContext,undefined);assert.equal(request.context.budget,90);assert.equal(writes.length,0);assert.match(document.body.textContent,/shared day is still updating/);
+});
+
+test('a selection before local retrieval completes preserves the newest budget, date and tastes',async()=>{
+  account(london);const initial=repeatedPlan({activities:['coffee','dinner'],stopIntents:['coffee','dinner']});initial.stops[0].intent='coffee';initial.stops[1].intent='dinner';
+  state.savedPlan=initial;history.replaceState(null,'','/#/plan/saved-day');const fetchBase=globalThis.fetch,builds=[];let release;const gate=new Promise(resolve=>release=resolve);
+  globalThis.fetch=async(input,options={})=>{
+    const path=new URL(input,location.origin).pathname;
+    if(path==='/api/agent'){
+      const data=JSON.parse(options.body);if(data.task==='compare')return new Response(JSON.stringify({status:'reply',text:'Synthetic comparison.'}),{headers:{'content-type':'application/json'}});
+      state.requests.push(data);return new Response(JSON.stringify({status:'action',action:'select_places',route:[{intent:'coffee',placeId:'a'},{intent:'dinner',placeId:'b'},{intent:'coffee',placeId:'a'}]}),{headers:{'content-type':'application/json'}});
+    }
+    if(path==='/api/itineraries'){
+      const request=JSON.parse(options.body);builds.push(request);if(builds.length===1)await gate;
+      return new Response(JSON.stringify({...initial,request}),{headers:{'content-type':'application/json'}});
+    }
+    return fetchBase(input,options);
+  };
+  await mount();await click('Details');await input('.pl-trip-dialog input[max="10000000"]','90');await input('.pl-trip-dialog input[type="date"]','2026-12-04');await click('Update this plan');assert.equal(builds.length,1);
+  state.user={...state.user,profile:{...state.user.profile,artists:['Tems'],vibes:['v-art']}};await act(async()=>window.dispatchEvent(new Event('focus')));
+  const sent=await send();assert.equal(sent.context.budget,90);assert.equal(sent.context.date,'2026-12-04');assert.deepEqual(sent.context.people[0].artists,['Tems']);assert.deepEqual(sent.context.people[0].vibes,['v-art']);
+  await act(async()=>release());
+  assert.equal(builds.length,2);assert.equal(builds[1].budget,90);assert.equal(builds[1].date,'2026-12-04');assert.deepEqual(builds[1].people[0].artists,['Tems']);assert.deepEqual(builds[1].people[0].vibes,['v-art']);assert.deepEqual(builds[1].route.map(s=>s.placeId),['a','b','a']);
+});

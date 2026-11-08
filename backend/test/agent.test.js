@@ -436,7 +436,7 @@ test('post-discovery choice uses existing option IDs and preserves planning cont
  const sent=JSON.parse(payload.messages.find(m=>m.role==='user').content);
  assert.equal(sent.planContext.options.length,2);
  await assert.rejects(invoke(['invented']),e=>e.status===400);
- await assert.rejects(invoke(['real-one','real-one']),e=>e.status===400);
+ assert.deepEqual((await invoke(['real-one','real-one'])).placeIds,['real-one','real-one']);
 });
 test('explicit comparison permits only a reply and keeps the existing plan unchanged',async()=>{
  const context=parseItinerary({area:'Accra'}),before=JSON.stringify(context);

@@ -11,3 +11,12 @@ export function updateResultReceipt(turns,update){
   if(index<0)return turns;
   return turns.map((turn,i)=>i===index?{...turn,...update}:turn);
 }
+
+// Describe committed output only. The model's pre-retrieval proposal is not a
+// receipt, especially when a kept venue is unavailable or a visit has no time.
+export function resultRouteSummary(plan){
+  const visits=plan.stops.map((stop,index)=>`${index+1}. ${stop.item?.name||'Still to find'}`).join(' → ');
+  const missing=plan.stops.filter(stop=>!stop.item).length;
+  const status=missing?` ${missing} requested ${missing===1?'visit is':'visits are'} still unfilled.`:plan.phase==='needs_timing'?' Visit times still need adjusting.':plan.phase==='discovery'?' Visit times are not set.':'';
+  return `Current outing: ${visits}.${status}`;
+}
