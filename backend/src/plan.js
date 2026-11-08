@@ -1,3 +1,4 @@
+import {shapeProviderContact} from '../../shared/venue-contact.js';
 import {areaDistanceKm} from "./locations.js";
 import { byId,matchesTasteTag } from "./deck.js";
 import { explainCandidate } from "./explain.js";
@@ -67,6 +68,7 @@ export function shapePlace(p, source, retrievedAt) {
   map.searchParams.set("query", coords ? `${lat},${lng}` : `${p.name} ${pr.address ?? ""}`);
   if (gid) map.searchParams.set("query_place_id", gid);
   const priceLevel = priceOf(p);
+  const contact = shapeProviderContact(p, source, retrievedAt);
   return {
     id: `${source}:${p.entity_id}`, entityId: p.entity_id, name: p.name,
     address: safeString(pr.address) ?? safeString(p.disambiguation) ?? "",
@@ -76,9 +78,10 @@ export function shapePlace(p, source, retrievedAt) {
       ? p.query.explainability["signal.interests.entities"].filter((e) => typeof e?.entity_id === "string" && Number.isFinite(e.score) && e.score >= 0 && e.score <= 1).map((e) => ({ entityId: e.entity_id, contribution: e.score, sourceField: "query.explainability.signal.interests.entities" })) : [],
     image: url(pr.images?.[0]?.url ?? (typeof pr.image === "string" ? pr.image : pr.image?.url)),
     links: {
-      map: map.href, website: url(pr.website), menu: url(pr.menu_url),
-      phone: typeof pr.phone === "string" && /^\+?[0-9 ()-]{6,20}$/.test(pr.phone.trim()) ? `tel:${pr.phone.replace(/[ ()-]/g, "")}` : null,
+      map: map.href, website: contact.website.url, menu: url(pr.menu_url),
+      phone: contact.phone.dialUrl,
     },
+    contact,
     tagNames: tagsOf(p).filter((t) => /^urn:tag:(category|genre|cuisine|setting|culinary_style|ambience|amenity|beverage_offering):/.test(t.id)).map((t) => safeString(t.name, 80)).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).slice(0, 6),
     cuisineTags: tagsOf(p).filter(t=>/^urn:tag:(cuisine|culinary_style):/.test(t.id)).map(t=>safeString(t.name,80)).filter(Boolean).slice(0,12),
     facts: {

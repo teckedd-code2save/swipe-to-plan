@@ -1,3 +1,4 @@
+import {bookingOperation,invalidateBookings} from './booking-actions.js';
 import {sendCircleMail} from './circle-mail.js';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {mkdir,readFile,writeFile,rename} from 'node:fs/promises';
@@ -76,10 +77,15 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
           const circleIds=[...new Set([...(previous?.circleIds||[]),...(target.circleId?[target.circleId]:[])])];
           const entry={id:target.id,revision:target.revision,savedAt:new Date(now()).toISOString(),plan:structuredClone(plan),previous:previous?{plan:previous.plan,revision:previous.revision}:null,...(circleIds.length?{circleIds}:{}),...(target.sourceDayId?{sourceDayId:target.sourceDayId}:{})};
           delete entry.plan.savedPlan;delete entry.plan.saveError;
+          if(previous?.bookingActions){entry.bookingActions=previous.bookingActions;invalidateBookings(entry);}
           entries[entry.id]=entry;user.savedPlans=entries;return planSummary(entry);
         });
         return {...plan,savedPlan:saved};
       }catch(e){return {...plan,saveError:e.status?e.message:'Your day is ready, but account saving failed. Keep a copy on this device before leaving.'};}
+    },
+    async bookings(session,id,operation='list',body={},bookingId=null){
+      const apply=data=>{const user=resolve(data,session);if(!user||!Object.hasOwn(user.savedPlans||{},id))throw Object.assign(new Error('Booking not found.'),{status:404,code:'booking_conflict'});return bookingOperation(user.savedPlans[id],operation,body,bookingId,{now});};
+      return operation==='list'?store.read(apply):store.transact(apply);
     },
     async listPlans(session){return store.read(data=>Object.values(requireUser(data,session).savedPlans||{}).sort((a,b)=>b.savedAt.localeCompare(a.savedAt)).map(planSummary));},
     async getPlan(session,id){return store.read(data=>{const entry=savedPlan(requireUser(data,session),id);return {...entry.plan,savedPlan:planSummary(entry)};});},
@@ -91,7 +97,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       return store.transact(data=>{
         const user=requireUser(data,session);let entry=savedPlan(user,id);
         if(body.revision!==entry.revision)throw fail('This day changed elsewhere. Reopen it from Saved days before editing.',409);
-        if(entry.sourceDayId){if(Object.keys(user.savedPlans).length>=100)throw fail('Remove an old saved day to make room for this private copy.',409);entry=structuredClone(entry);entry.id=randomUUID();delete entry.sourceDayId;user.savedPlans[entry.id]=entry;}
+        if(entry.sourceDayId){if(Object.keys(user.savedPlans).length>=100)throw fail('Remove an old saved day to make room for this private copy.',409);entry=structuredClone(entry);entry.id=randomUUID();delete entry.sourceDayId;delete entry.bookingActions;user.savedPlans[entry.id]=entry;}
         if(body.restoreRevision!==undefined){
           if(!entry.previous||body.restoreRevision!==entry.previous.revision||body.pins!==undefined)throw fail('That earlier version is no longer available.',409);
           const current={plan:entry.plan,revision:entry.revision};entry.plan=entry.previous.plan;entry.previous=current;
@@ -100,7 +106,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
           if(Object.entries(request.pins).some(([intent,id])=>!entry.plan.stops.some(s=>(s.id===intent||s.intent===intent&&entry.plan.stops.find(x=>x.intent===intent)?.id===s.id)&&s.item?.id===id)))throw new InputError('Only keep places already in this day.');
           entry.plan={...entry.plan,request};
         }
-        entry.revision++;entry.savedAt=new Date(now()).toISOString();return {...entry.plan,savedPlan:planSummary(entry)};
+        invalidateBookings(entry);entry.revision++;entry.savedAt=new Date(now()).toISOString();return {...entry.plan,savedPlan:planSummary(entry)};
       });
     },
     async removePlan(session,id){await store.transact(data=>{const user=requireUser(data,session);savedPlan(user,id);delete user.savedPlans[id];});},
@@ -212,6 +218,10 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       const session=req=>cookie(req,sessionName);
       const mutation=(fn)=>route(async(req,res)=>{checkOrigin(req);await fn(req,res);});
       app.get('/api/account',route(async(req,res)=>res.json(await this.current(session(req)))));
+      app.get('/api/account/plans/:id/bookings',limit(60,'booking-read'),route(async(req,res)=>{res.set('Cache-Control','no-store');res.json(await this.bookings(session(req),req.params.id));}));
+      app.post('/api/account/plans/:id/bookings',limit(30,'booking-mutation'),mutation(async(req,res)=>res.json(await this.bookings(session(req),req.params.id,'create',req.body))));
+      app.patch('/api/account/plans/:id/bookings/:bookingId',limit(30,'booking-mutation'),mutation(async(req,res)=>res.json(await this.bookings(session(req),req.params.id,'patch',req.body,req.params.bookingId))));
+      for(const operation of ['handoff','report'])app.post(`/api/account/plans/:id/bookings/:bookingId/${operation}`,limit(30,'booking-mutation'),mutation(async(req,res)=>res.json(await this.bookings(session(req),req.params.id,operation,req.body,req.params.bookingId))));
       app.get('/api/account/plans',route(async(req,res)=>res.json({plans:await this.listPlans(session(req))})));
       app.get('/api/account/circle-plans',route(async(req,res)=>res.json({plans:await this.listCirclePlans(session(req))})));
       app.get('/api/account/circle-plans/:ownerId/:id',route(async(req,res)=>res.json(await this.getCirclePlan(session(req),req.params.ownerId,req.params.id))));

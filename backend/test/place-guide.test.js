@@ -36,7 +36,9 @@ test('fresh details use Qloo identity, sanitize links, normalize tags and cache 
  assert.equal(calls,1);assert.equal(a.stops[0].hours.status,'fits_reported_hours');
  assert.equal(b.links.website,null);assert.equal(b.links.phone,'tel:+442077348547');
  assert.match(b.links.map,/query_place_id=real-map-id/);assert.deepEqual(b.highlights,['Sunday roast']);
- now=300001;await guide.check(input);assert.equal(calls,2);
+ assert.equal(b.contact.phone.source.entityId,id);assert.equal(b.contact.phone.source.retrievedAt,new Date(0).toISOString());
+ const cached=await guide.details(id);assert.equal(cached.contact.phone.source.retrievedAt,b.contact.phone.source.retrievedAt);
+ now=300001;const refreshed=await guide.check(input);assert.equal(calls,2);assert.equal(refreshed.stops[0].place.contact.phone.source.retrievedAt,new Date(now).toISOString());assert.equal(refreshed.stops[0].place.contact.phone.source.providerUpdatedAt,null);
 });
 test('one unavailable venue does not discard other checks and failed reads can retry',async()=>{
  let failures=0;const guide=createPlaceGuide({provider:{name:'qloo',getPlace:async entityId=>{if(entityId===other){failures++;throw Error('private provider error');}return {entity_id:id,name:'Known',properties:{},tags:[]};}}});
@@ -57,4 +59,17 @@ test('suggested visit slots come from reported opening hours, not inferred kitch
   assert.equal(slots[0].start,'12:30');
   assert.equal(slots[0].basis,'reported opening hours only');
   assert.deepEqual(suggestedVisitSlots(weeklyHours({}),'2026-10-25',60),[]);
+});
+
+test('details fail closed on a mismatched provider identity and allow a corrected retry',async()=>{
+ let calls=0;
+ const guide=createPlaceGuide({provider:{name:'qloo',getPlace:async()=>({entity_id:++calls===1?other:id.toLowerCase(),name:'Venue',properties:{phone:'+442077348547',website:'https://venue.example'}})}});
+ await assert.rejects(guide.details(id),/different place/);
+ const corrected=await guide.details(id);
+ assert.equal(calls,2);assert.equal(corrected.entityId.toUpperCase(),id);assert.equal(corrected.contact.phone.source.entityId.toUpperCase(),id);
+ assert.equal(corrected.links.phone,'tel:+442077348547');
+ assert.equal(await guide.details(id.toLowerCase()),corrected);assert.equal(calls,2);
+ const mismatched=createPlaceGuide({provider:{name:'qloo',getPlace:async()=>({entity_id:other,name:'Wrong venue',properties:{phone:'+442077348547'}})}});
+ const result=await mismatched.check(input);
+ assert.ok(result.stops[0].error);assert.equal(result.stops[0].place,undefined);
 });

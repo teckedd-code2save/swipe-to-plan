@@ -1,3 +1,4 @@
+import {bookingOperation,invalidateBookings} from './booking-actions.js';
 import { randomUUID, randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -17,6 +18,8 @@ const profile = (input, id) => {
 };
 const canonical = day => parseItinerary({ ...day.brief, people: day.members.map(({ id, name, artists, vibes, spending, context }) => ({ id, name, artists, vibes, ...(context?{context}:{}), ...(spending?{spending}:{}) })) });
 const event = (day, type, name, detail, now) => {
+  // Pending rebuild immediately revokes prepared handoffs; undo never restores review.
+  invalidateBookings(day,null);
   day.revision++;
   day.updatedAt = new Date(now()).toISOString();
   day.planError = null;
@@ -94,7 +97,7 @@ export function createDays({ discovery, store = createDayStore(), now = Date.now
           await store.transact(records => {
             const current = records[id];
             if (!current || current.revision !== revision) return;
-            current.plan = plan; current.planRevision = revision; current.planError = null;
+            current.plan = plan; invalidateBookings(current); current.planRevision = revision; current.planError = null;
           });
         } catch {
           await store.transact(records => { if (records[id]?.revision === revision) records[id].planError = 'The group is saved, but the new itinerary could not be built. Retry when the service is available.'; });
@@ -117,6 +120,10 @@ export function createDays({ discovery, store = createDayStore(), now = Date.now
     return snapshot(await store.read(id), credential);
   };
   return {
+    async bookings(id,credential,operation='list',body={},bookingId=null){
+      const apply=day=>{if(!day||day.expiresAt<=now()||!equal(day.ownerToken,credential))throw Object.assign(new Error('Booking not found.'),{status:404,code:'booking_conflict'});return bookingOperation(day,operation,body,bookingId,{now,revision:day.planRevision,ready:day.revision===day.planRevision});};
+      return operation==='list'?apply(await store.read(id)):store.transact(records=>apply(records[id]));
+    },
     async create(body) {
       checkFields(body, ['request']);
       const request = parseItinerary(body.request);

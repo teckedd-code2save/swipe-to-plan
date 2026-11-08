@@ -63,7 +63,9 @@ export function createPlaceGuide({provider, now = Date.now}) {
     if (hit && now() - hit.at < 300000) return hit.value;
     if (!provider.getPlace) throw new InputError('Place details are not available from this provider.');
     const value = (async () => {
-      const raw = await provider.getPlace(id), p = raw.properties || {};
+      const raw = await provider.getPlace(id);
+      if (typeof raw?.entity_id !== 'string' || raw.entity_id.toUpperCase() !== id) throw new InputError('The provider returned details for a different place.');
+      const p = raw.properties || {};
       const normalized = {...raw, tags:(Array.isArray(raw.tags) ? raw.tags : []).map(t=>({...t,id:t.id||t.tag_id||t.value}))};
       const place = shapePlace(normalized,provider.name,new Date(now()).toISOString());
       const tags = normalized.tags.filter(t=>typeof t.id==='string');
