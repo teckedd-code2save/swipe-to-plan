@@ -3,6 +3,7 @@ import {Button, Card, Flex, Heading, IconButton, Text} from '@radix-ui/themes';
 import {useQueryClient} from '@tanstack/react-query';
 import {agentPlanContext} from './agent-plan-context.js';
 import {readGuestProfile,saveGuestProfile} from './guest-profile.js';
+import {withPreferredLocation} from './planning-location.js';
 import MorePlaces from './MorePlaces.jsx';
 import ResultsComparison from './ResultsComparison.jsx';
 import {locationPromptId,upsertLocationPrompt} from './location-prompt.js';
@@ -361,6 +362,12 @@ export default function PlannerApp() {
     else {const current=briefRef.current;const next={...current,people:current.people.filter(p=>p.id!==id),party:{...current.party,adults:Math.max(1,current.party.adults-1)}};schedule(next,'The group changed. Finding the balance again.');}
     setTasteId(null);
   }
+  function restorePreferredLocation(request=briefRef.current){
+    if(!accountRef.current.identityResolved)return replaceBrief(request);
+    const next=withPreferredLocation(request,preferredRef.current);
+    if(next!==request){locationConfirmed.current=true;planningZone.current=preferredRef.current.timeZone||null;}
+    return replaceBrief(next);
+  }
   function resetDay(){
     setMenuSelections([]);
     pendingLocationMessage.current=null;
@@ -374,7 +381,7 @@ export default function PlannerApp() {
     activeCircle.current=null;planningZone.current=null;planningPaused.current=true;setDraftChanged(false);locationConfirmed.current=false;locationDraft.current=null;setLocationPrompt({});setRevisionFailed(false);
     dayEpoch.current++;
     localVersion.current++;planner.current.invalidate();clearTimeout(autoTimer.current);autoTimer.current=null;clearTimeout(profileTimer.current);pendingPeople.current.clear();
-    shared.leave();snapshotVersion.current='';planRef.current=null;setPlan(null);setPrevious(null);replaceBrief(withPeopleIds({...defaults(),...(accountRef.current.user?{people:[accountRef.current.user.profile]}:{})}));setChat([]);setMessage('');setError('');showWhenReady.current=false;setPending(false);setTasteId(null);toolRef.current=null;setTool(null);setPlanOpen(false);
+    shared.leave();snapshotVersion.current='';planRef.current=null;setPlan(null);setPrevious(null);restorePreferredLocation({...defaults(),...(accountRef.current.user?{people:[accountRef.current.user.profile]}:{})});setChat([]);setMessage('');setError('');showWhenReady.current=false;setPending(false);setTasteId(null);toolRef.current=null;setTool(null);setPlanOpen(false);
   }
   async function join(){if(!joinName.trim())return;setJoinBusy(true);try{const result=await shared.join({name:joinName.trim(),artists:[],vibes:[]});openTaste(result.access.memberId);}catch(e){setError(e.message);}finally{setJoinBusy(false);}}
   function openTaste(id=sharedRef.current.day?.access.memberId||briefRef.current.people[0].id,assistantText,options={}){if(deck.length){setTasteId(id);presentTool('tastes',assistantText,options);}else setError('Taste cards are still loading. Please try again.');}
@@ -392,19 +399,20 @@ export default function PlannerApp() {
     const onHash=()=>setCircleInvite(location.hash.startsWith('#/circle/'));window.addEventListener('hashchange',onHash);return()=>window.removeEventListener('hashchange',onHash);
   },[]);
   useEffect(()=>{
-    if(!account.ready)return;
+    if(!account.ready||!account.identityResolved)return;
     const id=account.user?.id||null,prior=accountIdentity.current;
     if(prior!==id){
       accountIdentity.current=id;setSaved(readSaved(id));
       if(prior!==undefined&&prior!==null)resetDay();
       if(id){loadSaved();const match=location.hash.match(/^#\/plan\/([a-zA-Z0-9_-]{1,64})$/);if(match)openSaved({id:match[1],cloud:true});}
     }
+    let restoredDraft=false;
     if(!restored.current){
       restored.current=true;
       const params=new URLSearchParams(location.search),status=params.get('signin');
       if(status){
         try{const checkpoint=JSON.parse(sessionStorage.getItem('outing.signin-draft')||'null');if(checkpoint&&Date.now()-checkpoint.at<3600000&&(!checkpoint.userId||checkpoint.userId===id)){
-          if(!shared.linked){replaceBrief(checkpoint.brief);locationConfirmed.current=!!checkpoint.plan||checkpoint.locationConfirmed===true;planningPaused.current=checkpoint.planningPaused??!checkpoint.plan;setDraftChanged(!!checkpoint.draftChanged);if(checkpoint.plan){planRef.current=checkpoint.plan;setPlan(checkpoint.plan);}}
+          if(!shared.linked){restoredDraft=true;replaceBrief(checkpoint.brief);locationConfirmed.current=!!checkpoint.plan||checkpoint.locationConfirmed===true;planningPaused.current=checkpoint.planningPaused??!checkpoint.plan;setDraftChanged(!!checkpoint.draftChanged);if(checkpoint.plan){planRef.current=checkpoint.plan;setPlan(checkpoint.plan);}}
           setChat(checkpoint.chat||[]);setMessage(checkpoint.message||'');
           if(status==='success'&&['calendar','circles','profile'].includes(checkpoint.resumeAction))presentTool(checkpoint.resumeAction==='calendar'?'share':checkpoint.resumeAction,checkpoint.resumeAction==='calendar'?'You’re signed in. Open your calendar event below, review it and save.':undefined);
         }}catch{/* A missing checkpoint doesn't block the account. */}
@@ -412,6 +420,9 @@ export default function PlannerApp() {
         setNotice(status==='success'?'You’re signed in. Your day is right here.':status==='cancelled'?'Sign-in cancelled. Your day is still here.':'Sign-in couldn’t finish. Your day is still here; try again.');
       }
     }
+    // Wait for account identity before choosing account versus device defaults.
+    // Never reapply one on account polling, or over a restored/current outing.
+    if(prior!==id&&!restoredDraft&&!shared.linked&&!planRef.current&&!locationDraft.current&&!chatRequest.current&&!chat.length&&!/^#\/plan\//.test(location.hash))restorePreferredLocation();
     if(account.user&&!shared.linked){
       const current=briefRef.current;
       const profileSignature=personSignature(account.user.profile),profileChanged=accountProfileSeen.current?.id===id&&accountProfileSeen.current.signature!==profileSignature;
@@ -431,7 +442,7 @@ export default function PlannerApp() {
         if(people.length<=6&&people.length){localVersion.current++;activeCircle.current={id:circle.id,people:circle.people};schedule(updateRoster(briefRef.current,people));append('assistant',`${circle.name} has new tastes or people. ${planningPaused.current?'Your draft is up to date.':'I’m updating your day.'}`);}
       }
     }
-  },[account.ready,account.user,account.circles]);
+  },[account.ready,account.identityResolved,account.user,account.circles]);
   useEffect(()=>{
     if(!account.user||!owner)return;
     for(const [id,known] of invitedCircles.current){
