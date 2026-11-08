@@ -258,7 +258,7 @@ test('an open draft stays undecided through location, timing and circle changes'
 });
 
 test('an additive food request keeps existing stops and explicit cuisine through revision',async()=>{
-  const context=parseItinerary({area:'Kasoa, Ghana',title:'Coffee in Kasoa',activities:['coffee'],people:[{id:'owner',name:'Owner',artists:['SZA'],vibes:[]}]});
+  const context=parseItinerary({area:'Kasoa, Ghana',title:'Coffee in Kasoa',titleSource:'auto',activities:['coffee'],people:[{id:'owner',name:'Owner',artists:['SZA'],vibes:[]}]});
   const agent=createAgent({getKey:()=> 'test',fetchImpl:async()=>response('revise_day',{activities:['coffee','dinner'],experience:{cuisine:'Ghanaian',atmosphere:'romantic'}})});
   const result=await agent.interpret({message:'I want some local Ghanaian foods too, somewhere romantic',context});
   assert.equal(result.status,'ready');

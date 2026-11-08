@@ -1,14 +1,18 @@
+import {selectionGapSummary} from '../../shared/selection-evidence.js';
 // Suggestions reflect the current plan and provider checks, never model-made facts.
 export function partialPlanSummary(plan){
   const found=plan.stops.filter(s=>s.item).length;
   if(found===plan.stops.length)return null;
-  if(!found&&plan.nearbySuggestions?.length)return 'I looked a little further and found places nearby.';
-  return `I found ${found} of ${plan.stops.length} requested stops. ${found?'The day isn’t complete yet.':'I haven’t found a usable plan yet.'}`;
+  if(!found&&plan.nearbySuggestions?.length&&!selectionGapSummary(plan.stops))return 'I looked a little further and found places nearby.';
+  const evidenceGap=selectionGapSummary(plan.stops);
+  return `I found ${found} of ${plan.stops.length} requested stops. ${evidenceGap||(found?'The day isn’t complete yet.':'I haven’t found a usable plan yet.')}`;
 }
 // Suggestions reflect the current plan and provider checks, never model-made facts.
 export function nextPlanSteps(plan,checks={}) {
   if(!plan)return null;
   const filled=plan.stops.filter(s=>s.item);
+  const evidenceGap=selectionGapSummary(plan.stops);
+  if(evidenceGap)return {note:`${evidenceGap} The requested visit remains unfilled; no other place was substituted.`,attention:true,actions:[{id:'review',label:'Review selected places',icon:'edit'},{id:'retry',label:'Retry search',icon:'undo'},...(plan.nearbySuggestions?.length?[{id:'shortlist',label:'See nearby alternatives',icon:'map'}]:[])]};
   const reports=checks.data?.stops||[];
   const flags=reports.filter(s=>['outside_reported_hours','reported_closed'].includes(s.hours?.status)).length;
   const fits=reports.filter(s=>s.hours?.status==='fits_reported_hours').length;

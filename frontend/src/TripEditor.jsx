@@ -1,3 +1,4 @@
+import {editPlanTitle} from '../../shared/plan-title.js';
 import {reviseStops} from '../../shared/stop-intents.js';
 import ActivityChoices from './ActivityChoices.jsx';
 import { useEffect, useRef, useState } from 'react';
@@ -20,7 +21,7 @@ export default function TripEditor({ brief, onClose, onSubmit, hasPlan, groupMan
       if (trigger?.isConnected) trigger.focus({ preventScroll: true });
     };
   }, []);
-  const update = (key, value) => setDraft(d => ({ ...d, [key]: value, ...(key==='activities'?reviseStops(d,{activities:value}):{}), ...(['date','startTime','endTime'].includes(key)?{timing:{dateConfirmed:true,timeConfirmed:true,mode:'fixed',...d.timing,...(key==='date'?{dateConfirmed:true}:{timeConfirmed:true,mode:'fixed'})}}:{}) }));
+  const update = (key, value) => setDraft(d => ({ ...d, [key]: value, ...(key==='title'?editPlanTitle(value):{}), ...(key==='activities'?reviseStops(d,{activities:value}):{}), ...(['date','startTime','endTime'].includes(key)?{timing:{dateConfirmed:true,timeConfirmed:true,mode:'fixed',...d.timing,...(key==='date'?{dateConfirmed:true}:{timeConfirmed:true,mode:'fixed'})}}:{}) }));
   const person = (index, key, value) => setDraft(d => ({ ...d, people: d.people.map((p, i) => i === index ? { ...p, [key]: value } : p) }));
   async function submit(event) {
     event.preventDefault();
