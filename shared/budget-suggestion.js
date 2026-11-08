@@ -1,8 +1,9 @@
+import {stopIntents} from './stop-intents.js';
 // Product starting allowances in local units, NOT venue prices or FX rates.
 // Unsupported currencies stay unset instead of inheriting cedi amounts.
 const mealUnits={GHS:220,USD:30,GBP:25,EUR:30,JPY:4000,NGN:25000,KES:2000,ZAR:300,CAD:40,AUD:45};
 export function suggestBudget(request) {
-  const unit=mealUnits[request.currency],activities=request.activities||[];
+  const unit=mealUnits[request.currency],activities=stopIntents(request);
   if(!unit||!activities.length)return null;
   const people=request.people||[];
   const style=people.length?people.reduce((sum,p)=>sum+({mindful:.75,balanced:1,treat:1.4}[p.spending?.style]||1),0)/people.length:1;

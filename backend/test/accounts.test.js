@@ -329,3 +329,19 @@ test('circle plan HTTP endpoints authorize sessions and reject cross-origin shar
   assert.equal((await fetch(`${base}/api/account/circles/${circle.id}`,{method:'PATCH',headers:headers(b.session),body:JSON.stringify({name:'New name'})})).status,200);
   assert.equal((await f.accounts.current(a.session)).circles[0].name,'New name');
 });
+
+test('saved repeated slots keep and release their own place without conflating the category',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'repeated-account-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+  const file=join(directory,'accounts.json');
+  const f=fixture({store:createAccountStore({file})}),a=await f.login('Alex');
+  const plan=await generatedPlan({activities:['coffee'],stopIntents:['coffee','coffee']});
+  assert.ok(plan.stops[1].item);
+  await f.accounts.keepPlan({session:a.session,id:libraryId,revision:1},plan);
+  const pinned=await f.accounts.editSavedPlan(a.session,libraryId,{revision:1,pins:{'stop-1':plan.stops[1].item.id}});
+  assert.deepEqual(pinned.request.stopIntents,['coffee','coffee']);assert.deepEqual(pinned.request.pins,{'stop-1':plan.stops[1].item.id});assert.deepEqual(pinned.stops,plan.stops);
+  const restarted=fixture({store:createAccountStore({file})});
+  const restored=await restarted.accounts.getPlan(a.session,libraryId);assert.deepEqual(restored.request,pinned.request);assert.deepEqual(restored.stops,pinned.stops);
+  await assert.rejects(f.accounts.editSavedPlan(a.session,libraryId,{revision:2,pins:{'stop-0':plan.stops[1].item.id}}),e=>e.status===400);
+  await assert.rejects(f.accounts.editSavedPlan(a.session,libraryId,{revision:2,pins:{coffee:plan.stops[1].item.id}}),e=>e.status===400);
+  const released=await f.accounts.editSavedPlan(a.session,libraryId,{revision:2,pins:{}});assert.deepEqual(released.request.pins,{});assert.deepEqual(released.request.stopIntents,['coffee','coffee']);
+});

@@ -1,3 +1,5 @@
+import {pinKey,reviseStops} from '../../shared/stop-intents.js';
+import {rememberStops,toggleStopPin,isStopPinned,stopIndex,menuChoicePins} from './stop-controls.js';
 import {resultPlaceLabel,updateResultReceipt} from './result-receipt.js';
 import {Button, Card, Flex, Heading, IconButton, Text} from '@radix-ui/themes';
 import {useQueryClient} from '@tanstack/react-query';
@@ -54,7 +56,6 @@ const partyLabel = r => `${r.party.adults + r.party.children} ${r.party.adults +
 const savedKey=id=>id?`${STORAGE_KEY}.${id}`:STORAGE_KEY;
 const readSaved = (userId) => { try { const data = JSON.parse(localStorage.getItem(savedKey(userId)) || '[]'); return Array.isArray(data) ? data.filter(p => p.id && p.plan?.version === '1.0' && p.plan?.tasteMap && p.plan?.budget).slice(0, 8).map(entry=>({...entry,plan:{...entry.plan,request:{...entry.plan.request,people:entry.plan.request.people.map((p,i)=>({...p,id:p.id||entry.plan.people[i]?.id||identity()}))}}})) : []; } catch { return []; } };
 const personSignature=p=>p?JSON.stringify({id:p.id,...personInput(p)}):'';
-const rememberStops = plan => Object.fromEntries(plan.stops.filter(s => s.item).map(s => [s.intent, s.item.id]));
 
 function planText(plan) {
   const r = plan.request;
@@ -271,7 +272,7 @@ export default function PlannerApp() {
   },[account.user?.id,shared.day?.id,shared.day?.planRevision,shared.day?.revision,shared.day?.access.role]);
   function schedule(request,reason){
     if(!sharedRef.current.linked&&!locationConfirmed.current){replaceBrief(request);return;}
-    if(!sharedRef.current.linked&&planRef.current?.activityBasis==='taste_suggestion'&&!Object.keys(request.pins||{}).length)request={...request,activities:[]};
+    if(!sharedRef.current.linked&&planRef.current?.activityBasis==='taste_suggestion'&&!Object.keys(request.pins||{}).length)request={...request,...reviseStops(request,{activities:[]})};
     replaceBrief(request);planningPaused.current=false;setPending(true);setError('');setRevisionFailed(false);
     clearTimeout(autoTimer.current);autoTimer.current=null;planner.current.invalidate();
     autoTimer.current=setTimeout(()=>{autoTimer.current=null;planner.current.enqueue(briefRef.current);},1100);
@@ -507,7 +508,7 @@ export default function PlannerApp() {
     }else if(action.id==='budget'){setTab('budget');setPlanOpen(true);
     }else if(action.id==='keep_found'){
       const found=planRef.current?.stops.filter(s=>s.item)||[];if(!found.length)return;
-      const request={...briefRef.current,activities:[...new Set(found.map(s=>s.intent))],...(briefRef.current.route?{route:found.map(s=>({intent:s.intent,placeId:s.item.id})),pins:{}}:{pins:Object.fromEntries(found.map(s=>[s.intent,s.item.id]))})};
+      const request={...briefRef.current,activities:[...new Set(found.map(s=>s.intent))],stopIntents:found.map(s=>s.intent),...(briefRef.current.route?{route:found.map(s=>({intent:s.intent,placeId:s.item.id})),pins:{}}:{pins:rememberStops({...planRef.current,request:{...briefRef.current,stopIntents:found.map(s=>s.intent)},stops:found})})};
       showWhenReady.current=true;build(request).catch(e=>setError(e.message));
     }else if(action.id==='nearby'){showWhenReady.current=true;build({...briefRef.current,searchRadiusKm:20}).catch(e=>setError(e.message));}
     else if(action.id==='retry'){showWhenReady.current=true;build(briefRef.current).catch(e=>setError(e.message));}
@@ -592,10 +593,9 @@ export default function PlannerApp() {
     }
     finally{if(chatRequest.current===controller){working.current=false;setBusy(false);}}
   }
-  async function pin(intent, id) {
+  async function pin(stop) {
     if(plan.request.route){setNotice('These places are kept in your selected route. Change the selection in chat to edit the stops.');return;}
-    const pins = { ...plan.request.pins };
-    if (pins[intent]) delete pins[intent]; else pins[intent] = id;
+    const pins = toggleStopPin(plan,stop);
     const request={...briefRef.current,pins};
     if(shared.linked){build(request,'Kept places updated.');}else{
       let updated={...plan,request};
@@ -605,7 +605,7 @@ export default function PlannerApp() {
   }
   function swap(stop) {
     if(plan.request.route){setPlanOpen(false);setNotice('Choose replacement places from the shortlist, then rebuild the route.');return;}
-    const pins = rememberStops(plan); delete pins[stop.intent];
+    const pins = rememberStops(plan); delete pins[pinKey(plan.request,stopIndex(plan,stop))];
     build({ ...plan.request, pins, excludeIds: [...new Set([...plan.request.excludeIds, stop.item.id])] }, 'I’ve looked for another stop and kept the other places in your day. You can undo this revision.');
   }
   async function undo(){
@@ -625,11 +625,11 @@ export default function PlannerApp() {
   const trace = id => { setSelection(id); setTab('taste');setPlanOpen(true); };
   function chooseTool(kind){if(kind==='refine-current'){if(planRef.current)requestSwipes();else openTaste();return;}if(kind==='usual-location'){const prompt='Save an area you often enjoy. You can change it any time.';locationDraft.current={...briefRef.current,area:'',locationId:null};setLocationPrompt({query:'',scope:'default',nearMe:false,prompt});presentTool('location',prompt,{usualOnly:true});return;}if(kind==='nearby'){askLocation(briefRef.current,'','plan','Let’s see what’s around you. Choose a nearby area, then we’ll shape the outing.',true);return;}if(kind==='location'){askLocation();return;}if(kind==='profile'&&!account.user){setAccountAction('profile');setAccountOpen(true);return;}if(kind==='tastes')openTaste();else presentTool(kind);}
   function openDetails(){editorRevision.current=shared.day?.revision;setEditor(true);}
-  function chooseActivities(activities){
+  function chooseActivities(activities,{singleStop=false}={}){
     if(!owner)return;
     clearTimeout(autoTimer.current);autoTimer.current=null;planner.current.invalidate();setPending(false);localVersion.current++;
     planningPaused.current=true;setDraftChanged(!!planRef.current);
-    replaceBrief({...briefRef.current,route:undefined,activities,pins:Object.fromEntries(Object.entries(briefRef.current.pins||{}).filter(([intent])=>activities.includes(intent)))});
+    replaceBrief({...briefRef.current,...reviseStops(briefRef.current,{activities,...(singleStop?{stopIntents:activities}:{})})});
     if(activities.length){
       // Wait for a brief pause so selecting multiple chips results in one search.
       autoTimer.current=setTimeout(()=>{autoTimer.current=null;if(!owner||working.current)return;showWhenReady.current=true;build(briefRef.current).catch(e=>setError(e.message));},950);
@@ -642,7 +642,7 @@ export default function PlannerApp() {
     if(result.status!=='reply')throw Error('I couldn’t finish the comparison. Please try again.');
     return result.text;
   }
-  function confirmMenuChoices(choices){const request={...briefRef.current,pins:briefRef.current.route?{}:{...briefRef.current.pins,...Object.fromEntries(choices.map(c=>[c.intent,c.placeId]))}};replaceBrief(request);toolRef.current=null;setTool(null);sendMessage(`I’m considering ${choices.map(c=>`${c.label} at ${c.venue}`).join('; ')}. Help me decide the next step using the menu evidence and any budget I gave you.`);}
+  function confirmMenuChoices(choices){const request={...briefRef.current,pins:briefRef.current.route?{}:menuChoicePins(planRef.current,choices)};replaceBrief(request);toolRef.current=null;setTool(null);sendMessage(`I’m considering ${choices.map(c=>`${c.label} at ${c.venue}`).join('; ')}. Help me decide the next step using the menu evidence and any budget I gave you.`);}
   function renderTool(){if(tool?.kind==='menus')return <MenuChoicesAction onAskAgent={compareMenuEvidence} onTool={chooseTool} selected={menuSelections} onSelectionChange={setMenuSelections} plan={plan} checks={placeChecks} onDone={finishTool} onConfirm={confirmMenuChoices} onDetails={stop=>openPlace(stop,'practical')}/>;if(tool?.kind==='budget')return <BudgetAction busy={groupUpdating} key={tool.id} brief={brief} editable={owner} onPerson={editTaste} onApply={applyBudget} onDone={finishTool}/>;if(tool?.kind==='compare')return <ComparePlacesAction plan={plan} checks={placeChecks} onTool={chooseTool} onDone={finishTool} onDetails={stop=>openPlace(stop,'practical')}/>;if(tool?.kind==='timing')return <TimingAction key={tool.id} brief={brief} history={chat} timeZone={planningZone.current||plan?.timeZone} onApply={applyTiming} onClose={finishTool}/>;if(tool?.kind==='review')return <PlanReview key={tool.id} initialMultiStop={!!tool.multiStop} brief={brief} deck={deck} hasPlan={!!plan} confirmed={locationConfirmed.current||shared.linked} busy={groupUpdating} onActivities={owner?chooseActivities:undefined} onTool={chooseTool} onDetails={openDetails} onDone={finishTool}/>;if(tool?.kind==='location')return <LocationAction key={tool.id} prompt={locationPrompt.prompt} brief={locationDraft.current||brief} preferred={preferred} savedAreas={savedAreas} query={locationPrompt.query} scope={locationPrompt.scope} nearMe={locationPrompt.nearMe} manageUsual={!!tool.usualOnly} signedIn={!!account.user} onDone={finishTool} onApply={applyLocation} onForget={forgetLocation}/>;if(tool?.kind==='profile'&&account.user)return <TasteAction personal person={account.user.profile} people={[account.user.profile]} deck={deck} onChange={p=>account.changeProfile(p).catch(e=>setError(e.message))} onDone={finishTool} editable/>;if(tool?.kind==='tastes'&&activePerson)return <TasteCardsAction focus={tool.focus||null} cardIds={tool.cardIds||[]} prompts={tool.prompts||[]} autopilot={autopilotPending.current?.stage==='tastes'} key={`${activePerson.id}:${tool.focus||'mood'}`} person={activePerson} people={brief.people} deck={deck} onPerson={openTaste} onChange={editTaste} onDone={()=>finishTool()} drafting={!plan||planningPaused.current} editable={owner||shared.day?.access.memberId===activePerson.id}/>;
     if(tool?.kind==='circles')return <CirclesAction circles={circles} contacts={contacts} people={brief.people} onApply={applyCircle} onPeople={()=>presentTool('people')} onSave={saveCircle} onRemove={removeCircle} onDone={finishTool} owner={owner} accountUser={account.user} onInvite={copyCircleInvite} onEmailInvite={sendCircleEmailInvite} onSignIn={()=>{setAccountAction('circles');setAccountOpen(true);}}/>;
     if(tool?.kind==='people')return <PeopleAction key={tool.id} accountUser={account.user} circles={account.circles} connections={connections} onInvite={prepareCircleInvite} onEmailInvite={sendCircleEmailInvite} initialQuery={peopleQuery} people={brief.people} contacts={contacts} owner={owner} memberId={shared.day?.access.memberId} onTaste={openTaste} onAdd={addPerson} onCircles={()=>presentTool('circles')} onRemove={removePerson} onShare={()=>presentTool('share')} onDone={()=>finishTool()}/>;
@@ -653,7 +653,7 @@ export default function PlannerApp() {
     {tab==='taste'&&<TasteMap key={selection||'all'} plan={plan} initialSelection={selection} onEdit={()=>{setPlanOpen(false);openTaste();}}/>}{tab==='budget'&&<Budget plan={plan} onBudget={owner?applyBudget:undefined} onPerson={owner?editTaste:undefined} disabled={groupUpdating} onEdit={id=>{setPlanOpen(false);openTaste(id);}}/>} {tab==='checklist'&&<BeforeGoing plan={plan} checks={placeChecks} done={confirmations} setDone={setConfirmations} onDetails={stop=>openPlace(stop,'practical')} onTiming={owner?()=>{setPlanOpen(false);presentTool('timing');}:undefined}/>}
     {shared.day?.status==='error'&&<button className="pl-button" onClick={()=>shared.retry().catch(e=>setError(e.message))}>Retry the update</button>}</>}
   </ChatStudio>
-  {selectedStop&&<PlaceDetails key={`${selectedPlace}-${placeView}`} initialView={placeView} onSelect={(id,view)=>{setPlaceView(view);setSelectedPlace(id);}} onTiming={owner?()=>{setSelectedPlace(null);setPlanOpen(false);presentTool('timing');}:undefined} stop={selectedStop} plan={plan} checks={placeChecks} onClose={()=>setSelectedPlace(null)} onSwap={()=>{setSelectedPlace(null);swap(selectedStop);}} canSwap={owner&&!groupUpdating&&!plan.request.route&&selectedStop.id!=='shortlist-place'&&!plan.request.pins[selectedStop.intent]}/> }
+  {selectedStop&&<PlaceDetails key={`${selectedPlace}-${placeView}`} initialView={placeView} onSelect={(id,view)=>{setPlaceView(view);setSelectedPlace(id);}} onTiming={owner?()=>{setSelectedPlace(null);setPlanOpen(false);presentTool('timing');}:undefined} stop={selectedStop} plan={plan} checks={placeChecks} onClose={()=>setSelectedPlace(null)} onSwap={()=>{setSelectedPlace(null);swap(selectedStop);}} canSwap={owner&&!groupUpdating&&!plan.request.route&&selectedStop.id!=='shortlist-place'&&!isStopPinned(plan,selectedStop)}/> }
   {accountOpen&&<AccountPanel resumeAction={accountAction} account={account} onClose={()=>{setAccountOpen(false);setAccountAction(null);}} onSignIn={signIn} onTastes={()=>{setAccountOpen(false);presentTool('profile');}} onCircles={()=>{setAccountOpen(false);setProfileCirclesOpen(true);}} onLocation={()=>{setAccountOpen(false);askLocation();}} onUsage={()=>{setAccountOpen(false);setUsageOpen(true);}} onSignOut={async()=>{await account.signOut();setAccountOpen(false);}}/>}
   {profileCirclesOpen&&account.user&&<ProfileCircles account={account} onClose={()=>setProfileCirclesOpen(false)} onPlans={circle=>{setProfileCirclesOpen(false);setSavedCircleFilter(circle);setShowSaved(true);loadSaved();}}/>}
   {usageOpen&&<UsageDashboard onClose={()=>setUsageOpen(false)}/>}

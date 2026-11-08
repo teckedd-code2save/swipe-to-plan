@@ -249,3 +249,37 @@ for (const signedIn of [false, true]) {
     assert.equal((await send()).context.currency, signedIn ? 'EUR' : 'GBP');
   });
 }
+
+function repeatedPlan(request = {}) {
+  return {version:'1.0',phase:'discovery',request:{...fresh(),area:london.label,locationId:london.id,activities:['drinks'],stopIntents:['drinks','drinks'],...request},stops:['a','b'].map((id,index)=>({id:`stop-${index}`,intent:'drinks',item:{id,entityId:`fixture-${id}`,name:`Fixture ${id}`,address:'Synthetic test venue',links:{}},connections:[]})),people:[profile],budget:{allocations:[0,1].map(i=>({stopId:`stop-${i}`,intent:'drinks',amount:null})),reserve:0,transport:0},tasteMap:{nodes:[],edges:[]},warnings:[],provenance:{provider:'synthetic test fixture',retrievedAt:'2026-11-07T00:00:00Z'},links:{}};
+}
+
+test('repeated stops: keep one, replace the other, undo and edit details retain distinct slots',async()=>{
+  account(london);state.savedPlan=repeatedPlan();history.replaceState(null,'','/#/plan/saved-day');
+  const fetchBase=globalThis.fetch,builds=[];
+  globalThis.fetch=async(input,options={})=>{
+    if(new URL(input,location.origin).pathname==='/api/itineraries'){
+      const request=JSON.parse(options.body);builds.push(request);const result=repeatedPlan(request);
+      if(request.excludeIds.includes('b'))result.stops[1].item={...result.stops[1].item,id:'c',name:'Fixture c'};
+      return new Response(JSON.stringify(result),{headers:{'content-type':'application/json'}});
+    }
+    return fetchBase(input,options);
+  };
+  await mount();
+  const cards=()=>[...document.querySelectorAll('.outing-place')];
+  assert.equal(cards().length,2);
+  await act(async()=>cards()[0].querySelector('.outing-keep').click());
+  assert.equal(cards()[0].querySelector('.outing-keep').getAttribute('aria-pressed'),'true');
+  assert.equal(cards()[1].querySelector('.outing-keep').getAttribute('aria-pressed'),'false');
+  await act(async()=>[...cards()[1].querySelectorAll('button')].find(b=>b.textContent==='Find another').click());
+  assert.deepEqual(builds.at(-1).stopIntents,['drinks','drinks']);assert.deepEqual(builds.at(-1).pins,{'stop-0':'a'});
+  assert.equal(cards()[1].getAttribute('aria-label'),'Fixture c');
+  await click('Undo');assert.equal(cards()[1].getAttribute('aria-label'),'Fixture b');
+  await click('Details');await input('.pl-trip-dialog input[type="date"]','2026-12-04');await click('Update this plan');
+  assert.deepEqual(builds.at(-1).stopIntents,['drinks','drinks']);assert.deepEqual(builds.at(-1).pins,{'stop-0':'a'});assert.equal(builds.at(-1).date,'2026-12-04');
+  await click('Save');
+  // The chat context and actual saved snapshot retain the same ordered request.
+  assert.deepEqual((await send()).context.stopIntents,['drinks','drinks']);
+  const snapshots=Object.keys(localStorage).filter(key=>key.includes('saved')).flatMap(key=>{try{return JSON.parse(localStorage.getItem(key));}catch{return [];}});
+  assert.ok(snapshots.some(entry=>entry.plan?.request.stopIntents?.length===2));
+});

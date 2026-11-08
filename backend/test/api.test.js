@@ -210,3 +210,13 @@ test('shared-day polling does not consume the edit rate limit',async t=>{
   const updated=await call(`/api/days/${id}`,{request,revision},'PATCH',headers);
   assert.equal(updated.status,200);
 });
+
+test('HTTP itinerary preserves repeated requested slots and reports insufficient distinct inventory',async t=>{
+  const provider={name:'qloo',resolveArtist:async()=>null,discover:async()=>[0,1].map(i=>({entity_id:`bar-${i}`,name:`Bar ${i}`,tags:[{id:'urn:tag:category:qloo:bar',name:'bar'}],properties:{address:'Osu, Accra, Ghana'}}))};
+  const call=await serve(t,{provider});
+  const request={area:'Osu',activities:['drinks'],stopIntents:['drinks','drinks'],timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'},experience:{notes:'No meal.'}};
+  const first=await call('/api/itineraries',request);assert.equal(first.status,200);assert.equal(first.body.status,'complete');assert.equal(first.body.stops.length,2);assert.equal(new Set(first.body.stops.map(s=>s.item.id)).size,2);
+  const next=await call('/api/itineraries',{...first.body.request,date:'2099-01-02',pins:{'stop-1':first.body.stops[1].item.id}});assert.equal(next.status,200);assert.equal(next.body.stops[1].item.id,first.body.stops[1].item.id);assert.equal(next.body.request.experience.notes,'No meal.');
+  const sparse=await call('/api/itineraries',{...request,stopIntents:['drinks','drinks','drinks']});assert.equal(sparse.status,200);assert.equal(sparse.body.status,'partial');assert.equal(sparse.body.stops.length,3);assert.equal(sparse.body.stops.filter(s=>s.item).length,2);
+  assert.equal((await call('/api/itineraries',{...request,stopIntents:Array(4).fill('drinks')})).status,400);
+});
