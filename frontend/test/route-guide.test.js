@@ -52,14 +52,14 @@ const result=()=>document.querySelector('.pg-route-estimate');
 test('render, typing, mode and leg changes never automatically estimate; Compare is Maps only',async()=>{
   await render();assert.equal(requests.length,0);assert.equal(button('Estimate this journey').disabled,true);
   await input('Synthetic starting address');await click('Drive');await click('Walk');await select('second-drinks');assert.equal(requests.length,0);
-  await click('Compare');assert.equal(button('Estimate this journey').disabled,true);assert.ok(document.querySelector('a[href*="google.com/maps/dir/"]'));
+  await click('Compare');assert.equal(button('Estimate this journey'),undefined);assert.ok(document.querySelector('a[href*="google.com/maps/dir/"]'));
 });
 test('explicit first-leg action requires origin, never infers area or asks for GPS',async()=>{
   await render();await click('Drive');await act(async()=>document.querySelector('.pg-estimate-form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));assert.equal(requests.length,0);
   assert.match(document.querySelector('[role="alert"]').textContent,/Choose your starting point/);assert.equal(document.activeElement,document.querySelector('input'));
   await input('Synthetic starting address');await click('Estimate this journey');assert.deepEqual(requests[0].payload.origin,{address:'Synthetic starting address'});
   assert.equal(requests[0].payload.departureAt,undefined);assert.equal(requests[0].payload.stops[0].id,'first-drinks');assert.equal(requests[0].payload.stops[0].entityId,'synthetic-venue');
-  assert.match(document.querySelector('.pg-estimate-form').textContent,/not an estimate for your scheduled outing/);assert.match(document.body.textContent,/sent|sends.*Google Routes/);
+  assert.match(document.querySelector('.pg-estimate-form').textContent,/leaving now, not your scheduled outing/);assert.match(document.body.textContent,/Sends.*Google Routes/);
 });
 test('success reports source, measured time and travel-only limits without changing plan or persisting origin',async()=>{
   const before=structuredClone(props.plan);await start();await resolve();
@@ -137,8 +137,8 @@ test('repeated submit while a request is pending does not make another provider 
 });
 
 test('walking and transit copy does not claim road-traffic evidence',async()=>{
-  await render();await click('Walk');assert.match(document.querySelector('.pg-estimate-form').textContent,/Walking estimate requested now/);assert.doesNotMatch(document.querySelector('.pg-estimate-form').textContent,/current traffic/);
-  await click('Transit');assert.match(document.querySelector('.pg-estimate-form').textContent,/Transit estimate for departure now/);assert.doesNotMatch(document.querySelector('.pg-estimate-form').textContent,/current traffic/);
+  await render();await click('Walk');assert.match(document.querySelector('.pg-estimate-form').textContent,/Estimate for leaving now/);assert.doesNotMatch(document.querySelector('.pg-estimate-form').textContent,/current traffic/);
+  await click('Transit');assert.match(document.querySelector('.pg-estimate-form').textContent,/Estimate for leaving now/);assert.doesNotMatch(document.querySelector('.pg-estimate-form').textContent,/current traffic/);
 });
 
 function mockLocation(){const calls=[];Object.defineProperty(navigator,'geolocation',{configurable:true,value:{getCurrentPosition(success,error,options){calls.push({success,error,options});}}});return calls;}
@@ -247,5 +247,97 @@ test('map stop key selects repeated occurrences and preserves the explicit journ
   await act(async()=>keys()[0].click());
   assert.equal(document.querySelector('.pg-route-guide select').value,'first-drinks');
   assert.equal(document.querySelector('.pg-estimate-form input').value,'Chosen public landmark');
+  assert.equal(requests.length,0);
+});
+
+for(const supplied of [null,{...syntheticCapabilities,routeEstimates:false},{...syntheticCapabilities,routeProvider:'unknown'}])test(`unavailable provider has one fallback and no claim of estimates or Google Routes submission (${JSON.stringify(supplied)})`,async()=>{
+  capabilities=supplied;const gps=mockLocation();await render();
+  for(const mode of ['Drive','Walk','Transit','Compare']){
+    await click(mode);
+    assert.equal(button('Estimate this journey'),undefined);
+    assert.doesNotMatch(document.body.textContent,/current traffic|leaving now|departure now|Google Routes|choose a mode to estimate/i);
+    assert.equal(document.querySelectorAll('.pg-estimate-availability').length,1);
+    assert.match(document.querySelector('.pg-estimate-availability').textContent,/In-app estimates are unavailable/);
+    assert.ok(document.querySelector('.pg-journey-actions a[href*="google.com/maps/dir/"]'));
+    await act(async()=>document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  }
+  assert.equal(requests.length,0);assert.equal(gps.length,0);
+});
+test('loading capabilities keep Maps usable without premature estimate or transmission claims',async()=>{
+  const original=globalThis.fetch;let ready;
+  globalThis.fetch=(url,options)=>url==='/api/actions/capabilities'?new Promise(resolve=>{ready=()=>resolve(new Response(JSON.stringify(syntheticCapabilities)));}):original(url,options);
+  await render();await input('Chosen landmark');
+  assert.equal(button('Estimate this journey'),undefined);
+  assert.match(document.querySelector('.pg-estimate-availability[role="status"]').textContent,/Checking estimates/);
+  assert.doesNotMatch(document.body.textContent,/current traffic|leaving now|Google Routes/);
+  assert.equal(mapsOrigin(),'Chosen landmark');
+  await act(async()=>document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  assert.equal(requests.length,0);
+  await act(async()=>ready());
+  assert.equal(button('Estimate this journey').disabled,false);
+  assert.match(document.querySelector('.pg-estimate-availability').textContent,/Sends your start and destination to Google Routes/);
+  assert.equal(requests.length,0);
+});
+for(const modes of [['WALK'],[],null,'DRIVE'])test(`unsupported or malformed mode capability offers Maps without a dead estimate control (${JSON.stringify(modes)})`,async()=>{
+  capabilities={...syntheticCapabilities,modes};await render();await input('Chosen landmark');
+  assert.equal(button('Estimate this journey'),undefined);
+  assert.match(document.querySelector('.pg-estimate-availability').textContent,/No in-app estimate for this mode/);
+  assert.doesNotMatch(document.body.textContent,/current traffic|leaving now|Google Routes/);
+  assert.equal(mapsOrigin(),'Chosen landmark');
+  await act(async()=>document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  assert.equal(requests.length,0);
+});
+test('supported modes disclose submission before an explicit request, and Compare removes that disclosure',async()=>{
+  await render();await input('Chosen landmark');
+  for(const [label,mode] of [['Drive','driving'],['Walk','walking'],['Transit','transit']]){
+    await click(label);const submit=button('Estimate this journey');
+    assert.equal(submit.disabled,false);
+    const note=document.getElementById(submit.getAttribute('aria-describedby'));
+    assert.match(note.textContent,/leaving now, not your scheduled outing/);
+    assert.match(note.textContent,/Sends your start and destination to Google Routes/);
+    assert.doesNotMatch(document.body.textContent,/current traffic estimates|estimate requested now/);
+    assert.equal(new URL(document.querySelector('.pg-journey-actions a').href).searchParams.get('travelmode'),mode);
+  }
+  await click('Compare');assert.equal(button('Estimate this journey'),undefined);
+  assert.match(document.querySelector('.pg-estimate-availability').textContent,/Compare routes in Maps/);
+  assert.doesNotMatch(document.body.textContent,/Google Routes|leaving now/);assert.equal(requests.length,0);
+});
+test('transit help is optional and retains origin, selected mode, focus, and safety details',async()=>{
+  await render();await input('Chosen landmark');await click('Transit');
+  assert.equal(document.querySelector('.pg-route-options'),null);
+  const toggle=button('More route options');toggle.focus();await click('More route options');
+  assert.equal(document.activeElement,toggle);assert.equal(toggle.getAttribute('aria-expanded'),'true');
+  const options=document.getElementById(toggle.getAttribute('aria-controls'));
+  assert.match(options.textContent,/Local services may be unlisted/);
+  assert.match(options.textContent,/road conditions/);assert.match(options.textContent,/don’t confirm taxi availability or fares/);
+  assert.equal(new URL(options.querySelector('a').href).searchParams.get('origin'),'Chosen landmark');
+  await click('More route options');assert.equal(document.querySelector('.pg-route-options'),null);
+  assert.equal(document.activeElement,toggle);assert.equal(toggle.getAttribute('aria-expanded'),'false');
+  assert.equal(button('Transit').getAttribute('aria-pressed'),'true');assert.equal(mapsOrigin(),'Chosen landmark');assert.equal(requests.length,0);
+});
+test('compact copy retains visible location permission, unsaved precision, Maps sharing, and map provenance',async()=>{
+  capabilities={...syntheticCapabilities,routeEstimates:false};const calls=mockLocation();await render();
+  assert.match(document.body.textContent,/Location permission only on tap/);
+  assert.match(document.body.textContent,/Nearby search sends a rounded location/);
+  assert.match(document.body.textContent,/No tracking/);
+  assert.match(document.body.textContent,/OpenStreetMap receives your IP, browser and viewed area/);
+  assert.match(document.body.textContent,/Pins show places, not a calculated route/);
+  assert.match(document.querySelector('.pg-maps-note').textContent,/Maps receives your selected start and destination/);
+  await click('Use current location');await act(async()=>calls[0].success({coords:coordinates}));
+  assert.match(document.body.textContent,/reported accuracy about 24 m.*Not saved/);
+  assert.doesNotMatch(document.body.textContent,/Google Routes/);
+});
+
+for(const signedIn of [false,true])test(`default-save copy is prospective until persistence succeeds (${signedIn?'account':'device'})`,async()=>{
+  let finish;const savedAreas=[{id:'saved',label:'Saved town'}];
+  await render({signedIn,savedAreas,onSaveArea:()=>new Promise(resolve=>{finish=resolve;})});
+  await click('Use Saved town · approximate area');
+  const target=signedIn?'to your account':'on this device';
+  assert.ok(document.querySelector('.pg-route-start').textContent.includes(`Save this area ${target} for new outings.`));
+  assert.doesNotMatch(document.body.textContent,/Area saved as your default/);
+  await click('Save area as default');
+  assert.ok(button('Saving area…').disabled);assert.doesNotMatch(document.body.textContent,/Area saved as your default/);
+  await act(async()=>finish());
+  assert.match(document.querySelector('.pg-route-start [role="status"]').textContent,/Area saved as your default/);
   assert.equal(requests.length,0);
 });
