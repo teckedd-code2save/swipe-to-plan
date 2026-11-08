@@ -7,7 +7,7 @@ export default function BookingAction(props) {
   // Remount, cancel and discard reviewed details on every identity or itinerary change.
   return <BookingSession key={JSON.stringify([props.scope,props.context,props.plan,props.stop,props.place?.links,props.place?.contact],(key,value)=>['retrievedAt','providerUpdatedAt'].includes(key)?undefined:value)} {...props}/>;
 }
-function BookingSession({scope={allowed:true,type:'guest'},plan,stop,place,context}) {
+function BookingSession({scope={allowed:true,type:'guest'},plan,stop,place,context,compact=false}) {
   const state=useBookingActions(scope),snapshot=bookingSnapshot(plan,stop,state.durable?stop.item:place);
   const [draft,setDraft]=useState(()=>bookingMessage(snapshot)),[channel,setChannel]=useState('copy'),[reviewed,setReviewed]=useState(null),[record,setRecord]=useState(null),[message,setMessage]=useState(''),[reference,setReference]=useState(''),[outcome,setOutcome]=useState('awaiting_reply');
   const locked=state.busy||state.blocked;
@@ -38,14 +38,14 @@ function BookingSession({scope={allowed:true,type:'guest'},plan,stop,place,conte
   if(!editable)return <section className="pg-enquiry"><h3>Booking preparation</h3><p>{stop.id==='shortlist-place'?'Add this place to your day to prepare its visit details.':'Only the day owner can prepare and privately track bookings.'}</p></section>;
   return <section className="pg-enquiry" aria-label="Booking preparation">
     <h3>Prepare & track this stop</h3><p role="status">{bookingStatus(current?.status||ready&&'ready_for_contact')}</p>
-    <p>Nothing has been sent or booked by Unstressed. Availability, prices and your reports are not independently verified.</p>
-    {!state.durable&&<p>This preparation is temporary. Closing this panel or changing the day clears it. Private tracking needs an owned saved plan.</p>}
+    <p>{compact?'Nothing sent or booked. Availability and prices need venue confirmation.':'Nothing has been sent or booked by Unstressed. Availability, prices and your reports are not independently verified.'}</p>
+    {!state.durable&&<p>{compact?'Temporary draft. Closing or leaving this enquiry clears it; tracking needs an owned saved plan.':'This preparation is temporary. Closing this panel or changing the day clears it. Private tracking needs an owned saved plan.'}</p>}
     <p><strong>Recipient: {contactSnapshot.name}</strong><br/>{contactSnapshot.date&&contactSnapshot.localTime?`${contactSnapshot.date} · ${contactSnapshot.localTime} · ${contactSnapshot.timeZone||'Time zone missing'}`:'Visit timing not set: general enquiry only.'}{contactSnapshot.party&&` · ${contactSnapshot.party.adults} adults, ${contactSnapshot.party.children||0} children`}</p>
     <label>Request type<select value={kind} disabled={locked} onChange={e=>{setKind(e.target.value);setReviewed(null);}}><option value="enquiry">General enquiry</option>{timed&&<option value="reservation">Reservation request</option>}</select></label>
-    <label>Message to {contactSnapshot.name}<textarea value={draft} maxLength={2000} rows={8} disabled={locked} onChange={e=>{setDraft(e.target.value);setReviewed(null);}}/></label>
+    <label>Message to {contactSnapshot.name}<textarea value={draft} maxLength={2000} rows={compact?5:8} disabled={locked} onChange={e=>{setDraft(e.target.value);setReviewed(null);}}/></label>
     <label>Contact channel<select value={channel} disabled={locked} onChange={e=>{setChannel(e.target.value);setReviewed(null);}}><option value="copy">Copy for me to send</option>{contacts.website&&<option value="website">Venue website</option>}{contacts.phone&&<option value="phone">Call venue</option>}</select></label>
     <p>{channel==='website'?`Website: ${contacts.website}`:channel==='phone'?`Phone: ${contacts.phone}`:'Copy only: you choose the recipient when you send.'}</p>
-    <VenueContact place={{entityId:contactSnapshot.entityId,name:contactSnapshot.name,links:contacts}} contact={contactEvidence} contacts={contacts} scope={scope} context={context} allowDial={false} allowWebsite={false}/>
+    {compact?<details className="gr-contact-evidence"><summary>Review contact sources</summary><VenueContact place={{entityId:contactSnapshot.entityId,name:contactSnapshot.name,links:contacts}} contact={contactEvidence} contacts={contacts} scope={scope} context={context} allowDial={false} allowWebsite={false}/></details>:<VenueContact place={{entityId:contactSnapshot.entityId,name:contactSnapshot.name,links:contacts}} contact={contactEvidence} contacts={contacts} scope={scope} context={context} allowDial={false} allowWebsite={false}/>}
     <button className="pl-button" disabled={locked||!draft.trim()} onClick={useDetails}>{state.blocked?'Reload tracking to continue':state.busy?'Saving…':'Use these details'}</button>
     <small>This reviews only the message and channel shown here. It does not authorize an automatic or future send.</small>
     {ready&&!locked&&<div><button className="pl-secondary-button" onClick={copy}>Copy enquiry</button>{channel==='website'&&contacts.website&&<a className="pl-secondary-button" href={contacts.website} target="_blank" rel="noreferrer">Open venue website</a>}{channel==='phone'&&contacts.phone&&<DialerLink className="pl-secondary-button" place={{entityId:contactSnapshot.entityId,name:contactSnapshot.name,links:contacts}} contact={contactEvidence} allowedUrl={contacts.phone}/>}</div>}

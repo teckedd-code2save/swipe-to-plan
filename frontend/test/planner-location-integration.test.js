@@ -296,6 +296,7 @@ async function installRouteFixture({sharedRole}={}) {
   const base=globalThis.fetch,pending=[];
   globalThis.fetch=async(input,options={})=>{
     const path=new URL(input,location.origin).pathname;
+    if(path==='/api/locations/synthetic-area')return new Response(JSON.stringify({id:'synthetic-area',label:'Accra',center:{latitude:5.55,longitude:-0.2}}));
     if(path==='/api/actions/capabilities')return new Response(JSON.stringify(syntheticCapabilities));
     if(path==='/api/actions/routes/estimate'){
       const body=JSON.parse(options.body);let resolve;const promise=new Promise(done=>resolve=done);pending.push({body,resolve,signal:options.signal});await promise;
@@ -305,8 +306,11 @@ async function installRouteFixture({sharedRole}={}) {
   };
   return pending;
 }
+async function closeReadySheet(){
+  await click('Close and return to map');await act(async()=>{await new Promise(resolve=>setTimeout(resolve,20));});
+}
 async function openRouteFixture(){
-  await click('Getting ready');await click('Drive');await input('.pg-estimate-form input','Synthetic start, Accra');await click('Estimate this journey');
+  await click('Getting ready');await click('Choose your starting point');await click('Use Accra · approximate area');await closeReadySheet();await click('Drive');await click('Estimate this journey');
 }
 
 test('route integration: repeated venue details select the exact slot, not the first matching entity',async()=>{
@@ -326,11 +330,11 @@ for(const transition of ['Back to chat','New day','account switch','sign out','d
     state.user=transition==='sign out'?null:{...state.user,id:'another-account',profile:{...profile,id:'another-account'}};
     await act(async()=>window.dispatchEvent(new Event('focus')));
   }else if(transition==='date edit'){
-    await click('Places');await click('Details');await input('.pl-trip-dialog input[type="date"]','2027-02-12');
-  }else await click(transition);
+    await closeReadySheet();await click('Places');await click('Details');await input('.pl-trip-dialog input[type="date"]','2027-02-12');
+  }else {await closeReadySheet();await click(transition);}
   assert.equal(pending[0].signal.aborted,true);await act(async()=>pending[0].resolve());assert.equal(document.querySelector('.pg-route-estimate'),null);
   if(transition==='Back to chat'){
-    await click('Your day');assert.equal(document.querySelector('.pg-estimate-form input').value,'');assert.equal(document.querySelector('.pg-route-estimate'),null);
+    await click('Your day');await click('Choose your starting point');assert.equal(document.querySelector('.gr-sheet input[type=text]').value,'');assert.equal(document.querySelector('.pg-route-estimate'),null);
   }
   assert.deepEqual(state.savedPlan.stops.map(stop=>stop.id),['first-drinks','second-drinks']);assert.equal(state.savedPlan.request.pins['first-drinks'],'catalog-item');
 });
@@ -343,9 +347,9 @@ test('route integration: a guest can explicitly estimate a shared day; shared re
 });
 test('route integration: a restored local saved day starts with no previous estimate or origin',async()=>{
   const pending=await installRouteFixture();await mount();await openRouteFixture();await act(async()=>pending[0].resolve());assert.ok(document.querySelector('.pg-route-estimate'));
-  await click('Places');await click('Save');await click('New day');await click('Saved days');
+  await closeReadySheet();await click('Places');await click('Save');await click('New day');await click('Saved days');
   const saved=[...document.querySelectorAll('.pl-saved-item>button')].find(node=>node.textContent.includes('Synthetic two-stop outing'));assert.ok(saved);await act(async()=>saved.click());
-  await click('Getting ready');assert.equal(document.querySelector('.pg-estimate-form input').value,'');assert.equal(document.querySelector('.pg-route-estimate'),null);
+  await click('Getting ready');await click('Choose your starting point');assert.equal(document.querySelector('.gr-sheet input[type=text]').value,'');assert.equal(document.querySelector('.pg-route-estimate'),null);
   const serialized=Object.keys(localStorage).map(key=>localStorage.getItem(key)).join('');assert.doesNotMatch(serialized,/Synthetic start, Accra|durationSeconds|distanceMeters/);
 });
 
@@ -393,22 +397,22 @@ for(const signedIn of [false,true])test(`${signedIn?'account':'guest'}: partial 
   await installRouteFixture(signedIn?{}:{sharedRole:'member'});if(!signedIn)guestDefault(london);else{state.savedPlan.request.people=[profile];state.savedPlan.people=[profile];}
   state.savedPlan.request={...state.savedPlan.request,area:paris.label,locationId:paris.id};if(state.shared)state.shared.request=state.savedPlan.request;
   const base=globalThis.fetch,lookups=[];globalThis.fetch=async(url,options)=>{if(url===`/api/locations/${paris.id}`){lookups.push(url);return new Response(JSON.stringify(paris));}return base(url,options);};
-  await mount();if(!state.user)await click('Your day');await click('Getting ready');await click(`Use ${paris.label} · approximate area`);await click('Save area as default');assert.equal(lookups.length,1);
+  await mount();if(!state.user)await click('Your day');await click('Getting ready');await click('Choose your starting point');await click(`Use ${paris.label} · approximate area`);await click('Save area as default');assert.equal(lookups.length,1);
   assert.equal(area(),`Planning area: ${paris.label}`);assert.match(document.body.textContent,/Area saved as your default/);
   if(!signedIn)assert.deepEqual(JSON.parse(localStorage.getItem('unstressed.planning-area')),paris);
-  await click('New day');assert.equal(area(),`Planning area: ${paris.label}`);assert.equal((await send()).context.currency,'EUR');
+  await closeReadySheet();await click('New day');assert.equal(area(),`Planning area: ${paris.label}`);assert.equal((await send()).context.currency,'EUR');
   await mount();assert.equal(area(),`Planning area: ${paris.label}`);assert.equal((await send()).context.currency,'EUR');
 });
 for(const response of [{id:'paris',label:'Paris'},london])test(`unusable or mismatched catalog does not replace guest default: ${response.id}/${!!response.currency}`,async()=>{
   await installRouteFixture({sharedRole:'member'});guestDefault(london);state.savedPlan.request={...state.savedPlan.request,area:paris.label,locationId:paris.id};if(state.shared)state.shared.request=state.savedPlan.request;
   const base=globalThis.fetch;globalThis.fetch=async(url,options)=>url===`/api/locations/${paris.id}`?new Response(JSON.stringify(response)):base(url,options);
-  await mount();if(!state.user)await click('Your day');await click('Getting ready');await click(`Use ${paris.label} · approximate area`);await click('Save area as default');assert.match(document.body.textContent,/could not be verified/);assert.doesNotMatch(document.body.textContent,/Area saved as your default/);assert.deepEqual(JSON.parse(localStorage.getItem('unstressed.planning-area')),london);
+  await mount();if(!state.user)await click('Your day');await click('Getting ready');await click('Choose your starting point');await click(`Use ${paris.label} · approximate area`);await click('Save area as default');assert.match(document.body.textContent,/could not be verified/);assert.doesNotMatch(document.body.textContent,/Area saved as your default/);assert.deepEqual(JSON.parse(localStorage.getItem('unstressed.planning-area')),london);
 });
 
 test('account switch during catalog resolution prevents saving into the new account',async()=>{
   await installRouteFixture();state.savedPlan.request={...state.savedPlan.request,area:paris.label,locationId:paris.id};let finish;const base=globalThis.fetch;
   globalThis.fetch=async(url,options)=>url===`/api/locations/${paris.id}`?new Promise(resolve=>{finish=()=>resolve(new Response(JSON.stringify(paris)));}):base(url,options);
-  await mount();await click('Getting ready');await click(`Use ${paris.label} · approximate area`);await click('Save area as default');assert.ok(finish);
+  await mount();await click('Getting ready');await click('Choose your starting point');await click(`Use ${paris.label} · approximate area`);await click('Save area as default');assert.ok(finish);
   state.user={...state.user,id:'other-account',profile:{...profile,id:'other-account'}};await act(async()=>window.dispatchEvent(new Event('focus')));await act(async()=>finish());assert.equal(state.writes,0);
 });
 
@@ -455,7 +459,10 @@ test('removing one return visit in the rendered itinerary keeps the other occurr
   await mount();const cards=()=>[...document.querySelectorAll('.outing-place')];assert.equal(cards().length,3);
   await act(async()=>[...cards()[2].querySelectorAll('button')].find(button=>button.textContent==='Remove stop').click());
   assert.deepEqual(builds.at(-1).route,[{intent:'coffee',placeId:'a'},{intent:'dinner',placeId:'b'}]);assert.equal(cards().length,2);
+  assert.match(document.querySelector('.cs-result-card').closest('article').textContent,/Current outing: 1\. Fixture a → 2\. Fixture b\./);
   await click('Undo');assert.equal(cards().length,3);
+  assert.match(document.querySelector('.cs-result-card').closest('article').textContent,/Current outing: 1\. Fixture a → 2\. Fixture b → 3\. Fixture a\./);
+  assert.match(document.querySelector('.cs-result-card small').textContent,/3 stops/);
   await act(async()=>[...cards()[0].querySelectorAll('button')].find(button=>button.textContent==='Remove stop').click());
   assert.deepEqual(builds.at(-1).route,[{intent:'dinner',placeId:'b'},{intent:'coffee',placeId:'a'}]);
 });
@@ -537,4 +544,90 @@ test('a selection before local retrieval completes preserves the newest budget, 
   const sent=await send();assert.equal(sent.context.budget,90);assert.equal(sent.context.date,'2026-12-04');assert.deepEqual(sent.context.people[0].artists,['Tems']);assert.deepEqual(sent.context.people[0].vibes,['v-art']);
   await act(async()=>release());
   assert.equal(builds.length,2);assert.equal(builds[1].budget,90);assert.equal(builds[1].date,'2026-12-04');assert.deepEqual(builds[1].people[0].artists,['Tems']);assert.deepEqual(builds[1].people[0].vibes,['v-art']);assert.deepEqual(builds[1].route.map(s=>s.placeId),['a','b','a']);
+});
+
+async function installUndoReceiptFixture({guest=false,partial=false,failRestore=false,pendingComparison=false,pendingRestore=false}={}){
+  const {decisionStops,comparisonKey}=await import('../src/decision-evidence.js');
+  const {resultRouteSummary,resultPlaceLabel}=await import('../src/result-receipt.js');
+  const initial=repeatedPlan({title:'Synthetic return visits',activities:['coffee','dinner'],stopIntents:['coffee','dinner','coffee'],route:[{intent:'coffee',placeId:'a'},{intent:'dinner',placeId:'b'},{intent:'coffee',placeId:'a'}]});
+  initial.stops[0].intent='coffee';initial.stops[1].intent='dinner';initial.stops.push({...initial.stops[0],id:'stop-2'});initial.budget.allocations.push({stopId:'stop-2',intent:'coffee',amount:null});
+  if(partial){initial.stops[1]={...initial.stops[1],item:null,reason:'no_eligible_places',status:'unfilled'};initial.status='partial';}
+  if(guest)localStorage.setItem('outing.saved-plans.v1',JSON.stringify([{id:'local-day',savedAt:'2026-11-08T00:00:00Z',plan:initial}]));
+  else {account(london);initial.savedPlan={id:'saved-day',revision:1};state.savedPlan=initial;history.replaceState(null,'','/#/plan/saved-day');}
+  const turns=[{id:'user-history',role:'user',text:'Keep my original visits.'},{id:'current-receipt',role:'assistant',text:resultRouteSummary(initial),result:{title:initial.request.title,detail:resultPlaceLabel(initial)}},{id:'old-comparison',role:'assistant',text:'Historical comparison stays unchanged.',comparisonKey:comparisonKey(initial,decisionStops(initial))},{id:'old-advice',role:'assistant',text:'Earlier advice stays unchanged.'}];
+  const chatKey=`outing.chat:${guest?'guest':profile.id}:${guest?'':'saved-day'}`;sessionStorage.setItem(chatKey,JSON.stringify(turns));
+  const fetchBase=globalThis.fetch,builds=[],restores=[],comparisons=[];let releaseComparison,releaseRestore;const gate=new Promise(resolve=>releaseComparison=resolve),restoreGate=new Promise(resolve=>releaseRestore=resolve);
+  globalThis.fetch=async(input,options={})=>{
+    const path=new URL(input,location.origin).pathname;
+    if(path==='/api/itineraries'){
+      const request=JSON.parse(options.body);builds.push(request);const result={...initial,request,status:'complete',stops:request.route.map((selected,index)=>({...initial.stops.find(stop=>stop.item?.id===selected.placeId),id:`stop-${index}`})),...(!guest?{savedPlan:{id:'saved-day',revision:2}}:{})};
+      return new Response(JSON.stringify(result),{headers:{'content-type':'application/json'}});
+    }
+    if(path==='/api/account/plans/saved-day'&&options.method==='PATCH'){
+      restores.push(JSON.parse(options.body));if(pendingRestore)await restoreGate;return new Response(JSON.stringify(failRestore?{error:'Synthetic restore conflict.'}:{...initial,savedPlan:{id:'saved-day',revision:3,title:'Stale restored saved day'}}),{status:failRestore?409:200,headers:{'content-type':'application/json'}});
+    }
+    if(path==='/api/agent'&&JSON.parse(options.body).task==='compare'){
+      comparisons.push(options);if(pendingComparison)await gate;return new Response(JSON.stringify({status:'reply',text:pendingComparison?'Stale removed-route comparison.':'Fresh comparison.'}),{headers:{'content-type':'application/json'}});
+    }
+    return fetchBase(input,options);
+  };
+  await mount();if(guest){await click('Saved days');await act(async()=>document.querySelector('.pl-saved-item > button').click());}
+  return {initial,builds,restores,comparisons,releaseComparison,releaseRestore,chatKey};
+}
+const currentReceipt=()=>document.querySelector('.cs-result-card').closest('article').textContent;
+async function shortenUndoFixture(partial){
+ if(partial)await click('Keep these places');
+ else await act(async()=>[...document.querySelector('[data-stop-id="stop-2"]').querySelectorAll('button')].find(button=>button.textContent==='Remove stop').click());
+}
+for(const guest of [true,false])for(const partial of [false,true])test(`${guest?'guest':'saved account'} Undo refreshes the ${partial?'partial':'complete'} current receipt without rewriting historical chat`,async()=>{
+  const fixture=await installUndoReceiptFixture({guest,partial});await shortenUndoFixture(partial);assert.equal(fixture.builds.length,1);assert.match(document.querySelector('.cs-result-card small').textContent,/2 stops/);
+  const before=currentReceipt();await click('Undo');assert.notEqual(currentReceipt(),before);
+  assert.match(currentReceipt(),partial?/Current outing: 1\. Fixture a → 2\. Still to find → 3\. Fixture a\..*1 requested visit is still unfilled\./:/Current outing: 1\. Fixture a → 2\. Fixture b → 3\. Fixture a\..*Visit times are not set\./);
+  assert.match(document.querySelector('.cs-result-card small').textContent,partial?/2 stops/:/3 stops/);
+  for(const text of ['Keep my original visits.','Historical comparison stays unchanged.','Earlier advice stays unchanged.'])assert.equal([...document.querySelectorAll('.cs-turn')].filter(turn=>turn.textContent.includes(text)).length,1);
+  assert.equal(document.querySelectorAll('.cs-result-card').length,1);assert.equal(button('Undo'),undefined);
+  if(guest)assert.equal(fixture.restores.length,0);else {assert.deepEqual(fixture.restores,[{revision:2,restoreRevision:1}]);const savedChat=JSON.parse(sessionStorage.getItem(fixture.chatKey));assert.match(savedChat.find(turn=>turn.id==='current-receipt').text,/3\. Fixture a/);assert.equal(savedChat.find(turn=>turn.id==='old-comparison').text,'Historical comparison stays unchanged.');}
+});
+
+test('failed saved-plan Undo leaves the current receipt and route unchanged',async()=>{
+  const fixture=await installUndoReceiptFixture({failRestore:true});await shortenUndoFixture(false);const before=currentReceipt();await click('Undo');assert.equal(currentReceipt(),before);assert.equal(document.querySelectorAll('.outing-place').length,2);assert.ok(button('Undo'));assert.match(document.body.textContent,/Synthetic restore conflict/);assert.doesNotMatch(document.body.textContent,/Your previous day is restored/);assert.equal(fixture.restores.length,1);
+});
+
+test('Undo aborts a pending comparison for the removed route without changing the historical comparison',async()=>{
+  const fixture=await installUndoReceiptFixture({pendingComparison:true});await shortenUndoFixture(false);assert.equal(fixture.comparisons.length,1);await click('Undo');assert.equal(fixture.comparisons[0].signal.aborted,true);await act(async()=>fixture.releaseComparison());assert.match(currentReceipt(),/3\. Fixture a/);assert.doesNotMatch(document.body.textContent,/Stale removed-route comparison/);assert.match(document.body.textContent,/Historical comparison stays unchanged/);
+});
+
+test('shared-day revisions refresh the current receipt without exposing local Undo',async()=>{
+  const initial=repeatedPlan();state.shared={id:'synthetic-shared',revision:1,planRevision:1,status:'ready',access:{role:'owner',memberId:'test-user'},request:initial.request,plan:initial,events:[]};history.replaceState(null,'','/#/day/synthetic-shared?key=synthetic-only');await mount();assert.equal(button('Undo'),undefined);
+  const next={...initial,request:{...initial.request,stopIntents:['drinks','drinks','drinks']},stops:[...initial.stops,{...initial.stops[0],id:'stop-2'}]};state.shared={...state.shared,revision:2,planRevision:2,request:next.request,plan:next};await act(async()=>document.dispatchEvent(new Event('visibilitychange')));assert.match(currentReceipt(),/3\. Fixture a/);assert.match(document.querySelector('.cs-result-card small').textContent,/3 stops/);assert.equal(button('Undo'),undefined);
+});
+
+for(const failRestore of [false,true])for(const transition of ['New day','account switch','sign out'])test(`delayed saved Undo ${failRestore?'failure':'success'} after ${transition} cannot change the current outing, chat, saved cache or error`,async()=>{
+  const fixture=await installUndoReceiptFixture({pendingRestore:true,failRestore});await shortenUndoFixture(false);await click('Undo');assert.deepEqual(fixture.restores,[{revision:2,restoreRevision:1}]);
+  if(transition==='New day')await click('New day');
+  else {state.user=transition==='sign out'?null:{...state.user,id:'another-account',profile:{...profile,id:'another-account'},planningLocations:[paris],planningLocation:paris};await act(async()=>window.dispatchEvent(new Event('focus')));}
+  await send();await click('Saved days');const hash=location.hash,planningArea=area();assert.equal(document.querySelector('.pl-saved-item'),null);
+  await act(async()=>fixture.releaseRestore());
+  assert.equal(location.hash,hash);assert.equal(area(),planningArea);assert.equal(document.querySelector('.cs-result-card'),null);assert.equal(document.querySelector('.pl-saved-item'),null);
+  assert.match(document.body.textContent,/Synthetic test response/);assert.doesNotMatch(document.body.textContent,/Your previous day is restored|Synthetic restore conflict|Stale restored saved day|Historical comparison stays unchanged/);
+  assert.equal(sessionStorage.getItem('outing.chat:another-account:saved-day'),null);assert.equal(sessionStorage.getItem('outing.chat:guest:saved-day'),null);
+});
+
+for(const failRestore of [false,true])test(`delayed saved Undo ${failRestore?'failure':'success'} cannot replace a newer selected route`,async()=>{
+  const fixture=await installUndoReceiptFixture({pendingRestore:true,failRestore});await shortenUndoFixture(false);await click('Undo');
+  await act(async()=>[...document.querySelector('[data-stop-id="stop-1"]').querySelectorAll('button')].find(button=>button.textContent==='Remove stop').click());
+  const receipt=currentReceipt();assert.match(receipt,/Current outing: 1\. Fixture a\./);assert.equal(document.querySelectorAll('.outing-place').length,1);
+  await act(async()=>fixture.releaseRestore());assert.equal(currentReceipt(),receipt);assert.equal(document.querySelectorAll('.outing-place').length,1);assert.doesNotMatch(document.body.textContent,/Your previous day is restored|Synthetic restore conflict/);
+});
+
+test('delayed saved Undo cannot restore a URL or session after the planner unmounts',async()=>{
+  const fixture=await installUndoReceiptFixture({pendingRestore:true});await shortenUndoFixture(false);await click('Undo');
+  const chat=sessionStorage.getItem(fixture.chatKey);await act(async()=>root.unmount());root=null;history.replaceState(null,'','/#/');await act(async()=>fixture.releaseRestore());
+  assert.equal(location.hash,'#/');assert.equal(sessionStorage.getItem(fixture.chatKey),chat);
+});
+
+for(const transition of ['account switch','sign out'])test(`${transition} cannot copy the previous account chat to the new session namespace`,async()=>{
+  await installUndoReceiptFixture();state.user=transition==='sign out'?null:{...state.user,id:'another-account',profile:{...profile,id:'another-account'}};
+  await act(async()=>window.dispatchEvent(new Event('focus')));
+  assert.equal(sessionStorage.getItem(`outing.chat:${state.user?.id||'guest'}:saved-day`),null);assert.doesNotMatch(document.body.textContent,/Historical comparison stays unchanged/);
 });

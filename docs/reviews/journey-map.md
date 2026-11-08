@@ -1,5 +1,7 @@
 # Journey map implementation review
 
+This records the original map release. The later [Getting Ready redesign](getting-ready.md) replaces the explicit tile-loading gate with automatic map loading; its current privacy and interaction behavior supersedes that part of this review.
+
 ## Integration
 
 Import `JourneyMap` from `frontend/src/JourneyMap.jsx` into RouteGuide. Pass plan, origin, selectedStopId, onSelectStop and routeScope. Import `journey-map.css` at the top of the product stylesheet; it includes Leaflet's installed CSS. No RouteGuide or planner changes are included in this isolated component commit.

@@ -74,27 +74,34 @@ The UI confirms area independently of budget, tastes and discovery. Selecting an
 
 ## Per-journey travel estimates
 
-Travel estimates are optional, same-process Google Routes evidence. They do not change the planner, selected stops, visit durations, fixed planning buffers, saved/shared plans or bookings. Both guests and signed-in people can request them without a separate service API key. Requests are stateless: account cookies, analytics visitor IDs and correlation fields are not ownership evidence, and no saved plan is read or written.
+Travel estimates are optional, same-process provider evidence. They do not change the planner, selected stops, visit durations, planning buffers, saved/shared plans or bookings. Guests and signed-in people use the same explicit per-journey action without a separate service API key. Account cookies, analytics IDs and correlation fields are not ownership evidence; no saved plan or account data is read or written for an estimate. A separate durable aggregate request counter is updated before provider I/O.
 
-`GET /api/actions/capabilities` returns:
+`GET /api/actions/capabilities` returns the disabled-by-default configuration:
 
 ```json
 {
   "routeEstimates": false,
-  "routeProvider": "google_routes",
-  "modes": ["DRIVE", "WALK", "TRANSIT"],
+  "routeProvider": null,
+  "displayContext": "osm",
+  "displayCompatible": false,
+  "requestLimitConfigured": false,
+  "modes": [],
+  "coordinatesRequired": false,
+  "routeGeometry": false,
   "bookingSubmission": false,
   "confirmedBookings": false
 }
 ```
 
-`routeEstimates` is true only when the optional server-only `GOOGLE_MAPS_API_KEY` is configured. The key needs Google Routes API access and stays out of frontend bundles and API responses. Missing configuration returns `503 provider_not_configured` for valid estimate requests without contacting Google; planning and ordinary Maps directions remain available. Google OAuth settings are unrelated and unchanged. Configuration presence is not a live health or quota check.
+The current OSM display permits the explicit `mapbox` provider only. Eligible configuration requires **all** of `ROUTE_ESTIMATE_PROVIDER=mapbox`, `ROUTE_ESTIMATES_ENABLED=1`, a nonempty server-only `MAPBOX_DIRECTIONS_TOKEN`, positive approved `ROUTE_REQUESTS_PER_UTC_DAY` and an absolute `ROUTE_REQUEST_BUDGET_FILE`. The separate ledger must have been explicitly initialized on durable storage. Missing, damaged, future-dated or ambiguous ledger state fails closed when a request claims its slot. Capability flags report configuration eligibility, not live provider authentication, ledger health or unused quota. With eligible Mapbox configuration, capabilities report provider `mapbox`, modes `["DRIVE","WALK"]`, coordinate and geometry support, and display/request-limit flags true.
+
+A generic `GOOGLE_MAPS_API_KEY` does **not** activate routes. The isolated Google adapter is not enabled by the OSM runtime or rendered alongside its map. Google OAuth settings remain unrelated. Without eligible configuration, valid estimate requests return `503 provider_not_configured` without contacting a provider; planning and Maps links still work. Setup, pricing/usage checks and bounded live verification require separate approval. See [routing setup and safeguards](docs/ROUTING.md).
 
 `POST /api/actions/routes/estimate` accepts exactly one journey:
 
 ```json
 {
-  "origin": {"id": "start", "address": "Explicit starting address"},
+  "origin": {"id": "start", "coordinates": {"lat": 5.55, "lng": -0.20}},
   "stops": [{
     "id": "coffee-second",
     "entityId": "qloo:venue-id",
@@ -107,17 +114,30 @@ Travel estimates are optional, same-process Google Routes evidence. They do not 
 }
 ```
 
-- `origin` is required; the service never substitutes the planning area, account location or device location. Each location requires a nonempty `address` (up to 300 characters) or finite numeric `coordinates: {lat,lng}` within geographic bounds. If both are supplied, coordinates drive the provider request. Malformed supplied coordinates are rejected even when an address exists.
-- `stops` contains exactly one selected destination. Request subsequent journeys separately, using their actual preceding venue as origin. Optional location `id` (up to 160 characters) identifies the itinerary slot; `entityId` (up to 200) identifies the venue. Keep these separate for repeated activities. Optional `name` is limited to 200 characters. Names/IDs are correlation/display data, not provider lookups.
-- `mode` is `DRIVE`, `WALK` or `TRANSIT`; omitted means `DRIVE`. Unknown fields, including `sourcePlanId`, `revision`, `visitorId`, `optimize` and nested venue fields, are rejected. Strings cannot contain control characters or angle brackets.
-- Optional `departureAt` is a real offset-aware ISO timestamp at or after the server clock, normalized to UTC in the response. Omit it to request a current estimate. It is sent to Google for driving/transit only. Walking retains requested departure context but does not claim provider-timed departure: its leg `departureAt` is always null. No departure time is derived from the suggested outing schedule.
-- Optional `requestId` is a nonempty string up to 160 characters, trimmed and echoed. Optional `itineraryRevision` is a nonnegative safe integer, echoed unchanged. They are client correlation markers only. Clients must discard stale responses after a change of plan, selected venue, origin, mode, timing or request generation.
+- `origin` is explicit; the service never substitutes a planning area, account location or device location. The common request schema accepts a nonempty `address` up to 300 characters or finite numeric `coordinates: {lat,lng}` within geographic bounds. **Mapbox requires real coordinates at both endpoints**, returning `422 routes_coordinates_required` for address-only input without geocoding or a provider call. Malformed supplied coordinates are rejected even if an address also exists. The UI retains typed-address/Maps fallback and can resolve a deliberately chosen catalog area by its existing location ID.
+- `stops` contains exactly one selected destination. Later journeys use their actual preceding venue as origin. Optional `id` (up to 160 characters) identifies the visit occurrence; `entityId` (up to 200) identifies the venue. Preserve distinct occurrences for repeated visits. Optional `name` is at most 200 characters. Names and IDs are correlation/display data, not provider lookups, and are not sent to Directions.
+- The common schema recognizes `DRIVE`, `WALK` and `TRANSIT`; omitted means `DRIVE`. The active Mapbox adapter supports only Drive and Walk. Transit returns `422 routes_unsupported_mode` without a provider call; the UI offers Maps instead. Unknown fields, including ownership/planning fields, are rejected. Strings cannot contain control characters or angle brackets.
+- Optional `departureAt` must pass common real, offset-aware, non-past ISO timestamp validation. The current Mapbox adapter implements **leaving now only** and rejects supplied departure times with `422 routes_departure_unsupported` before consuming a request slot. It never infers scheduled departure from the outing.
+- Optional `requestId` is a nonempty string up to 160 characters, trimmed and echoed. Optional `itineraryRevision` is a nonnegative safe integer, echoed unchanged. These are correlation markers, not authorization. Clients must discard both measurements and geometry after changes to plan, selected occurrence, origin, mode, timing, account/day scope or request generation.
 
-Successful results contain `source: "google_routes"`, `measuredAt` (UTC), `mode`, numeric `distanceMeters` and `durationSeconds`, normalized `selectedStops`, optional echoed correlation/departure fields, and exactly one `legs` entry. A leg contains `from`, `to`, the same source/time/mode, its own measurements and `departureAt` (null when no timed departure was requested or for walking). Zero distance/duration is valid; missing or malformed measurements never become zero. `trafficAware` is true for successful driving estimates. The requested top-level Google `fallbackInfo` is validated: traffic-unaware driving fallbacks fail explicitly rather than becoming estimates labeled with current traffic, and unknown/malformed fallback metadata fails safely. `navigationUrl` opens Google Maps with the explicit endpoints and mode.
+Successful Mapbox results contain `source: "mapbox"`, `measuredAt` (UTC), `mode`, finite nonnegative `distanceMeters` and `durationSeconds` (fractional values allowed), normalized `selectedStops`, echoed correlation fields and exactly one `legs` entry. Each leg contains `from`, `to`, the same source/time/mode, its measurements and `departureAt: null`. Zero measurements are valid; missing or malformed measurements never become zero.
 
-Every result states `scheduleFeasibility: "not_evaluated"`, `includesVisitDurations: false` and `includesPlanningBuffers: false`, plus a travel-only warning. A route estimate is not outing feasibility, a booking, a guaranteed arrival, or proof that a venue is open. The result is ephemeral and does not amend persisted plans.
+`geometry` is the actual provider GeoJSON `LineString`, bounded to 2–5,000 valid longitude/latitude pairs. Endpoints must match the requested points within the 1,000 m road-snapping radius plus rounding tolerance. Invalid geometry rejects the entire result as `routes_bad_response`; there are no synthetic connecting lines. The UI attributes Mapbox route evidence while retaining OSM attribution. Visible OSM tiles load automatically in the map view; provider route estimates still require an explicit request.
 
-All failures use `{code,error}` with sanitized messages: `400 invalid_request`; `422 route_not_found`; `429 routes_rate_limited` for upstream quota or `rate_limited` for the app guard; `502 routes_unreachable`, `routes_provider_error`, `routes_bad_response` or `routes_traffic_unavailable`; `503 provider_not_configured`; `504 routes_timeout`. The provider deadline is 12 seconds, including response-body reading, with no automatic retry. Requests share the API's 50 KB JSON limit. Estimate requests are limited to 12 per IP per minute, capabilities to 60, with case/trailing-slash variants sharing the same bucket. Both endpoints send `Cache-Control: no-store`. The server stores no route history and does not expose provider error bodies or credentials.
+Driving requests the traffic-aware profile and returns `trafficAware: true` with `trafficBasis: "live_and_typical_where_available"`. This is not proof of live traffic on every road. Walking returns false and `trafficBasis: "not_applicable"`. `navigationUrl` is an independent Google Maps link with the explicit endpoints/mode. Every result states `scheduleFeasibility: "not_evaluated"`, `includesVisitDurations: false`, `includesPlanningBuffers: false` and a travel-only warning. Results are ephemeral and do not establish venue opening, outing feasibility, a booking or guaranteed arrival.
+
+Failures use fixed sanitized `{code,error}` messages:
+
+- `400 invalid_request` for invalid request schema/coordinates.
+- `422 route_not_found`, `routes_coordinates_required`, `routes_unsupported_mode` or `routes_departure_unsupported`.
+- `429 routes_rate_limited` for provider throttling, `rate_limited` for the IP guard, or `routes_budget_exceeded` for this app's UTC-day aggregate request limit.
+- `502 routes_unreachable`, `routes_provider_error` or `routes_bad_response`. The isolated Google adapter can additionally return `routes_traffic_unavailable`; it is not active on OSM.
+- `503 provider_not_configured`, `provider_display_incompatible` or `routes_budget_unavailable`. Accounting failure starts no provider request.
+- `504 routes_timeout`.
+
+Every outbound attempt needs a durably committed slot first. Failed/unknown outcomes are never refunded. Claims serialize through the existing single-writer journal protocol, using a separate ledger with only period/count metadata and empty store scaffolding. Initialization publishes a synced new file with atomic no-replace semantics; it cannot overwrite an existing ledger. Missing/corrupt state is never silently initialized or reset by the API. Request counts are not an exact billing-account dollar ceiling and say nothing about other token/app usage.
+
+The provider deadline is 12 seconds, including body reads, with a 1 MiB response bound, cancellation and no automatic retries or redirects. Requests retain the API's 50 KB JSON bound. Estimates are additionally limited to 12 per IP per minute; capabilities to 60. Case/trailing-slash variants share buckets. Both endpoints send `Cache-Control: no-store`. No routes, coordinates, provider error bodies or credentials are persisted in the counter or exposed in failures.
 
 ## Conversational agent
 
