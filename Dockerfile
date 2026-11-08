@@ -15,6 +15,8 @@ COPY backend/prisma ./prisma
 RUN npm ci --omit=dev && npm cache clean --force
 COPY backend/src ./src
 COPY backend/test ./test
+# Release guard tests run against the actual script with isolated command mocks.
+COPY deploy/release.sh /build/deploy/release.sh
 # Backend regression tests reuse browser-independent planning helpers.
 COPY frontend/src /build/frontend/src
 COPY shared /build/shared
@@ -23,6 +25,7 @@ RUN npm test
 FROM node:22-bookworm-slim AS runner
 LABEL org.opencontainers.image.source="https://github.com/teckedd-code2save/swipe-to-plan"
 LABEL org.opencontainers.image.title="Unstressed"
+LABEL io.unstressed.account-durability="1"
 LABEL org.opencontainers.image.licenses="MIT"
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /data && chown node:node /data

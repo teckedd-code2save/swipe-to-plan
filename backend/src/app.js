@@ -241,7 +241,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     if (e.type === "entity.parse.failed") return res.status(400).json({ code: "invalid_json", error: "Request body must be valid JSON." });
     if (e.type === "entity.too.large") return res.status(413).json({ code: "body_too_large", error: "Request body exceeds 50 KB." });
     const status = [400,401,403,404,409].includes(e.status) ? e.status : 503;
-    res.status(status).json({ code: e.code && ["booking_conflict", "location_not_found", "location_ambiguous", "account_error", "invalid_request", "provider_unavailable", "provider_not_configured", "provider_response_invalid", "provider_auth_error", "provider_rate_limited", "agent_not_configured", "agent_unavailable", "day_not_found", "day_forbidden", "day_conflict", "day_unavailable"].includes(e.code) ? e.code : "service_unavailable", error: e.status ? e.message : "The service is temporarily unavailable. Please retry." });
+    res.status(status).json({ code: e.code && ["booking_conflict", "location_not_found", "location_ambiguous", "account_error", "account_commit_unknown", "invalid_request", "provider_unavailable", "provider_not_configured", "provider_response_invalid", "provider_auth_error", "provider_rate_limited", "agent_not_configured", "agent_unavailable", "day_not_found", "day_forbidden", "day_conflict", "day_unavailable"].includes(e.code) ? e.code : "service_unavailable", error: e.status ? e.message : "The service is temporarily unavailable. Please retry." });
   });
   const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../frontend/dist");
   if (fs.existsSync(path.join(dist, "index.html"))) {
