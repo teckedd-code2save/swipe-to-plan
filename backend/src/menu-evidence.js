@@ -15,9 +15,10 @@ export function menuUrl(value){
  return url;
 }
 // Resolve and pin a public address for each redirect. No browser session, cookies or credentials.
-export async function readMenuPage(value,{resolve=lookup,request}={}){
- let url=menuUrl(value);const signal=AbortSignal.timeout(10000);
+export async function readMenuPage(value,{resolve=lookup,request,allowedOrigin,signal=AbortSignal.timeout(10000)}={}){
+ let url=menuUrl(value);
  for(let redirects=0;redirects<3;redirects++){
+  if(allowedOrigin&&url.origin!==allowedOrigin)throw Error('Cross-origin page redirect');
   const hostname=url.hostname.replace(/^\[|\]$/g,'');
   const addresses=await Promise.race([resolve(hostname,{all:true}),new Promise((_,reject)=>{if(signal.aborted)reject(Error('Menu timeout'));else signal.addEventListener('abort',()=>reject(Error('Menu timeout')),{once:true});})]);
   if(!addresses.length||addresses.some(a=>!publicAddress(a.address)))throw Error('Non-public menu destination');

@@ -47,6 +47,7 @@ export const api = {
   circleInvite:(id,token)=>json(`/api/circle-invites/${encodeURIComponent(id)}`,{headers:{'x-circle-invite':token}}),
   joinCircle:(id,body)=>json(`/api/account/circles/${encodeURIComponent(id)}/join`,post(body)),
   circlePerson:(id,memberId,person)=>json(`/api/account/circles/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}`,{method:'PATCH',body:JSON.stringify(person)}),
+  contactEvidence:(id,signal)=>json(`/api/places/${encodeURIComponent(id)}/contact-evidence`,{signal:signal?AbortSignal.any([signal,AbortSignal.timeout(25000)]):AbortSignal.timeout(25000)}),
   menuEvidence:(id,signal)=>json(`/api/places/${encodeURIComponent(id)}/menu`,{signal}),
   place:(id,signal)=>json(`/api/places/${encodeURIComponent(id)}`,{signal}),
   placeChecks: (body,signal) => json('/api/place-checks',{...post(body),signal}),

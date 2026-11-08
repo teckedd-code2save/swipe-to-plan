@@ -85,3 +85,9 @@ These examples guide adapter selection; they do not authorize contact with these
 - Operational ownership for unresolved replies, failed callbacks and paid-but-unconfirmed cases. Do not leave an ambiguous external action hidden behind a success message.
 
 Schedule feasibility, full outing costs and broader Circle recovery remain subsequent product work. They are not implied by travel estimates or booking preparation.
+
+### Website contact comparison (read-only)
+
+Venue contact panels now offer an explicit **Check website contacts** action. This compares source evidence from the provider-linked website, with source URLs and check time. It does not independently establish that a website is official. Only explicit published links/structured telephones are extracted; mixed branches and weak identity cues remain manual review. Different numbers can be alternate departments, and local numbers are never converted using an inferred country prefix.
+
+This is a source-comparison step before human verification, not an execution adapter. It leaves reviewed booking snapshots, contact handoffs, permissions and capability flags unchanged. WhatsApp publication does not imply opt-in. Reservation links do not imply API access or live inventory. Future communication still needs an authorized sender, venue identity review, explicit customer mandate, supported provider integration and the reply/reconciliation safeguards above.
