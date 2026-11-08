@@ -2,8 +2,8 @@ import {createExecutionProtocol,invalidateExecution,executionCapabilities} from 
 import {bookingOperation,invalidateBookings} from './booking-actions.js';
 import {sendCircleMail} from './circle-mail.js';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
-import {mkdir,readFile,writeFile,rename} from 'node:fs/promises';
-import {dirname} from 'node:path';
+import {createAccountStore} from './account-store.js';
+export {createAccountStore} from './account-store.js';
 import {OAuth2Client,CodeChallengeMethod} from 'google-auth-library';
 import {InputError} from './contract.js';
 import {parseItinerary} from './itinerary.js';
@@ -15,17 +15,6 @@ const fields=(value,allowed)=>{if(!value||typeof value!=='object'||Array.isArray
 const profile=(value,id)=>({...parseItinerary({party:{adults:1},people:[value]}).people[0],id});
 const safeUser=user=>({id:user.id,email:user.email,profile:user.profile,planningLocation:user.planningLocation||null,planningLocations:user.planningLocations||[user.planningLocation].filter(Boolean)});
 const cookie=(req,name)=>(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith(`${name}=`))?.slice(name.length+1);
-
-// A durable, single-process store, matching the shared-day deployment model.
-// Copy-on-write transactions serialize identities, invites and session rotation.
-export function createAccountStore({file=null,now=Date.now}={}){
-  let data,loading,queue=Promise.resolve();
-  async function load(){if(data)return;if(!loading)loading=(async()=>{try{data=file?JSON.parse(await readFile(file,'utf8')):null;}catch(e){if(e.code!=='ENOENT')throw e;}data??={users:{},sessions:{},flows:{},circles:{}};})();await loading;}
-  return {
-    async read(fn){await queue;await load();return structuredClone(fn(data));},
-    transact(fn){const task=queue.then(async()=>{await load();const next=structuredClone(data);for(const collection of ['flows','sessions'])for(const [id,value] of Object.entries(next[collection]))if(value.expiresAt<=now())delete next[collection][id];const result=await fn(next);if(file){await mkdir(dirname(file),{recursive:true,mode:0o700});const temp=`${file}.${randomUUID()}.tmp`;await writeFile(temp,JSON.stringify(next),{mode:0o600});await rename(temp,file);}data=next;return structuredClone(result);});queue=task.catch(()=>{});return task;},
-  };
-}
 
 export function createAccounts({store=createAccountStore(),now=Date.now,origin=process.env.APP_ORIGIN||'http://127.0.0.1:5173',clientId=process.env.GOOGLE_OAUTH_CLIENT_ID,clientSecret=process.env.GOOGLE_OAUTH_CLIENT_SECRET,adminEmails=(process.env.ADMIN_EMAILS||'').split(',').map(e=>e.trim().toLowerCase()).filter(Boolean),oauthFactory}={}){
   const executionProtocol=createExecutionProtocol({now});

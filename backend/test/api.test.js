@@ -220,3 +220,7 @@ test('HTTP itinerary preserves repeated requested slots and reports insufficient
   const sparse=await call('/api/itineraries',{...request,stopIntents:['drinks','drinks','drinks']});assert.equal(sparse.status,200);assert.equal(sparse.body.status,'partial');assert.equal(sparse.body.stops.length,3);assert.equal(sparse.body.stops.filter(s=>s.item).length,2);
   assert.equal((await call('/api/itineraries',{...request,stopIntents:Array(4).fill('drinks')})).status,400);
 });
+test('HTTP preserves uncertain account commit code and truthful message',async t=>{
+  const accounts={mount(app){app.get('/api/test-account-uncertain',(req,res,next)=>next(Object.assign(new Error('The last change may already be saved.'),{status:503,code:'account_commit_unknown'})));}};
+  const call=await serve(t,{accounts});const response=await call('/api/test-account-uncertain');assert.equal(response.status,503);assert.equal(response.body.code,'account_commit_unknown');assert.match(response.body.error,/may already be saved/);
+});
