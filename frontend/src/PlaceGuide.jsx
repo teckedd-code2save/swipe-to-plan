@@ -31,7 +31,7 @@ const periods = rows => rows === null || rows === undefined ? 'Not listed' : row
 function VenueLinks({place}) {
   return <div className="pg-links">{place.links?.website&&<a href={place.links.website} target="_blank" rel="noreferrer">Venue website <Icon name="arrowUpRight" size={14}/></a>}{place.links?.menu&&<a href={place.links.menu} target="_blank" rel="noreferrer">Menu <Icon name="arrowUpRight" size={14}/></a>}{place.links?.map&&<a href={place.links.map} target="_blank" rel="noreferrer">Google Maps <Icon name="arrowUpRight" size={14}/></a>}</div>;
 }
-export function BeforeGoing({plan,checks,onDetails,onTiming,routeScope,savedAreas}) {
+export function BeforeGoing({plan,checks,onDetails,onTiming,routeScope,savedAreas,onSaveArea,signedIn}) {
   const filled=plan.stops.filter(s=>s.item), reports=checks.data?.stops||[];
   const fits=reports.filter(s=>s.hours?.status==='fits_reported_hours').length;
   const flags=reports.filter(s=>hourTone(s.hours?.status)==='attention').length;
@@ -43,7 +43,7 @@ export function BeforeGoing({plan,checks,onDetails,onTiming,routeScope,savedArea
     {checks.error&&<p className="pg-note" role="alert">{checks.error}</p>}
     <div className="pg-check-places">{filled.map(stop=>{const report=checkedStop(checks,stop);return <button className="pg-check-place" key={stop.id} onClick={()=>onDetails(stop)}><span className="pg-check-time">{stop.start}</span><span><strong>{stop.item.name}</strong><span className={`pg-badge ${hourTone(report?.hours?.status)}`}>{checks.status==='loading'?'Checking hours…':hourLabel(report?.hours?.status)}</span><small>{report?.error||report?.hours?.summary||'Open the place to see its details.'}</small></span><Icon name="arrow" size={18}/></button>;})}</div>
     <p className="pg-note">Weekly hours are a useful first check. Special dates, kitchen hours and availability still need the venue’s confirmation.</p>
-    <RouteGuide savedAreas={savedAreas} routeScope={routeScope} plan={plan} checks={checks} onTiming={onTiming}/>
+    <RouteGuide onSaveArea={onSaveArea} signedIn={signedIn} savedAreas={savedAreas} routeScope={routeScope} plan={plan} checks={checks} onTiming={onTiming}/>
     <div className="pg-human"><h3>Bookings, one stop at a time</h3><p>Open each place to review an enquiry and privately track what you hear back. Hours and prices are separate checks, not booking evidence.</p>{filled.map(stop=><button key={stop.id} onClick={()=>onDetails(stop,'booking')}>Prepare booking · {stop.start||'Time to choose'} · {stop.item.name}</button>)}</div>
   </section>;
 }
@@ -52,7 +52,7 @@ export function PlaceCheckNotice({checks,onOpen}) {
   if(!issues)return null;
   return <button className="pg-plan-alert" onClick={onOpen}><Icon name="clock" size={17}/><span>{issues===1?'One stop needs a timing check.':`${issues} stops need a timing check.`}<small>I found a mismatch with reported opening hours.</small></span><Icon name="arrow" size={17}/></button>;
 }
-export function PlaceDetails({stop,plan,checks,onClose,onSwap,canSwap,initialView='overview',onSelect,onTiming,routeScope,bookingScope,savedAreas}) {
+export function PlaceDetails({stop,plan,checks,onClose,onSwap,canSwap,initialView='overview',onSelect,onTiming,routeScope,bookingScope,savedAreas,onSaveArea,signedIn}) {
   const cache=useQueryClient();
   const [view,setView]=useState(initialView);
   const filled=plan.stops.filter(s=>s.item);
@@ -71,7 +71,7 @@ export function PlaceDetails({stop,plan,checks,onClose,onSwap,canSwap,initialVie
       <div className="pg-detail-body"><div className="pg-place-heading"><h2 id="place-details-title">{place.name}</h2><p><Icon name="pin" size={16}/>{place.address}</p></div>
         {view==='overview'&&place.description&&<p className="pg-description">{place.description}</p>}
         {view==='overview'&&!!place.tagNames?.length&&<div className="pg-tags">{place.tagNames.map(tag=><span key={tag}>{tag}</span>)}</div>}
-        {view==='booking'?<BookingAction scope={bookingScope} context={routeScope} plan={plan} stop={stop} place={place}/>:view==='route'?<RouteGuide savedAreas={savedAreas} routeScope={routeScope} plan={stop.id==='shortlist-place'?{...plan,stops:[stop]}:plan} checks={checks} initialStopId={stop.id} onTiming={onTiming}/>:<>
+        {view==='booking'?<BookingAction scope={bookingScope} context={routeScope} plan={plan} stop={stop} place={place}/>:view==='route'?<RouteGuide onSaveArea={onSaveArea} signedIn={signedIn} savedAreas={savedAreas} routeScope={routeScope} plan={stop.id==='shortlist-place'?{...plan,stops:[stop]}:plan} checks={checks} initialStopId={stop.id} onTiming={onTiming}/>:<>
         {view==='practical'&&<VenueMenuEvidence place={place}/>}
         <VenueLinks place={place}/><VenueContact place={place} scope={bookingScope} context={[routeScope,stop.id,plan.request.date]}/>
         {checks.status==='error'&&<p className="pg-note" role="alert">Details couldn’t load. <button className="pg-link" onClick={checks.refresh}>Try again</button></p>}
