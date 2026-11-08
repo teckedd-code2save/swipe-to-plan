@@ -6,7 +6,7 @@ The product goal is to complete the practical work for the customer, not simply 
 
 The integration is in the existing Unstressed process and conversation. It does not require a second Outing Actions workload, a shared service key or a separate global booking file. Only selected behavior is adapted from Outing Actions, with its MIT notice in `backend/licenses/outing-actions-MIT.txt`.
 
-The route slice provides explicit, optional Google Routes estimates for individual journeys and provider-independent navigation links. It estimates leaving now, not the scheduled outing time, and does not establish schedule feasibility. See the route API and deployment configuration.
+The route slice provides explicit, optional Mapbox Drive/Walk estimates for individual journeys and provider-independent navigation links. It estimates leaving now, not the scheduled outing time, and does not establish schedule feasibility. The OSM display excludes Google route content. See [route setup and safeguards](ROUTING.md); activation and live verification remain separate.
 
 The booking slice prepares an enquiry or reservation request for an exact selected stop and tracks the organizer's own reported outcome. Persisted records belong to the account plan owner or shared-day owner capability. They are separate from the plan, its exports and Circle views. Anonymous preparation remains available without signing in. No provider adapter, automatic contact, availability lookup, booking submission, payment execution or independently verified confirmation is enabled by this slice.
 

@@ -1,3 +1,4 @@
+@import './getting-ready.css';
 @import './journey-map.css';
 /* Product typography, spacing and responsive surfaces. Venue cards have no timeline grid. */
 :root{--font-body:'Manrope Variable',system-ui,sans-serif;--font-display:'Fraunces Variable',Georgia,serif}

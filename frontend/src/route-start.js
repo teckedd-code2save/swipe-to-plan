@@ -15,3 +15,14 @@ export async function currentRoutePoint(geolocation=globalThis.navigator?.geoloc
   if(point.accuracy>1000)return {kind:'nearby',point:roundedAreaPoint(point)};
   return {kind:'current',label:'Current location',coordinates:{lat:point.latitude,lng:point.longitude},accuracyMeters:point.accuracy};
 }
+
+export function resolvedAreaStartingPoint(area,resolved){
+  if(resolved?.id!==area.id)return null;
+  const catalog={...area};
+  for(const key of ['name','label','country','currency','timeZone','kind']){
+    if(typeof resolved[key]==='string'&&resolved[key].trim()&&resolved[key].length<=300)catalog[key]=resolved[key].trim();
+  }
+  const point=startingLocation({coordinates:{lat:resolved.center?.latitude,lng:resolved.center?.longitude}});
+  if(point?.coordinates)catalog.center={latitude:point.coordinates.lat,longitude:point.coordinates.lng};
+  return areaStartingPoint(catalog);
+}

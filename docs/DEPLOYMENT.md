@@ -46,15 +46,13 @@ GitHub uses only `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` and `VPS_KNOWN_HOSTS` for
 
 Register `https://unstressed.serendepify.com/api/auth/google/callback` on the Google web client. Keep development callbacks separately. The OAuth scopes remain `openid email profile`.
 
-### Optional Google Routes estimates
+### Optional Mapbox route estimates (off by default)
 
-`GOOGLE_MAPS_API_KEY` enables the in-process, server-only route-estimation adapter. This is a separate provider configuration from Google OAuth; do not reuse or modify OAuth credentials or scopes. Keep the key in the protected runtime configuration and restrict it to the Google Routes API and the appropriate server/application restrictions. Confirm billing, quotas and spending controls before enabling it. Creating or configuring credentials and live provider requests require their own authorization.
+See [routing configuration, data boundaries and prerequisites](ROUTING.md). Required approved settings are `ROUTE_ESTIMATE_PROVIDER=mapbox`, `ROUTE_ESTIMATES_ENABLED=1`, server-only `MAPBOX_DIRECTIONS_TOKEN`, positive `ROUTE_REQUESTS_PER_UTC_DAY` and a separately initialized `ROUTE_REQUEST_BUDGET_FILE` on the durable volume. The shipped example leaves routing off. An existing Google key does not activate Google content beside the OSM map.
 
-No second service, public port, shared service API key, storage volume or migration is required. Existing account/day data and release isolation remain unchanged. One-leg estimates use the existing API's rate limiting; provider-side quotas remain necessary because application limits are per process. The capability endpoint reports whether a key is configured, not whether an authenticated provider request has succeeded.
+The route ledger reuses the single-process durable account journal protocol in its own file. Never share paths, add replicas, discard a journal, reset counts or restore an older ledger to gain request slots. After a restore/rollback or uncertain write, leave routes disabled until an operator conservatively reconciles usage. Each outbound attempt needs a committed slot; failures consume it. This app-wide request limit is not a dollar cap for the billing account. Provider terms, token restrictions, actual usage, monitoring and bounded live-test approval still require separate verification.
 
-Without the key, capability detection reports estimates disabled and direct estimate requests return `provider_not_configured`; Maps links still work. The frontend requests an estimate only after explicit user action. It labels the result as leaving now and travel only, not a scheduled-trip prediction or a booking. Errors must not change the selected stops, visit times or buffers.
-
-Before an approved release, run syntax checks, all tests, the frontend build and Docker checks. Then verify the disabled-provider path and Maps fallback. A separately approved live-provider check should verify source/time/distance/duration and no key exposure, plus quota/no-route failures, without making a booking. Test changed dates, modes, origins, account/shared-day changes, repeated stops, and leaving/reopening the panel while a request is pending. The first integration does not persist estimates, repair schedules or independently verify reservations.
+No new public port, booking database, OAuth scope or service is needed. Before an approved release run lint, all tests, the frontend build and applicable Docker checks. Verify the disabled-provider path, Maps fallback, precise/area origin choices, selected repeat occurrences, attribution, geometry invalidation and account/day transitions. Local fixtures do not prove live provider access or coverage.
 
 ## Durable data
 

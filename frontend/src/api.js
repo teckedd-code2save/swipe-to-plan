@@ -22,7 +22,7 @@ export const api = {
   suggestLocations:(locationId,brief,signal)=>json('/api/locations/suggest',{...post({locationId,brief}),signal}),
   matchingLocations:(locationId,brief,signal)=>json('/api/locations/ideas',{...post({locationId,brief}),signal}),
   compareLocations:(brief,signal)=>json('/api/locations/compare',{...post({brief}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(45000)]):AbortSignal.timeout(45000)}),
-  location:id=>json(`/api/locations/${encodeURIComponent(id)}`),
+  location:(id,signal)=>json(`/api/locations/${encodeURIComponent(id)}`,{signal:signal?AbortSignal.any([signal,AbortSignal.timeout(10000)]):AbortSignal.timeout(10000)}),
   planningLocation:id=>json('/api/account/planning-location',{method:'PATCH',body:JSON.stringify({locationId:id})}),
   forgetPlanningLocation:id=>json('/api/account/planning-location',{method:'PATCH',body:JSON.stringify({removeLocationId:id})}),
   usage:days=>json(`/api/admin/usage?days=${days}`),

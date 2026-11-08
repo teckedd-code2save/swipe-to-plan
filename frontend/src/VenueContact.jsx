@@ -17,11 +17,19 @@ function Source({source}) {
   const date=source?.retrievedAt&&new Date(source.retrievedAt),valid=date&&Number.isFinite(date.getTime());
   return <small>Source: {source?.provider==='qloo'?'Qloo':source?.provider||'saved venue data'}{source?.field?` · ${source.field}`:''}. {valid?<>Retrieved <time dateTime={date.toISOString()}>{date.toLocaleString()}</time>.</>:'Retrieval time unknown.'} Provider update time unknown.</small>;
 }
-export default function VenueContact({place,contact,allowDial=true,allowWebsite=true,contacts,scope,context}) {
+export default function VenueContact({place,contact,allowDial=true,allowWebsite=true,contacts,scope,context,compact=false}) {
   const evidence=evidenceFor(place,contact),phone=evidence.phone,website=evidence.website;
   if(evidence.identityStatus==='conflicting')return <section className="pg-venue-contact" aria-label={`Contact ${place?.name||'venue'}`}><h3>Contact {place?.name||'venue'}</h3><p>Contact details do not match this venue. Verify its contact information manually before reaching out.</p></section>;
   const websiteUrl=contacts?contacts.website:website?.url;
   const safeWebsite=safeContactWebsite(websiteUrl);
+  if(compact)return <section className="pg-venue-contact gr-compact-contact" aria-label={`Contact ${place?.name||'venue'}`}>
+    <h3>Venue contact</h3>
+    {phone?.display?<p><strong>{phone.display}</strong>{phone.format==='local_only'&&<small> Country context missing. Verify before dialing.</small>}{phone.format==='invalid'&&<small> Number format needs manual verification.</small>}</p>:<p>No usable phone supplied.</p>}
+    <div className="gr-contact-links">{allowDial&&<DialerLink place={place} contact={evidence} allowedUrl={contacts?.phone}/>}{safeWebsite&&(allowWebsite?<a href={safeWebsite} target="_blank" rel="noreferrer">Open venue website</a>:<span>{safeWebsite}</span>)}</div>
+    <p className="pg-note">Contact details may be outdated. Opening the dialer does not place a call. Nothing is sent or booked here.</p>
+    <details className="gr-more"><summary>Contact sources & limits</summary>{phone?.display&&<p><Source source={phone.source}/></p>}{safeWebsite&&<p><Source source={website?.source}/></p>}<p>Ownership, reachability and WhatsApp support are unverified. Confirm the venue, visit time, availability and any fees.</p></details>
+    <details className="gr-more"><summary>Check published website contacts</summary><WebsiteContactEvidence entityId={place?.entityId} scope={scope} context={context}/></details>
+  </section>;
   return <section className="pg-venue-contact" aria-label={`Contact ${place?.name||'venue'}`}>
     <h3>Contact {place?.name||'venue'}</h3>
     {phone?.display?<p><strong>Reported phone: {phone.display}</strong><br/><Source source={phone.source}/></p>:<p>No usable phone supplied in the venue data.</p>}

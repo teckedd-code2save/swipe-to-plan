@@ -20,7 +20,7 @@ const raw = () => ({
 const measuredRoute = () => ({ distanceMeters: 3000, duration: '300.5s', legs: [{ distanceMeters: 3000, duration: '300.5s' }] });
 const response = (payload, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => payload });
 const service = (payload = { routes: [measuredRoute()] }, options = {}) => createRouteActions({
-  apiKey: 'fixture-not-a-real-key', now, fetchImpl: async () => response(payload), ...options,
+  budget:{configured:true,claim:async()=>{}}, enabled:true, provider:'google_routes', displayContext:'google_map', googleApiKey: 'fixture-not-a-real-key', now, fetchImpl: async () => response(payload), ...options,
 });
 const invalid = body => assert.throws(() => parseRouteRequest(body, { now }), { code: 'invalid_request', status: 400 });
 const freeze = value => {
@@ -199,7 +199,7 @@ test('malformed provider data never produces invented measurements or attached l
 test('configuration, quotas, transport failures and malformed JSON have safe distinct failures', async () => {
   let calls = 0;
   const disabled = createRouteActions({ now, fetchImpl: async () => { calls++; } });
-  assert.deepEqual(disabled.capabilities(), { routeEstimates: false, routeProvider: 'google_routes', modes: ['DRIVE', 'WALK', 'TRANSIT'], bookingSubmission: false, confirmedBookings: false });
+  assert.deepEqual(disabled.capabilities(), { routeEstimates:false,routeProvider:null,displayContext:'osm',displayCompatible:false,requestLimitConfigured:false,modes:[],coordinatesRequired:false,routeGeometry:false,bookingSubmission:false,confirmedBookings:false });
   await assert.rejects(disabled.estimate(raw()), { code: 'provider_not_configured', status: 503 });
   assert.equal(calls, 0);
   assert.equal(service().capabilities().routeEstimates, true);
@@ -307,7 +307,7 @@ test('HTTP driving fallback fails explicitly without returning a downgraded esti
   assert.equal(result.status, 502);
   assert.deepEqual(result.body, {
     code: 'routes_traffic_unavailable',
-    error: 'Google Routes could not provide a traffic-aware driving estimate. Directions are still available.',
+    error: 'The route provider could not provide a traffic-aware driving estimate. Directions are still available.',
   });
   assert.doesNotMatch(JSON.stringify(result.body), /fixture-provider-secret|durationSeconds|trafficAware/);
 });

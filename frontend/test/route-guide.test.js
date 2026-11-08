@@ -25,7 +25,7 @@ before(async()=>{
   const frontend=fileURLToPath(new URL('..',import.meta.url));bundleDir=await mkdtemp(join(frontend,'node_modules/.route-test-'));
   const entry=join(bundleDir,'entry.jsx'),outfile=join(bundleDir,'route.mjs');
   await writeFile(entry,`export {default as RouteGuide} from '${join(frontend,'src/RouteGuide.jsx')}'; export {PlaceDetails} from '${join(frontend,'src/PlaceGuide.jsx')}';`);
-  await build({entryPoints:[entry],outfile,bundle:true,platform:'node',format:'esm',jsx:'automatic',packages:'external'});
+  await build({entryPoints:[entry],outfile,bundle:true,platform:'node',format:'esm',jsx:'automatic',packages:'external',plugins:[{name:'synthetic-map-tiles',setup(build){build.onResolve({filter:/journey-map-leaflet\.js$/},()=>({path:'map-fixture',namespace:'test-map'}));build.onLoad({filter:/.*/,namespace:'test-map'},()=>({contents:'export function createJourneyMap(_node,_points,events){events.onTileReady();return {fit(){},select(){},clearRoute(){},destroy(){}};}'}));}}]});
   ({RouteGuide,PlaceDetails}=await import(pathToFileURL(outfile).href));
 });
 after(async()=>{globalThis.fetch=originalFetch;await rm(bundleDir,{recursive:true,force:true});});
@@ -33,6 +33,7 @@ beforeEach(()=>{
   setupDom();requests=[];capabilities=syntheticCapabilities;fail=false;overrides={};props={plan:syntheticRoutePlan(),checks:{status:'ready'},routeScope:'guest:day-1:revision-1'};
   globalThis.fetch=async(input,options={})=>{
     if(input==='/api/actions/capabilities')return new Response(JSON.stringify(capabilities),{status:capabilities?200:503});
+    if(input.startsWith('/api/locations/'))return new Response(JSON.stringify({}),{status:404});
     assert.equal(input,'/api/actions/routes/estimate','Only the mocked route API may be called');
     const payload=JSON.parse(options.body);let resolve;const pending=new Promise(done=>resolve=done);
     requests.push({payload,signal:options.signal,resolve});await pending; // Intentionally ignores abort.
@@ -46,7 +47,8 @@ async function click(name){assert.ok(button(name),`Missing ${name}`);await act(a
 async function input(value){const node=document.querySelector('.pg-estimate-form input');assert.ok(node);await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(node,value);node.dispatchEvent(new Event('input',{bubbles:true}));});}
 async function select(value){await act(async()=>{const node=document.querySelector('.pg-route-guide select');node.value=value;node.dispatchEvent(new Event('change',{bubbles:true}));});}
 async function resolve(index=requests.length-1){await act(async()=>{requests[index].resolve();});}
-async function start(){await render();await click('Drive');await input('Synthetic starting address, Accra');await click('Estimate this journey');}
+async function chooseStart(){await render({savedAreas:[{id:'synthetic-start',label:'Synthetic start',center:{latitude:5.55,longitude:-0.2}}]});await click('Use Synthetic start · approximate area');}
+async function start(){await render();await click('Drive');await chooseStart();await click('Estimate this journey');}
 const result=()=>document.querySelector('.pg-route-estimate');
 
 test('render, typing, mode and leg changes never automatically estimate; Compare is Maps only',async()=>{
@@ -57,20 +59,20 @@ test('render, typing, mode and leg changes never automatically estimate; Compare
 test('explicit first-leg action requires origin, never infers area or asks for GPS',async()=>{
   await render();await click('Drive');await act(async()=>document.querySelector('.pg-estimate-form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));assert.equal(requests.length,0);
   assert.match(document.querySelector('[role="alert"]').textContent,/Choose your starting point/);assert.equal(document.activeElement,document.querySelector('input'));
-  await input('Synthetic starting address');await click('Estimate this journey');assert.deepEqual(requests[0].payload.origin,{address:'Synthetic starting address'});
+  await chooseStart();await click('Estimate this journey');assert.deepEqual(requests[0].payload.origin,{coordinates:{lat:5.55,lng:-0.2}});
   assert.equal(requests[0].payload.departureAt,undefined);assert.equal(requests[0].payload.stops[0].id,'first-drinks');assert.equal(requests[0].payload.stops[0].entityId,'synthetic-venue');
-  assert.match(document.querySelector('.pg-estimate-form').textContent,/leaving now, not your scheduled outing/);assert.match(document.body.textContent,/Sends.*Google Routes/);
+  assert.match(document.querySelector('.pg-estimate-form').textContent,/leaving now, not your scheduled outing/);assert.match(document.body.textContent,/Sends.*Mapbox Directions/);
 });
 test('success reports source, measured time and travel-only limits without changing plan or persisting origin',async()=>{
   const before=structuredClone(props.plan);await start();await resolve();
-  assert.match(result().textContent,/12 min travel · 4.2 km/);assert.match(result().textContent,/Google Routes/);assert.equal(result().querySelector('time').dateTime,'2026-11-08T12:34:00Z');
+  assert.match(result().textContent,/12 min travel · 4.2 km/);assert.match(result().textContent,/Mapbox Directions/);assert.equal(result().querySelector('time').dateTime,'2026-11-08T12:34:00Z');
   assert.match(result().textContent,/Travel only/);assert.match(result().textContent,/Schedule feasibility has not been checked/);assert.deepEqual(props.plan,before);
   for(const storage of [localStorage,sessionStorage])for(const key of Object.keys(storage))assert.doesNotMatch(storage.getItem(key),/Synthetic starting address|durationSeconds|distanceMeters/);
 });
 test('repeated venue slots retain unique slot IDs, item ID and entity ID and use preceding selected venue',async()=>{
-  await render();await select('second-drinks');await click('Transit');await click('Estimate this journey');
+  await render();await select('second-drinks');await click('Walk');await click('Estimate this journey');
   assert.equal(document.querySelectorAll('.pg-route-guide option').length,2);assert.equal(requests[0].payload.origin.id,'first-drinks');assert.equal(requests[0].payload.stops[0].id,'second-drinks');assert.equal(requests[0].payload.stops[0].entityId,'synthetic-venue');
-  assert.equal(props.plan.stops[1].item.id,'catalog-item');assert.equal(requests[0].payload.mode,'TRANSIT');assert.equal(document.querySelector('input'),null);await resolve();assert.ok(result());
+  assert.equal(props.plan.stops[1].item.id,'catalog-item');assert.equal(requests[0].payload.mode,'WALK');assert.equal(document.querySelector('input'),null);await resolve();assert.ok(result());
 });
 for(const change of ['mode','origin','leg','date','time','timezone','venue','order','plan revision','account','shared revision','restored day'])test(`${change} invalidates pending and resolved evidence even when transport ignores abort`,async()=>{
   await start();const old=requests[0];
@@ -89,7 +91,7 @@ test('a completed result is cleared on changes and cannot reappear when a prior 
   await render({routeScope:old});assert.equal(result(),null);assert.equal(document.querySelector('input').value,'');
 });
 test('a newer explicit request wins over an older out-of-order response',async()=>{
-  await start();await input('Changed synthetic origin');await click('Estimate this journey');assert.equal(requests.length,2);await resolve(1);assert.ok(result());
+  await start();await render({savedAreas:[{id:'new-start',label:'New start',center:{latitude:5.56,longitude:-0.18}}]});await click('Use New start · approximate area');await click('Estimate this journey');assert.equal(requests.length,2);await resolve(1);assert.ok(result());
   const shown=result().textContent;overrides={distanceMeters:999999};await resolve(0);assert.equal(result().textContent,shown);
 });
 test('unmount cancels requests; a late response cannot affect a newly mounted guide',async()=>{
@@ -102,7 +104,7 @@ test('provider failure keeps venues, pins, schedules and Maps fallback unchanged
 for(const supplied of [null,{...syntheticCapabilities,routeEstimates:false}])test(`disabled or missing capability offers Maps without provider calls (${!!supplied})`,async()=>{
   capabilities=supplied;await render();await click('Drive');await input('Synthetic address');assert.equal(button('Estimate this journey'),undefined);assert.equal(requests.length,0);assert.match(document.body.textContent,/In-app estimates are unavailable/);assert.ok(document.querySelector('a[href*="google.com/maps/dir/"]'));
 });
-for(const bad of [{requestId:'wrong'},{itineraryRevision:-1},{mode:'WALK'},{source:'unknown'},{trafficAware:false},{departureAt:'2027-01-01T12:00:00Z'},{distanceMeters:null},{selectedStops:[{id:'other-slot'}]},{legs:[]},{legs:[{from:{address:'wrong'},to:{id:'wrong'}}]}])test(`mismatched or malformed result is not displayed: ${Object.keys(bad)[0]}`,async()=>{
+for(const bad of [{geometry:{type:'LineString',coordinates:[[50,50],[60,60]]}},{geometry:null},{trafficBasis:'guaranteed_live'},{requestId:'wrong'},{itineraryRevision:-1},{mode:'WALK'},{source:'unknown'},{trafficAware:false},{departureAt:'2027-01-01T12:00:00Z'},{distanceMeters:null},{selectedStops:[{id:'other-slot'}]},{legs:[]},{legs:[{from:{address:'wrong'},to:{id:'wrong'}}]}])test(`mismatched or malformed result is not displayed: ${Object.keys(bad)[0]}`,async()=>{
   await start();overrides=bad;await resolve();assert.equal(result(),null);assert.ok(document.querySelector('[role="alert"]'));
 });
 test('input and controls have accessible names; Close and Escape restore focus and reject late results',async()=>{
@@ -138,7 +140,7 @@ test('repeated submit while a request is pending does not make another provider 
 
 test('walking and transit copy does not claim road-traffic evidence',async()=>{
   await render();await click('Walk');assert.match(document.querySelector('.pg-estimate-form').textContent,/Estimate for leaving now/);assert.doesNotMatch(document.querySelector('.pg-estimate-form').textContent,/current traffic/);
-  await click('Transit');assert.match(document.querySelector('.pg-estimate-form').textContent,/Estimate for leaving now/);assert.doesNotMatch(document.querySelector('.pg-estimate-form').textContent,/current traffic/);
+  await click('Transit');assert.match(document.querySelector('.pg-estimate-form').textContent,/does not support transit/);assert.doesNotMatch(document.querySelector('.pg-estimate-form').textContent,/current traffic/);
 });
 
 function mockLocation(){const calls=[];Object.defineProperty(navigator,'geolocation',{configurable:true,value:{getCurrentPosition(success,error,options){calls.push({success,error,options});}}});return calls;}
@@ -227,11 +229,11 @@ test('Drive is an unsaved view default and choosing a start enables configured e
   await click('Walk');await input('Another landmark');assert.equal(button('Walk').getAttribute('aria-pressed'),'true');assert.equal(localStorage.length,0);
 });
 
-test('map-led journey retains Maps fallback and never loads tiles or estimates on render',async()=>{
+test('map-led journey automatically offers the map without making route estimates',async()=>{
   capabilities={...syntheticCapabilities,routeEstimates:false};await render();
   assert.ok(document.querySelector('[aria-label="Journey map"]'));
-  assert.ok(button('Load map'));
-  assert.equal(document.querySelector('.journey-map-canvas'),null);
+  assert.equal(button('Load map'),undefined);
+  assert.ok(document.querySelector('.journey-map-canvas'));
   assert.equal(button('Estimate this journey'),undefined);
   assert.match(document.querySelector('a[href*="google.com/maps/dir/"]').textContent,/Open in Maps/);
   assert.equal(requests.length,0);
@@ -250,12 +252,12 @@ test('map stop key selects repeated occurrences and preserves the explicit journ
   assert.equal(requests.length,0);
 });
 
-for(const supplied of [null,{...syntheticCapabilities,routeEstimates:false},{...syntheticCapabilities,routeProvider:'unknown'}])test(`unavailable provider has one fallback and no claim of estimates or Google Routes submission (${JSON.stringify(supplied)})`,async()=>{
+for(const supplied of [null,{...syntheticCapabilities,routeEstimates:false},{...syntheticCapabilities,routeProvider:'unknown'}])test(`unavailable provider has one fallback and no claim of estimates or Mapbox Directions submission (${JSON.stringify(supplied)})`,async()=>{
   capabilities=supplied;const gps=mockLocation();await render();
   for(const mode of ['Drive','Walk','Transit','Compare']){
     await click(mode);
     assert.equal(button('Estimate this journey'),undefined);
-    assert.doesNotMatch(document.body.textContent,/current traffic|leaving now|departure now|Google Routes|choose a mode to estimate/i);
+    assert.doesNotMatch(document.body.textContent,/current traffic|leaving now|departure now|Mapbox Directions|choose a mode to estimate/i);
     assert.equal(document.querySelectorAll('.pg-estimate-availability').length,1);
     assert.match(document.querySelector('.pg-estimate-availability').textContent,/In-app estimates are unavailable/);
     assert.ok(document.querySelector('.pg-journey-actions a[href*="google.com/maps/dir/"]'));
@@ -269,38 +271,38 @@ test('loading capabilities keep Maps usable without premature estimate or transm
   await render();await input('Chosen landmark');
   assert.equal(button('Estimate this journey'),undefined);
   assert.match(document.querySelector('.pg-estimate-availability[role="status"]').textContent,/Checking estimates/);
-  assert.doesNotMatch(document.body.textContent,/current traffic|leaving now|Google Routes/);
+  assert.doesNotMatch(document.body.textContent,/current traffic|leaving now|Mapbox Directions/);
   assert.equal(mapsOrigin(),'Chosen landmark');
   await act(async()=>document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
   assert.equal(requests.length,0);
   await act(async()=>ready());
   assert.equal(button('Estimate this journey').disabled,false);
-  assert.match(document.querySelector('.pg-estimate-availability').textContent,/Sends your start and destination to Google Routes/);
+  assert.match(document.querySelector('.pg-estimate-availability').textContent,/Sends your start and destination to Mapbox Directions/);
   assert.equal(requests.length,0);
 });
 for(const modes of [['WALK'],[],null,'DRIVE'])test(`unsupported or malformed mode capability offers Maps without a dead estimate control (${JSON.stringify(modes)})`,async()=>{
   capabilities={...syntheticCapabilities,modes};await render();await input('Chosen landmark');
   assert.equal(button('Estimate this journey'),undefined);
   assert.match(document.querySelector('.pg-estimate-availability').textContent,/No in-app estimate for this mode/);
-  assert.doesNotMatch(document.body.textContent,/current traffic|leaving now|Google Routes/);
+  assert.doesNotMatch(document.body.textContent,/current traffic|leaving now|Mapbox Directions/);
   assert.equal(mapsOrigin(),'Chosen landmark');
   await act(async()=>document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
   assert.equal(requests.length,0);
 });
 test('supported modes disclose submission before an explicit request, and Compare removes that disclosure',async()=>{
   await render();await input('Chosen landmark');
-  for(const [label,mode] of [['Drive','driving'],['Walk','walking'],['Transit','transit']]){
+  for(const [label,mode] of [['Drive','driving'],['Walk','walking']]){
     await click(label);const submit=button('Estimate this journey');
     assert.equal(submit.disabled,false);
     const note=document.getElementById(submit.getAttribute('aria-describedby'));
     assert.match(note.textContent,/leaving now, not your scheduled outing/);
-    assert.match(note.textContent,/Sends your start and destination to Google Routes/);
+    assert.match(note.textContent,/Sends your start and destination to Mapbox Directions/);
     assert.doesNotMatch(document.body.textContent,/current traffic estimates|estimate requested now/);
     assert.equal(new URL(document.querySelector('.pg-journey-actions a').href).searchParams.get('travelmode'),mode);
   }
   await click('Compare');assert.equal(button('Estimate this journey'),undefined);
   assert.match(document.querySelector('.pg-estimate-availability').textContent,/Compare routes in Maps/);
-  assert.doesNotMatch(document.body.textContent,/Google Routes|leaving now/);assert.equal(requests.length,0);
+  assert.doesNotMatch(document.body.textContent,/Mapbox Directions|leaving now/);assert.equal(requests.length,0);
 });
 test('transit help is optional and retains origin, selected mode, focus, and safety details',async()=>{
   await render();await input('Chosen landmark');await click('Transit');
@@ -325,7 +327,7 @@ test('compact copy retains visible location permission, unsaved precision, Maps 
   assert.match(document.querySelector('.pg-maps-note').textContent,/Maps receives your selected start and destination/);
   await click('Use current location');await act(async()=>calls[0].success({coords:coordinates}));
   assert.match(document.body.textContent,/reported accuracy about 24 m.*Not saved/);
-  assert.doesNotMatch(document.body.textContent,/Google Routes/);
+  assert.doesNotMatch(document.body.textContent,/Mapbox Directions/);
 });
 
 for(const signedIn of [false,true])test(`default-save copy is prospective until persistence succeeds (${signedIn?'account':'device'})`,async()=>{
@@ -340,4 +342,61 @@ for(const signedIn of [false,true])test(`default-save copy is prospective until 
   await act(async()=>finish());
   assert.match(document.querySelector('.pg-route-start [role="status"]').textContent,/Area saved as your default/);
   assert.equal(requests.length,0);
+});
+
+
+test('typed start and unpinned venue use clear area/Maps fallback without geocoding or provider calls',async()=>{
+  await render();await input('Chosen public address');assert.match(document.body.textContent,/Choose a starting area with a map pin/);
+  await click('Estimate this journey');assert.equal(requests.length,0);assert.match(document.querySelector('[role="alert"]').textContent,/Typed addresses still work in Maps/);assert.equal(mapsOrigin(),'Chosen public address');
+  await chooseStart();const plan=structuredClone(props.plan);delete plan.stops[0].item.coordinates;await render({plan});
+  await click('Estimate this journey');assert.equal(requests.length,0);assert.match(document.querySelector('[role="alert"]').textContent,/no verified map pin/);assert.ok(document.querySelector('.pg-journey-actions a'));
+});
+test('Mapbox transit keeps Maps and useful help without a provider request',async()=>{
+  await render();await chooseStart();await click('Transit');assert.equal(button('Estimate this journey'),undefined);assert.match(document.body.textContent,/Mapbox does not support transit/);
+  await act(async()=>document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));assert.equal(requests.length,0);assert.equal(new URL(document.querySelector('.pg-journey-actions a').href).searchParams.get('travelmode'),'transit');
+});
+for(const bad of [{requestLimitConfigured:false},{routeProvider:'google_routes'},{displayContext:'google_map'},{displayCompatible:false},{displayCompatible:undefined}])test(`display compatibility gate refuses unsafe capability ${JSON.stringify(bad)}`,async()=>{
+  capabilities={...syntheticCapabilities,...bad};await render();await chooseStart();assert.equal(button('Estimate this journey'),undefined);assert.equal(requests.length,0);assert.match(document.body.textContent,/In-app estimates are unavailable/);assert.doesNotMatch(document.body.textContent,/Sends your start and destination/);
+});
+test('resolved geometry is selected-journey only and is removed with stale evidence',async()=>{
+  await start();await resolve();assert.match(document.querySelector('.journey-map').textContent,/Line shows the estimated route for the selected journey only/);assert.ok(document.querySelector('.journey-map .route-attribution svg[aria-label="Mapbox"]'));
+  assert.ok(document.querySelector('.journey-map-canvas'),'Map display is automatic and independent of route estimates');
+  await click('Walk');assert.equal(result(),null);assert.doesNotMatch(document.querySelector('.journey-map').textContent,/Line shows/);assert.equal(document.querySelector('.journey-map .route-attribution'),null);
+});
+
+for(const choice of ['planning area','legacy saved area','search result'])test(`${choice} resolves only a chosen catalog ID into a real estimate-ready approximate point`,async()=>{
+  const base=globalThis.fetch,lookups=[],id=choice==='planning area'?'synthetic-area':'catalog-area';
+  globalThis.fetch=async(url,options)=>{
+    if(url===`/api/locations/${id}`){lookups.push({url,signal:options.signal});return new Response(JSON.stringify({id,label:'Catalog area',center:{latitude:5.55,longitude:-0.2}}));}
+    if(url.startsWith('/api/locations?'))return new Response(JSON.stringify({locations:[{id,label:'Catalog area'}]}));
+    return base(url,options);
+  };
+  await render({savedAreas:choice==='legacy saved area'?[{id,label:'Catalog area'}]:[]});assert.equal(lookups.length,0);
+  if(choice==='planning area')await click('Use Accra · approximate area');
+  else if(choice==='legacy saved area')await click('Use Catalog area · approximate area');
+  else {await click('Choose another area');await act(async()=>{const node=document.querySelector('[aria-label="Search starting areas"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(node,'Catalog');node.dispatchEvent(new Event('input',{bubbles:true}));});await act(async()=>{await new Promise(resolve=>setTimeout(resolve,450));});await click('Catalog area · approximate area');}
+  assert.equal(lookups.length,1);assert.equal(mapsOrigin(),'5.55,-0.2');assert.equal(requests.length,0);
+  await click('Estimate this journey');assert.deepEqual(requests[0].payload.origin,{coordinates:{lat:5.55,lng:-0.2}});await resolve();assert.ok(result());assert.match(result().textContent,/Approximate route/);assert.equal(localStorage.length,0);
+});
+for(const transition of ['typed choice','current location','account','day','mode','stop','unmount'])test(`late area metadata is ignored after ${transition}`,async()=>{
+  const base=globalThis.fetch,gps=mockLocation();let finish,signal;globalThis.fetch=async(url,options)=>url==='/api/locations/synthetic-area'?new Promise(resolve=>{signal=options.signal;finish=()=>resolve(new Response(JSON.stringify({id:'synthetic-area',center:{latitude:5.6,longitude:-0.2}})));}):base(url,options);
+  await render();await click('Use Accra · approximate area');assert.match(document.body.textContent,/Finding the selected area/);
+  if(transition==='typed choice')await input('New start');
+  else if(transition==='current location'){await click('Use current location');await act(async()=>gps[0].success({coords:coordinates}));}
+  else if(transition==='mode')await click('Walk');else if(transition==='stop')await select('second-drinks');
+  else if(transition==='unmount'){await act(async()=>root.unmount());root=null;await render();}
+  else await render({routeScope:transition+':new'});
+  assert.equal(signal.aborted,true);await act(async()=>finish());assert.notEqual(mapsOrigin(),'5.6,-0.2');assert.equal(requests.length,0);assert.doesNotMatch(document.body.textContent,/Finding the selected area/);
+});
+test('area metadata must match its chosen ID and carry a genuine valid center',async()=>{
+  for(const payload of [{id:'wrong',center:{latitude:5.6,longitude:-0.2}},{id:'synthetic-area'},{id:'synthetic-area',center:{latitude:91,longitude:0}}]){
+    const base=globalThis.fetch;globalThis.fetch=async(url,options)=>url==='/api/locations/synthetic-area'?new Response(JSON.stringify(payload)):base(url,options);
+    await render();await click('Use Accra · approximate area');assert.equal(mapsOrigin(),'Accra');assert.match(document.querySelector('.pg-route-start [role="alert"]').textContent,/no verified map centre/);await click('Estimate this journey');assert.equal(requests.length,0);
+    globalThis.fetch=base;
+  }
+});
+
+test('malformed catalog labels never replace a known label or crash the route view',async()=>{
+  const base=globalThis.fetch;globalThis.fetch=async(url,options)=>url==='/api/locations/synthetic-area'?new Response(JSON.stringify({id:'synthetic-area',label:{secret:'unsafe'},name:[],center:{latitude:5.55,longitude:-0.2}})):base(url,options);
+  await render();await click('Use Accra · approximate area');assert.match(document.body.textContent,/Near Accra/);assert.equal(mapsOrigin(),'5.55,-0.2');assert.doesNotMatch(document.body.textContent,/unsafe/);
 });
