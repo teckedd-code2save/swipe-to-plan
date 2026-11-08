@@ -55,7 +55,7 @@ test('render, typing, mode and leg changes never automatically estimate; Compare
   await click('Compare');assert.equal(button('Estimate this journey').disabled,true);assert.ok(document.querySelector('a[href*="google.com/maps/dir/"]'));
 });
 test('explicit first-leg action requires origin, never infers area or asks for GPS',async()=>{
-  await render();await click('Drive');await click('Estimate this journey');assert.equal(requests.length,0);
+  await render();await click('Drive');await act(async()=>document.querySelector('.pg-estimate-form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));assert.equal(requests.length,0);
   assert.match(document.querySelector('[role="alert"]').textContent,/Choose your starting point/);assert.equal(document.activeElement,document.querySelector('input'));
   await input('Synthetic starting address');await click('Estimate this journey');assert.deepEqual(requests[0].payload.origin,{address:'Synthetic starting address'});
   assert.equal(requests[0].payload.departureAt,undefined);assert.equal(requests[0].payload.stops[0].id,'first-drinks');assert.equal(requests[0].payload.stops[0].entityId,'synthetic-venue');
@@ -100,7 +100,7 @@ test('provider failure keeps venues, pins, schedules and Maps fallback unchanged
   assert.equal(result(),null);assert.match(document.querySelector('[role="alert"]').textContent,/Try again or use Maps/);assert.equal(document.querySelector('a[href*="google.com/maps/dir/"]').href,map);assert.deepEqual(props.plan,before);
 });
 for(const supplied of [null,{...syntheticCapabilities,routeEstimates:false}])test(`disabled or missing capability offers Maps without provider calls (${!!supplied})`,async()=>{
-  capabilities=supplied;await render();await click('Drive');await input('Synthetic address');await click('Estimate this journey');assert.equal(requests.length,0);assert.match(document.body.textContent,/Route estimates are unavailable/);assert.ok(document.querySelector('a[href*="google.com/maps/dir/"]'));
+  capabilities=supplied;await render();await click('Drive');await input('Synthetic address');assert.equal(button('Estimate this journey'),undefined);assert.equal(requests.length,0);assert.match(document.body.textContent,/In-app estimates are unavailable/);assert.ok(document.querySelector('a[href*="google.com/maps/dir/"]'));
 });
 for(const bad of [{requestId:'wrong'},{itineraryRevision:-1},{mode:'WALK'},{source:'unknown'},{trafficAware:false},{departureAt:'2027-01-01T12:00:00Z'},{distanceMeters:null},{selectedStops:[{id:'other-slot'}]},{legs:[]},{legs:[{from:{address:'wrong'},to:{id:'wrong'}}]}])test(`mismatched or malformed result is not displayed: ${Object.keys(bad)[0]}`,async()=>{
   await start();overrides=bad;await resolve();assert.equal(result(),null);assert.ok(document.querySelector('[role="alert"]'));
@@ -156,7 +156,7 @@ for(const transition of ['account','day','stop','mode','typed choice','saved are
   const calls=mockLocation();await render({savedAreas:[{id:'saved',label:'Saved town'}]});await click('Use current location');
   if(transition==='account'||transition==='day')await render({routeScope:transition+':changed'});
   else if(transition==='stop')await select('second-drinks');
-  else if(transition==='mode')await click('Drive');
+  else if(transition==='mode')await click('Walk');
   else if(transition==='saved area')await click('Use Saved town · approximate area');
   else if(transition==='typed choice')await input('Chosen landmark, Accra');
   else {await act(async()=>root.unmount());root=null;await render();}
@@ -184,7 +184,7 @@ test('area chooser reuses area search and supports no-coordinate areas without s
 
 test('current location remains useful in Maps when route provider is disabled',async()=>{
   capabilities={...syntheticCapabilities,routeEstimates:false};const calls=mockLocation();await render();await click('Use current location');await act(async()=>calls[0].success({coords:coordinates}));
-  assert.equal(button('Estimate this journey').disabled,true);assert.equal(mapsOrigin(),'5.561234567,-0.182345678');assert.equal(requests.length,0);
+  assert.equal(button('Estimate this journey'),undefined);assert.match(document.querySelector('a[href*="google.com/maps/dir/"]').textContent,/Open in Maps/);assert.equal(mapsOrigin(),'5.561234567,-0.182345678');assert.equal(requests.length,0);
 });
 test('Maps encodes untrusted origin text only as a parameter on the fixed Google host',()=>{
   const url=new URL(routeLink(routeLegs(syntheticRoutePlan())[0],'driving','javascript:alert(1)&destination=https://example.invalid'));
@@ -200,4 +200,52 @@ test('malformed area search results are ignored and cancelling a short query cle
   async function type(value){await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(node,value);node.dispatchEvent(new Event('input',{bubbles:true}));});}
   await type('Town');await act(async()=>{await new Promise(resolve=>setTimeout(resolve,450));});assert.ok(button('Valid town · approximate area'));
   await type('Other');assert.match(document.body.textContent,/Finding areas/);await type('');assert.doesNotMatch(document.body.textContent,/Finding areas/);assert.equal(button('Valid town · approximate area'),undefined);
+});
+
+test('coarse location finds areas with rounded coordinates; explicit area default never saves GPS or changes route',async()=>{
+  const original=globalThis.fetch,calls=mockLocation(),nearby=[],saved=[];
+  globalThis.fetch=async(url,options)=>{if(url==='/api/locations/nearby'){nearby.push(JSON.parse(options.body));return new Response(JSON.stringify({locations:[{id:'near-town',name:'Near town',label:'Near town',currency:'GHS',center:{latitude:5.6,longitude:-0.2}}]}));}return original(url,options);};
+  const before=structuredClone(props.plan);await render({onSaveArea:async area=>saved.push(area),signedIn:false});
+  await click('Use current location');await act(async()=>calls[0].success({coords:{...coordinates,accuracy:2000},timestamp:Date.now()}));
+  assert.deepEqual(nearby,[{latitude:5.56,longitude:-0.18,radiusKm:20}]);assert.equal(mapsOrigin(),null);assert.equal(saved.length,0);
+  await click('Near town · approximate area');assert.equal(mapsOrigin(),'5.6,-0.2');assert.match(document.body.textContent,/on this device/);
+  await click('Save area as default');assert.equal(saved[0].id,'near-town');assert.equal(saved[0].coordinates,undefined);assert.equal(mapsOrigin(),'5.6,-0.2');assert.deepEqual(props.plan,before);assert.equal(requests.length,0);
+});
+test('searched area can explicitly become an account default and save failures remain actionable',async()=>{
+  const original=globalThis.fetch,saved=[];globalThis.fetch=async(url,options)=>url.startsWith('/api/locations?')?new Response(JSON.stringify({locations:[{id:'town',label:'Town',currency:'GHS'}]})):original(url,options);
+  await render({signedIn:true,onSaveArea:async area=>{saved.push(area);throw Error('Synthetic save unavailable');}});await click('Choose another area');
+  await act(async()=>{const node=document.querySelector('[aria-label="Search starting areas"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(node,'Town');node.dispatchEvent(new Event('input',{bubbles:true}));});await act(async()=>{await new Promise(resolve=>setTimeout(resolve,450));});
+  await click('Town · approximate area');assert.equal(saved.length,0);assert.match(document.body.textContent,/to your account/);await click('Save area as default');assert.equal(saved.length,1);assert.match(document.querySelector('[role="alert"]').textContent,/Synthetic save unavailable/);assert.equal(mapsOrigin(),'Town');
+});
+test('late rounded nearby lookup is ignored after a different origin is chosen',async()=>{
+  const original=globalThis.fetch,calls=mockLocation();let finish;globalThis.fetch=async(url,options)=>url==='/api/locations/nearby'?new Promise(resolve=>{finish=()=>resolve(new Response(JSON.stringify({locations:[{id:'stale',label:'Stale town'}]})));}):original(url,options);
+  await render();await click('Use current location');await act(async()=>calls[0].success({coords:{...coordinates,accuracy:2000}}));await input('Chosen landmark');await act(async()=>finish());assert.equal(button('Stale town · approximate area'),undefined);assert.equal(mapsOrigin(),'Chosen landmark');
+});
+
+test('Drive is an unsaved view default and choosing a start enables configured estimates without another mode step',async()=>{
+  await render();assert.equal(button('Drive').getAttribute('aria-pressed'),'true');assert.equal(button('Estimate this journey').disabled,true);await input('Chosen landmark');assert.equal(button('Estimate this journey').disabled,false);assert.equal(requests.length,0);
+  await click('Walk');await input('Another landmark');assert.equal(button('Walk').getAttribute('aria-pressed'),'true');assert.equal(localStorage.length,0);
+});
+
+test('map-led journey retains Maps fallback and never loads tiles or estimates on render',async()=>{
+  capabilities={...syntheticCapabilities,routeEstimates:false};await render();
+  assert.ok(document.querySelector('[aria-label="Journey map"]'));
+  assert.ok(button('Load map'));
+  assert.equal(document.querySelector('.journey-map-canvas'),null);
+  assert.equal(button('Estimate this journey'),undefined);
+  assert.match(document.querySelector('a[href*="google.com/maps/dir/"]').textContent,/Open in Maps/);
+  assert.equal(requests.length,0);
+});
+
+test('map stop key selects repeated occurrences and preserves the explicit journey origin',async()=>{
+  await render();await input('Chosen public landmark');
+  const keys=()=>[...document.querySelectorAll('.journey-map-stops button')];
+  assert.equal(keys().length,2);
+  await act(async()=>keys()[1].click());
+  assert.equal(document.querySelector('.pg-route-guide select').value,'second-drinks');
+  assert.equal(keys()[1].getAttribute('aria-pressed'),'true');
+  await act(async()=>keys()[0].click());
+  assert.equal(document.querySelector('.pg-route-guide select').value,'first-drinks');
+  assert.equal(document.querySelector('.pg-estimate-form input').value,'Chosen public landmark');
+  assert.equal(requests.length,0);
 });

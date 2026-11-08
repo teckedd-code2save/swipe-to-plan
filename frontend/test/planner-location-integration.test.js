@@ -98,7 +98,7 @@ async function input(selector, value) {
 }
 const area = () => document.querySelector('button.cs-location-pill')?.getAttribute('aria-label');
 async function select(place, remember = false) {
-  await click(area()); await click('A specific place');
+  await click(area()); await click('Search areas');
   await input('input[role="combobox"]', place.name);
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 450)); });
   const option = [...document.querySelectorAll('button[role="option"]')].find(node => node.textContent.includes(place.label));
@@ -222,7 +222,7 @@ test('saved-day reload preserves its area and currency instead of adopting the d
 for (const signedIn of [false, true]) {
   test(`${signedIn ? 'account' : 'guest'}: saving a usual area only changes the next outing`, async () => {
     if (signedIn) account(london); else guestDefault(london);
-    await mount(); await click('Add usual areas'); await click('A specific place');
+    await mount(); await click('Add usual areas'); await click('Search areas');
     await input('input[role="combobox"]', paris.name);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 450)); });
     const option = [...document.querySelectorAll('button[role="option"]')].find(node => node.textContent.includes(paris.label));
@@ -377,4 +377,37 @@ for(const previewChange of ['empty slot','new venue entity','new catalog item','
     await act(async()=>emit({type:'discovery',plan:state.savedPlan}));assert.equal(document.querySelector('.pg-dialog'),null);
   }
   await act(async()=>{emit({type:'complete',plan:state.savedPlan});stream.close();});
+});
+
+for(const signedIn of [false,true])test(`${signedIn?'account':'guest'}: current-location area explicitly saved persists across new day and reload without GPS`,async()=>{
+  if(signedIn)account(london);else guestDefault(london);
+  let gpsCalls=0;const lookup=[];Object.defineProperty(navigator,'geolocation',{configurable:true,value:{getCurrentPosition(success){gpsCalls++;success({coords:{latitude:48.856789,longitude:2.352345,accuracy:2000},timestamp:Date.now()});}}});
+  const original=globalThis.fetch;globalThis.fetch=async(url,options)=>{if(url==='/api/locations/nearby'){lookup.push(JSON.parse(options.body));return new Response(JSON.stringify({locations:[paris]}));}return original(url,options);};
+  await mount();await click('Add usual areas');assert.equal(gpsCalls,0);await click('Use current location');assert.equal(gpsCalls,1);assert.deepEqual(lookup,[{latitude:48.86,longitude:2.35,radiusKm:20}]);
+  const option=[...document.querySelectorAll('button[role="option"]')].find(node=>node.textContent.includes(paris.label));assert.ok(option);await act(async()=>option.click());assert.equal(state.writes,0);await click('Save area');await click('Done');assert.equal(area(),`Planning area: ${london.label}`);
+  for(const key of Object.keys(localStorage))assert.doesNotMatch(localStorage.getItem(key),/48\.856789|2\.352345|accuracy/);
+  await click('New day');assert.equal(area(),`Planning area: ${paris.label}`);await mount();assert.equal(area(),`Planning area: ${paris.label}`);assert.equal(gpsCalls,1);
+});
+
+for(const signedIn of [false,true])test(`${signedIn?'account':'guest'}: partial current planning area resolves catalog before default save and survives new day/reload`,async()=>{
+  await installRouteFixture(signedIn?{}:{sharedRole:'member'});if(!signedIn)guestDefault(london);else{state.savedPlan.request.people=[profile];state.savedPlan.people=[profile];}
+  state.savedPlan.request={...state.savedPlan.request,area:paris.label,locationId:paris.id};if(state.shared)state.shared.request=state.savedPlan.request;
+  const base=globalThis.fetch,lookups=[];globalThis.fetch=async(url,options)=>{if(url===`/api/locations/${paris.id}`){lookups.push(url);return new Response(JSON.stringify(paris));}return base(url,options);};
+  await mount();if(!state.user)await click('Your day');await click('Getting ready');await click(`Use ${paris.label} · approximate area`);await click('Save area as default');assert.equal(lookups.length,1);
+  assert.equal(area(),`Planning area: ${paris.label}`);assert.match(document.body.textContent,/Area saved as your default/);
+  if(!signedIn)assert.deepEqual(JSON.parse(localStorage.getItem('unstressed.planning-area')),paris);
+  await click('New day');assert.equal(area(),`Planning area: ${paris.label}`);assert.equal((await send()).context.currency,'EUR');
+  await mount();assert.equal(area(),`Planning area: ${paris.label}`);assert.equal((await send()).context.currency,'EUR');
+});
+for(const response of [{id:'paris',label:'Paris'},london])test(`unusable or mismatched catalog does not replace guest default: ${response.id}/${!!response.currency}`,async()=>{
+  await installRouteFixture({sharedRole:'member'});guestDefault(london);state.savedPlan.request={...state.savedPlan.request,area:paris.label,locationId:paris.id};if(state.shared)state.shared.request=state.savedPlan.request;
+  const base=globalThis.fetch;globalThis.fetch=async(url,options)=>url===`/api/locations/${paris.id}`?new Response(JSON.stringify(response)):base(url,options);
+  await mount();if(!state.user)await click('Your day');await click('Getting ready');await click(`Use ${paris.label} · approximate area`);await click('Save area as default');assert.match(document.body.textContent,/could not be verified/);assert.doesNotMatch(document.body.textContent,/Area saved as your default/);assert.deepEqual(JSON.parse(localStorage.getItem('unstressed.planning-area')),london);
+});
+
+test('account switch during catalog resolution prevents saving into the new account',async()=>{
+  await installRouteFixture();state.savedPlan.request={...state.savedPlan.request,area:paris.label,locationId:paris.id};let finish;const base=globalThis.fetch;
+  globalThis.fetch=async(url,options)=>url===`/api/locations/${paris.id}`?new Promise(resolve=>{finish=()=>resolve(new Response(JSON.stringify(paris)));}):base(url,options);
+  await mount();await click('Getting ready');await click(`Use ${paris.label} · approximate area`);await click('Save area as default');assert.ok(finish);
+  state.user={...state.user,id:'other-account',profile:{...profile,id:'other-account'}};await act(async()=>window.dispatchEvent(new Event('focus')));await act(async()=>finish());assert.equal(state.writes,0);
 });

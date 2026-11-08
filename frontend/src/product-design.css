@@ -1,3 +1,4 @@
+@import './journey-map.css';
 /* Product typography, spacing and responsive surfaces. Venue cards have no timeline grid. */
 :root{--font-body:'Manrope Variable',system-ui,sans-serif;--font-display:'Fraunces Variable',Georgia,serif}
 .radix-themes{--default-font-family:var(--font-body);--heading-font-family:var(--font-body);--color-background:#fafaf7;color-scheme:light}

@@ -17,6 +17,7 @@ COPY backend/src ./src
 COPY backend/test ./test
 # Release guard tests run against the actual script with isolated command mocks.
 COPY deploy/release.sh /build/deploy/release.sh
+COPY .github/workflows/deploy.yml /build/.github/workflows/deploy.yml
 # Backend regression tests reuse browser-independent planning helpers.
 COPY frontend/src /build/frontend/src
 COPY shared /build/shared
