@@ -1,7 +1,11 @@
-const placeholders = /^(?:an outing|a day out|a day together|family day|a little day,? beautifully spent|one place,? well chosen|your day|your outing)$/i;
-export const isPlaceholderTitle = title => !title?.trim() || placeholders.test(title.trim());
+// Missing provenance on an existing name is deliberately unknown, not inferred
+// from its wording. Only an explicit name edit may turn it into a custom title.
+export const TITLE_SOURCES = ['auto', 'custom', 'legacy'];
+export const titleSource = request => request.titleSource ?? (typeof request.title === 'string' && request.title.trim() ? 'legacy' : 'auto');
+export const editPlanTitle = title => ({title, titleSource: title.trim() ? 'custom' : 'auto'});
+
 export function planTitle(request) {
-  if (!isPlaceholderTitle(request.title)) return request.title.trim();
+  if (typeof request.title === 'string' && request.title.trim()) return request.title.trim();
   const labels = {coffee:'Coffee',activity:'A little exploring',dinner:'A good meal',drinks:'Drinks'};
   const activities = (request.activities || []).map(key => labels[key]).filter(Boolean);
   const area = request.area?.split(',')[0]?.trim();

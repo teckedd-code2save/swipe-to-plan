@@ -22,9 +22,10 @@ test('mixed coverage and timing gaps explain each cause and do not advertise a c
   assert.match(next.note,/coffee in this area/);assert.match(next.note,/discovery into your time window/);
   assert.match(partialPlanSummary(plan),/1 of 3 requested stops/);
 });
-test('custom names survive and old generic saved titles are displayable from real activities',()=>{
-  assert.equal(planTitle({title:'A day out',activities:['drinks'],area:'Mallam, Ghana'}),'Drinks in Mallam');
-  assert.equal(planTitle({title:'A celebration for Ama',titleMode:'custom',activities:['drinks']}),'A celebration for Ama');
+test('custom and unknown legacy names survive; empty titles get an activity-based display fallback',()=>{
+  assert.equal(planTitle({title:'A day out',activities:['drinks'],area:'Mallam, Ghana'}),'A day out');
+  assert.equal(planTitle({title:'',titleSource:'auto',activities:['drinks'],area:'Mallam, Ghana'}),'Drinks in Mallam');
+  assert.equal(planTitle({title:'A celebration for Ama',titleSource:'custom',activities:['drinks']}),'A celebration for Ama');
 });
 test('suggestions depend on activities, party and currency, not one global budget',()=>{
   const r={currency:'GHS',party:{adults:1,children:0},people:[{spending:{style:'mindful'}}],activities:['drinks']};

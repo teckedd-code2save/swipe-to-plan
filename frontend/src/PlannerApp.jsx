@@ -51,7 +51,7 @@ import './group-studio.css';
 import './chat-studio.css';
 import './account-tastes.css';
 const STORAGE_KEY = 'outing.saved-plans.v1';
-const defaults = () => ({ title: '', area: '', date: localDate(), timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}, party: { adults: 1, children: 0 }, people: [readGuestProfile()||{ name: 'You', artists: [], vibes: [] }], budget: null, currency:'GHS',currencyMode:'local', startTime: '09:00', endTime: '21:00', pace: 'easy', activities: [], pins: {}, excludeIds: [] });
+const defaults = () => ({ title: '', titleSource:'auto', area: '', date: localDate(), timing:{dateConfirmed:false,timeConfirmed:false,mode:'flexible'}, party: { adults: 1, children: 0 }, people: [readGuestProfile()||{ name: 'You', artists: [], vibes: [] }], budget: null, currency:'GHS',currencyMode:'local', startTime: '09:00', endTime: '21:00', pace: 'easy', activities: [], pins: {}, excludeIds: [] });
 const readPreferred=()=>{try{const p=JSON.parse(localStorage.getItem('unstressed.planning-area')||'null');return p?.id&&p?.label?p:null;}catch{return null;}};
 const readGuestAreas=()=>{try{const areas=JSON.parse(localStorage.getItem('unstressed.planning-areas')||'null');return Array.isArray(areas)?areas.filter(p=>p?.id&&p?.label).slice(0,8):[readPreferred()].filter(Boolean);}catch{return [readPreferred()].filter(Boolean);}};
 const partyLabel = r => `${r.party.adults + r.party.children} ${r.party.adults + r.party.children === 1 ? 'person' : 'people'}${r.party.children ? ` · ${r.party.children} ${r.party.children === 1 ? 'child' : 'children'}` : ''}`;

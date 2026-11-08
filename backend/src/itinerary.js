@@ -1,3 +1,5 @@
+import {selectionGapSummary} from '../../shared/selection-evidence.js';
+import {TITLE_SOURCES,titleSource} from '../../shared/plan-title.js';
 import {stopIntents,pinnedPlace} from '../../shared/stop-intents.js';
 import {suggestBudget} from '../../shared/budget-suggestion.js';
 import {reviewCandidatePools} from './candidate-review.js';
@@ -25,7 +27,9 @@ const minutes = (time) => Number(time.slice(0,2)) * 60 + Number(time.slice(3));
 const time = (value) => `${String(Math.floor(value / 60)).padStart(2,'0')}:${String(value % 60).padStart(2,'0')}`;
 
 export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
-  object(body, ['title','area','locationId','currencyMode','timing','date','party','people','budget','currency','startTime','endTime','pace','activities','stopIntents','pins','excludeIds','maxPriceLevel','experience','route','searchRadiusKm'], 'planning field');
+  object(body, ['title','titleSource','area','locationId','currencyMode','timing','date','party','people','budget','currency','startTime','endTime','pace','activities','stopIntents','pins','excludeIds','maxPriceLevel','experience','route','searchRadiusKm'], 'planning field');
+  if(body.titleSource!==undefined&&!TITLE_SOURCES.includes(body.titleSource))throw new InputError('Choose automatic or custom title provenance.');
+  if(body.titleSource==='custom'&&(typeof body.title!=='string'||!body.title.trim()))throw new InputError('Provide a custom title or choose automatic naming.');
   const area = allowMissingLocation&&body.area===''?'':parseArea(body.area);
   const locationId=body.locationId?parseLocationId(body.locationId):undefined;
   const currencyMode=body.currencyMode??(body.currency?'custom':'local');
@@ -82,7 +86,7 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
   const constraints = parseRequest({ constraints: { excludeIds: body.excludeIds ?? [], ...(body.maxPriceLevel !== undefined ? { maxPriceLevel: body.maxPriceLevel } : {}) } }).constraints;
   const experienceInput=body.experience===undefined?null:object(body.experience,['cuisine','atmosphere','occasion','notes','explore','searchTags'],'experience');
   const experience=experienceInput?Object.fromEntries(Object.entries(experienceInput).map(([key,value])=>[key,key==='searchTags'?(Array.isArray(value)&&value.length<=8&&value.every(id=>byId[id]?.kind==='vibe')?[...new Set(value)]:(()=>{throw new InputError('Choose supported outing search topics.');})()):key==='explore'?(typeof value==='boolean'?value:(()=>{throw new InputError('Choose a valid exploration mode.');})()):text(value,key==='notes'?220:80,key)])):{};
-  const request = { title: text((typeof body.title==='string'&&!body.title.trim()||body.title==null ? null : body.title) || (activities.length ? `${activities.map(item=>({coffee:'Coffee',activity:'Something fun',dinner:'Dinner',drinks:'Drinks'}[item])).join(' & ')}${area?' in '+area.split(',')[0]:''}` : children ? 'Family day' : adults > 2 ? 'A day together' : 'A day out'),80,'a title'), area,...(body.stopIntents?{stopIntents:[...body.stopIntents]}:{}),...(route?{route}:{}),...(searchRadiusKm?{searchRadiusKm}:{}),...(locationId?{locationId}:{}),currencyMode, timing:{...timing}, date, party:{ adults, children }, people:profiles, budget, currency, startTime, endTime, pace, activities, ...(Object.keys(experience).length?{experience}:{}), pins:{...pins}, excludeIds:constraints.excludeIds, ...(body.maxPriceLevel !== undefined ? { maxPriceLevel:body.maxPriceLevel } : {}) };
+  const request = { titleSource:titleSource(body), title: text((typeof body.title==='string'&&!body.title.trim()||body.title==null ? null : body.title) || (activities.length ? `${activities.map(item=>({coffee:'Coffee',activity:'Something fun',dinner:'Dinner',drinks:'Drinks'}[item])).join(' & ')}${area?' in '+area.split(',')[0]:''}` : children ? 'Family day' : adults > 2 ? 'A day together' : 'A day out'),80,'a title'), area,...(body.stopIntents?{stopIntents:[...body.stopIntents]}:{}),...(route?{route}:{}),...(searchRadiusKm?{searchRadiusKm}:{}),...(locationId?{locationId}:{}),currencyMode, timing:{...timing}, date, party:{ adults, children }, people:profiles, budget, currency, startTime, endTime, pace, activities, ...(Object.keys(experience).length?{experience}:{}), pins:{...pins}, excludeIds:constraints.excludeIds, ...(body.maxPriceLevel !== undefined ? { maxPriceLevel:body.maxPriceLevel } : {}) };
   if(request.timing.dateConfirmed&&request.timing.timeConfirmed)makeSchedule({...request,activities:stopIntents(request)}); // Only chosen timing constrains scheduling.
   return request;
 }
@@ -147,7 +151,7 @@ function buildTasteMap(request, members, stops) {
         const tagReason = preference.kind==='vibe' && item.reasons.find((reason) => reason.code==='vibe_match' && reason.evidence.some((e) => matchesTasteTag(byId[preference.vibeId],e.value)));
         if (preference.kind==='artist' && !preference.entityId || preference.kind==='vibe' && !tagReason) return;
         const evidence = affinity ? [{field:affinity.sourceField,entityId:affinity.entityId,value:affinity.contribution}] : tagReason ? tagReason.evidence.filter((e) => matchesTasteTag(byId[preference.vibeId],e.value)) : [{field:'signal.interests.entities',value:preference.entityId}];
-        edges.push({id:`match-${preference.id}-${stopIndex}`,from:preference.id,to:`stop-${stopIndex}`,personId,kind:affinity?'affinity':tagReason?'tag_match':'search_signal',source:affinity?'qloo_explainability':tagReason?'qloo_tags':'qloo_request',label:affinity?'Reported connection to this artist':tagReason?'Place tags match this preference':'Used in the search; individual contribution unavailable',evidence,...(affinity?{contribution:affinity.contribution}:{})});
+        edges.push({id:`match-${preference.id}-${stopIndex}`,from:preference.id,to:`stop-${stopIndex}`,personId,kind:affinity?'affinity':tagReason?'tag_match':'search_signal',source:affinity?'qloo_explainability':tagReason?'qloo_tags':'qloo_request',label:affinity?'Reported connection to this artist':tagReason?'Place tags match this preference':'Used in the search; individual contribution unavailable',evidence,...(affinity?{contribution:affinity.contribution}:{}),...(item.provenance?.selectionEvidence?{provenance:item.provenance}:{})});
       });
     }
   });
@@ -158,13 +162,8 @@ function buildTasteMap(request, members, stops) {
 function resultTitle(request,stops){
   const filled=stops.filter(stop=>stop.item);
   const area=request.area.split(',')[0];
-  const defaultNames={coffee:'Coffee',activity:'Something fun',dinner:'Dinner',drinks:'Drinks'};
-  const generated=request.activities.map(intent=>defaultNames[intent]).join(' & ');
-  const defaults=new Set(['','A day out','Family day','A day together','A little day','A little day, beautifully spent','One place, well chosen','Your day','Your outing',generated,`${generated} in ${area}`]);
-  const staleStatus=request.title.startsWith('Places still to find in ');
-  // Search status belongs to the result state, never the outing's identity.
-  // Preserve meaningful user/model titles across empty results and revisions.
-  if(!staleStatus&&!defaults.has(request.title))return request.title;
+  // Never guess authorship from a name, even if it looks like our old defaults.
+  if(titleSource(request)!=='auto')return request.title;
   if(filled.length===1&&filled[0].intent==='coffee')return filled[0].item.name.slice(0,80);
   const names={coffee:'Cafés',activity:'Time out',dinner:'A meal',drinks:'Drinks'};
   const intents=filled.length?[...new Set(filled.map(stop=>stop.intent))]:request.activities;
@@ -176,7 +175,7 @@ function resultTitle(request,stops){
 
 export async function buildItinerary(discovery, request, {deferNearby=false}={}) {
   const activityBasis=request.activities.length?'request':'taste_suggestion';
-  if(!request.activities.length)request={...request,activities:suggestedActivities(request.people,request.party),title:''};
+  if(!request.activities.length)request={...request,activities:suggestedActivities(request.people,request.party)};
   const exploring=!request.timing.dateConfirmed||!request.timing.timeConfirmed;
   if(request.locationId){
     if(!discovery.location)throw new InputError('Location search is unavailable on this server.');
@@ -186,26 +185,35 @@ export async function buildItinerary(discovery, request, {deferNearby=false}={})
   }
   const intents=stopIntents(request);
   const planningRequest={...request,activities:intents};
+  const desired=index=>pinnedPlace(request,index);
+  const reserved=new Set(intents.map((_,index)=>desired(index)).filter(Boolean));
   const schedule = exploring?intents.map(intent=>({intent,start:null,end:null,durationMinutes:DEFAULT_MINUTES[intent],bufferAfterMinutes:0,status:'unscheduled'})):makeSchedule(planningRequest);
   const voters=request.people.map((person,index)=>({person,index})).filter(({person})=>person.artists.length||person.vibes.length||person.context?.audiences?.length||person.context?.interests?.length);
   const participating=voters.length?voters:request.people.map((person,index)=>({person,index}));
   const fetched = await Promise.all(participating.map(async({person,index}) => {
     const constraints = { excludeHotels:true,excludeIds:request.excludeIds,excludeTags:request.party.children ? ['nightclub','night_club','dance_club','adult_entertainment'] : [],...(request.maxPriceLevel?{maxPriceLevel:request.maxPriceLevel}:{}) };
-    return {index,results:await discovery.byIntents(parseRequest({location:{area:request.area,...(request.locationId?{id:request.locationId}:{})},taste:{artists:person.artists,vibes:person.vibes,context:person.context},constraints}),request.activities,{radiusKm:request.searchRadiusKm||0,experience:request.experience,openDiscovery:request.experience?.explore===true&&request.activities.length===1&&request.activities[0]==='activity'&&!request.route})};
+    return {index,results:await discovery.byIntents(parseRequest({location:{area:request.area,...(request.locationId?{id:request.locationId}:{})},taste:{artists:person.artists,vibes:person.vibes,context:person.context},constraints}),request.activities,{radiusKm:request.searchRadiusKm||0,experience:request.experience,selectedIds:[...reserved],openDiscovery:request.experience?.explore===true&&request.activities.length===1&&request.activities[0]==='activity'&&!request.route})};
   }));
   // A person without food/music/activity tastes has no ranking vote yet. Their
   // budget and participation remain included, without a generic search drowning
   // out another member's explicit preferences or creating false taste evidence.
   const uniqueMembers=request.people.map((_,index)=>fetched.find(m=>m.index===index)?.results||request.activities.map(()=>({ranked:[],taste:{mode:'discovery',resolved:[],unresolved:[],vibes:[]},provenance:fetched[0].results[0].provenance,fetched:0})));
   const members=uniqueMembers.map(results=>intents.map(intent=>results[request.activities.indexOf(intent)]));
-  let ranked = intents.map((intent,index) => rerankForExperience(fetched.length === 1 ? fetched[0].results[request.activities.indexOf(intent)].ranked : mergeGroup(fetched.map(({results,index:i}) => ({...results[request.activities.indexOf(intent)],id:request.people[i].id || `person-${i}`,name:request.people[i].name})),50).items,request.experience,intent));
+  let ranked = intents.map((intent,index) => rerankForExperience(fetched.length === 1 ? fetched[0].results[request.activities.indexOf(intent)].ranked : mergeGroup(fetched.map(({results,index:i}) => ({...results[request.activities.indexOf(intent)],id:request.people[i].id || `person-${i}`,name:request.people[i].name})),50,{keepIds:[...reserved]}).items,request.experience,intent));
+  const selectedEvidence=intents.map((intent,index)=>{
+    const id=desired(index);if(!id)return null;
+    const reports=fetched.flatMap(member=>{const report=member.results[request.activities.indexOf(intent)].selectedEvidence?.[id];return report?[{personId:request.people[member.index].id||`person-${member.index}`,...report}]:[];});
+    // A current hard failure in any participating pool cannot be hidden by a
+    // different member's older favorable snapshot. Missing votes stay missing.
+    const report=reports.find(value=>value.status==='rejected')||reports.find(value=>value.status==='eligible'&&value.source==='current_pool')||reports.find(value=>value.status==='eligible')||{status:'unavailable',reason:'selected_evidence_unavailable'};
+    return {placeId:id,...report,members:reports};
+  });
+  ranked=ranked.map((items,index)=>selectedEvidence[index]?.status==='rejected'?items.filter(item=>item.id!==desired(index)):items);
   let qualityReview={status:'not_requested'};
   if(discovery.reviewCandidates&&(request.experience||request.people.some(p=>p.context))){
     const review=await reviewCandidatePools(ranked,{...request,activities:intents},discovery.reviewCandidates);
     ranked=review.pools;qualityReview={status:review.status,basis:'model_relevance_judgment',providerFactsVerified:false};
   }
-  const desired=index=>pinnedPlace(request,index);
-  const reserved = new Set(request.route?request.route.map(s=>s.placeId):Object.values(request.pins));
   const makePools=(limit)=>ranked.map((items,index) => desired(index) ? items.filter((item) => item.id===desired(index)) : items.filter((item) => !reserved.has(item.id)).slice(0,limit));
   const pools=makePools(8);
   const timeZone=members[0][0].provenance.locality?.timeZone||(['Accra','Osu','East Legon','Cantonments','Labone','Airport Residential'].includes(request.area)?'Africa/Accra':null);
@@ -225,7 +233,7 @@ export async function buildItinerary(discovery, request, {deferNearby=false}={})
     fitted={...fitted,stops:fitted.stops.map((stop,i)=>{if(stop.item||!fallback.stops[i].item)return stop;needsTiming=true;return {...stop,item:fallback.stops[i].item,start:null,end:null,bufferAfterMinutes:0,timeStatus:'needs_time'};})};
   }
   const selected=fitted.stops.map(s=>s.item);
-  const stops = fitted.stops.map((slot,index) => ({...slot,id:`stop-${index}`,label:LABELS[slot.intent],item:selected[index],status:selected[index]?'matched':'unfilled',alternatives:ranked[index].filter((item) => !selected.some((chosen) => chosen?.id===item.id)).slice(0,2),...(selected[index]?{}:{reason:slot.reason|| (desired(index)?'kept_place_unavailable':pools[index].length?'no_distinct_place':'no_eligible_places')})}));
+  const stops = fitted.stops.map((slot,index) => ({...slot,id:`stop-${index}`,label:LABELS[slot.intent],item:selected[index],status:selected[index]?'matched':'unfilled',alternatives:ranked[index].filter((item) => !selected.some((chosen) => chosen?.id===item.id)).slice(0,2),...(selectedEvidence[index]?{selectionEvidence:selectedEvidence[index]}:{}),...(selected[index]?{}:{reason:desired(index)&&!pools[index].length?(selectedEvidence[index]?.status==='rejected'?'selected_place_rejected':'selected_evidence_unavailable'):slot.reason||(pools[index].length?'no_distinct_place':'no_eligible_places')})}));
   const filled = stops.filter((stop) => stop.item);
   const tasteMap = buildTasteMap(request,members,stops);
   stops.forEach((stop) => {stop.connections=tasteMap.edges.filter((edge) => edge.to===stop.id);});
@@ -261,7 +269,7 @@ export async function buildItinerary(discovery, request, {deferNearby=false}={})
     links:{directions:provider!=='demo'&&filled.length>=1?directions.href:null},
     checks:[{label:new Set(filled.map(s=>s.item.id)).size<filled.length?'Requested repeat visits':'Distinct stops',status:'passed'},{label:'Time window',status:exploring?'not_set':needsTiming?'needs_review':'passed'},{label:'Budget allocated',status:request.budget==null?'not_set':'passed'},{label:'Opening hours',status:filled.length&&filled.every(s=>s.hours?.status==='fits_reported_hours')?'checked':'unverified'},{label:'Travel time',status:'unverified'},...(request.party.children?[{label:'Child suitability',status:'unverified'}]:[])],
     activity:[{label:'Preferences resolved',detail:`${members.reduce((sum,r)=>sum+r[0].taste.resolved.length,0)} artist signals across ${members.length} taste profile${members.length===1?'':'s'}`},{label:'Qloo places considered',detail:`${members.reduce((sum,r)=>sum+r[0].fetched,0)} candidate appearances before activity and area checks`},{label:'A day assembled',detail:`${filled.length} of ${stops.length} stops filled; no filters widened`},{label:'Budget and time checked',detail:request.budget==null?'Suggested time slots calculated; no budget specified':'Spending allowances and suggested time slots calculated'}],
-    warnings:[...fitted.notes,...(provider==='demo'?['Sample plan with synthetic places.']:[]),...(unresolved.length?[`Unresolved artists: ${unresolved.map((entry)=>`${entry.requested} (${entry.person})`).join(', ')}.`]:[]),...(members.some(results=>results.some(result=>result.taste.signalsUnavailable))?['Some taste signals were unavailable during this search.']:[]),...(filled.length<stops.length?['Some stops could not be filled without changing your preferences.']:[]),
+    warnings:[...fitted.notes,...(selectionGapSummary(stops)?[selectionGapSummary(stops)]:[]),...(filled.some(stop=>stop.selectionEvidence?.members.some(member=>member.status==='eligible'&&member.source==='compatible_cache'))?['A selected place uses compatible provider evidence retrieved within the last ten minutes. Its original retrieval time is retained; current constraints were checked again.']:[]),...(provider==='demo'?['Sample plan with synthetic places.']:[]),...(unresolved.length?[`Unresolved artists: ${unresolved.map((entry)=>`${entry.requested} (${entry.person})`).join(', ')}.`]:[]),...(members.some(results=>results.some(result=>result.taste.signalsUnavailable))?['Some taste signals were unavailable during this search.']:[]),...(filled.length<stops.length?['Some stops could not be filled without changing your preferences.']:[]),
       ...(request.experience?.cuisine&&request.activities.includes('dinner')&&!stops.some(stop=>stop.intent==='dinner'&&stop.item?.experienceFit?.cuisine?.status==='provider_text_signal')?[`I couldn't verify ${request.experience.cuisine} cuisine among the available places. The current alternatives may not meet that request.`]:[]),'Suggested times do not verify opening hours. Travel buffers are not route estimates.','Budget figures are allowances, not venue quotes. Confirm prices and availability before going.',...(request.party.children?['Check child suitability directly with the venues.']:[])],
   };
 }

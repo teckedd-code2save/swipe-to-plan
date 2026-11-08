@@ -164,7 +164,7 @@ export function relaxationOptions(request) {
 }
 
 export function createDiscovery({ provider, now = Date.now, reviewCandidates }) {
-  const cache = new Map();
+  const cache = new Map(), cacheLifetimeMs = 600000;
   async function retrieve(request,intents=[],radiusKm=0,experience) {
     const resolutionJob = Promise.all(request.taste.artists.map(async (requested) => {
       try {
@@ -190,24 +190,59 @@ export function createDiscovery({ provider, now = Date.now, reviewCandidates }) 
     const includeActivity=intents.includes('activity');
     const includeDrinks=intents.includes('drinks');
     const includeDining=intents.includes('dinner');
-    const key = JSON.stringify([request.location.area,request.location.id, signalIds,contextSignals?.audiences,...(provider.resolveTasteTags||provider.resolveExperienceTags?[tagSignals,includeActivity,includeDrinks,includeDining,radiusKm]:[])]);
+    // Category coverage may change, but recovered evidence must use exactly the
+    // same location and taste query, including unresolved/optional signals.
+    // Context searches may resolve in a different order on cold versus warm
+    // provider caches. These outputs are sets; the original user inputs are not.
+    const ordered=rows=>[...(rows||[])].sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)));
+    const resolvedContext=contextSignals?{...contextSignals,audiences:ordered(contextSignals.audiences),interests:ordered(contextSignals.interests),unresolved:ordered(contextSignals.unresolved)}:null;
+    const evidenceContext=JSON.stringify([request.location,radiusKm,request.taste,experience??null,signalIds,tagSignals,resolvedContext,resolution,optionalSignalsUnavailable]);
+    const key=JSON.stringify([evidenceContext,includeActivity,includeDrinks,includeDining]);
     let entry = cache.get(key);
-    const cached = !!entry && now() - entry.at < 600000;
+    const cached = !!entry && now() >= entry.at && now() - entry.at < cacheLifetimeMs;
     if (!cached) {
       let places;
       try { places = await provider.discover({ signalIds, area: request.location.area,locationId:request.location.id,tagSignals,contextSignals,includeActivity,includeDrinks,includeDining,radiusKm }); }
       catch (e) { throw e instanceof ProviderError ? e : new ProviderError(); }
       if (!Array.isArray(places)) throw new ProviderError("provider_response_invalid");
-      entry = { places, locality:places.locality||null, at: now() };
+      entry = { places:structuredClone(places), locality:structuredClone(places.locality||null), at: now(), evidenceContext };
       if (cache.size >= 100) cache.delete(cache.keys().next().value);
       cache.set(key, entry);
     }
     const provenance = { provider: provider.name, retrievedAt: new Date(entry.at).toISOString(), cached,...(entry.locality?{locality:entry.locality}:{}), cacheAgeMs: Math.max(0, now() - entry.at) };
-    return { places: entry.places, taste: { mode: resolved.length ? "artist_affinity" : tagSignals.length ? "vibe_refinement" : "discovery", resolved, unresolved, ...(contextSignals?{contextSignals}:{}), vibes: request.taste.vibes,...(tagSignals.length?{tagSignals}:{}),...(optionalSignalsUnavailable?{signalsUnavailable:true}:{}) }, provenance, fetched: entry.places.length };
+    return { places: entry.places, evidenceContext:optionalSignalsUnavailable?null:evidenceContext, taste: { mode: resolved.length ? "artist_affinity" : tagSignals.length ? "vibe_refinement" : "discovery", resolved, unresolved, ...(contextSignals?{contextSignals}:{}), vibes: request.taste.vibes,...(tagSignals.length?{tagSignals}:{}),...(optionalSignalsUnavailable?{signalsUnavailable:true}:{}) }, provenance, fetched: entry.places.length };
   }
-  function rank(retrieved, request) {
-    const { places, ...metadata } = retrieved;
-    return { ...rankPlaces(places, request, { source: provider.name, retrievedAt: metadata.provenance.retrievedAt, resolved: metadata.taste.resolved,locality:metadata.provenance.locality }), ...metadata };
+  function rank(retrieved, request, selectedIds=[]) {
+    const { places, evidenceContext, ...metadata } = retrieved;
+    const options={source:provider.name,retrievedAt:metadata.provenance.retrievedAt,resolved:metadata.taste.resolved,locality:metadata.provenance.locality};
+    const result=rankPlaces(places,request,options),selectedEvidence={};
+    // No client facts enter this cache. Only up to three explicitly selected
+    // provider IDs can be recovered; ordinary discovery never gains old places.
+    const selected=[...new Set(selectedIds)].filter(id=>typeof id==='string'&&id.startsWith(`${provider.name}:`)).slice(0,3);
+    for(const id of selected){
+      const entityId=id.slice(provider.name.length+1),current=places.find(place=>place?.entity_id===entityId);
+      let source='current_pool',raw=current,item=result.ranked.find(place=>place.id===id),evidenceOptions=options,prior;
+      if(!current&&evidenceContext){
+        // The newest compatible observation wins, even if it now fails a hard
+        // filter. Never fall back from a fresh rejection to older favorable data.
+        for(const entry of cache.values()){
+          if(entry.evidenceContext!==evidenceContext||JSON.stringify(entry.locality)!==JSON.stringify(metadata.provenance.locality??null)||now()<entry.at||now()-entry.at>=cacheLifetimeMs||prior&&entry.at<prior.at)continue;
+          const candidate=entry.places.find(place=>place?.entity_id===entityId);if(candidate){prior=entry;raw=candidate;}
+        }
+        if(prior){
+          source='compatible_cache';evidenceOptions={...options,retrievedAt:new Date(prior.at).toISOString(),locality:prior.locality};
+          item=rankPlaces(prior.places,request,evidenceOptions).ranked.find(place=>place.id===id);
+          if(item){
+            item.provenance={...item.provenance,...(prior.locality?{locality:prior.locality}:{}),selectionEvidence:{source,cacheAgeMs:now()-prior.at}};
+            result.ranked.push(item);
+          }
+        }
+      }
+      selectedEvidence[id]=!raw?{status:'unavailable',reason:'selected_evidence_unavailable'}:item
+        ?{status:'eligible',source,retrievedAt:evidenceOptions.retrievedAt}
+        :{status:'rejected',source,retrievedAt:evidenceOptions.retrievedAt,reason:Object.keys(rankPlaces([raw],request,evidenceOptions).excluded)[0]||'evidence_not_supported'};
+    }
+    return {...result,...metadata,...(selected.length?{selectedEvidence}:{})};
   }
   async function person(request) {
     return rank(await retrieve(request), request);
@@ -216,9 +251,9 @@ export function createDiscovery({ provider, now = Date.now, reviewCandidates }) 
     location:provider.getLocation,
     reviewCandidates,
     person,
-    async byIntents(request, intents, {radiusKm=0,experience,openDiscovery=false}={}) {
+    async byIntents(request, intents, {radiusKm=0,experience,openDiscovery=false,selectedIds=[]}={}) {
       const retrieved = await retrieve(request,intents,radiusKm,experience);
-      return intents.map((intent) => rank(retrieved, { ...request, searchTopics:experience?.searchTags||[], intent:openDiscovery?"any":intent }));
+      return intents.map((intent) => rank(retrieved, { ...request, searchTopics:experience?.searchTags||[], intent:openDiscovery?"any":intent },selectedIds));
     },
     async recommend(request) {
       const p = await person(request);
@@ -240,15 +275,19 @@ export function createDiscovery({ provider, now = Date.now, reviewCandidates }) 
   };
 }
 
-export function mergeGroup(people, limit = 8) {
+export function mergeGroup(people, limit = 8, {keepIds=[]}={}) {
   if (!people.length) return { items: [], summary: [] };
   const candidates = new Map();
   people.forEach((p, pi) => p.ranked.forEach((r, ri) => {
-    const entry = candidates.get(r.id) ?? { ...r, scores: new Map(), ranks: new Map() };
+    let entry = candidates.get(r.id) ?? { ...r, scores: new Map(), ranks: new Map() };
+    // Keep current venue facts when another member contributes older evidence.
+    // Their individual scores and provenance remain separate from these facts.
+    if(entry.provenance?.selectionEvidence?.source==='compatible_cache'&&r.provenance?.selectionEvidence?.source!=='compatible_cache')entry={...r,scores:entry.scores,ranks:entry.ranks,matchedVibes:entry.matchedVibes};
     entry.scores.set(pi, r.score); entry.ranks.set(pi, ri);
     entry.matchedVibes = [...new Set([...entry.matchedVibes, ...r.matchedVibes])];
     candidates.set(r.id, entry);
   }));
+  const kept=new Set(keepIds.slice(0,3));
   const items = [...candidates.values()].map(({ scores, ranks, ...item }) => {
     const values = people.map((_, i) => scores.get(i) ?? 0.05);
     const mean = values.reduce((a, b) => a + b, 0) / values.length;
@@ -260,7 +299,7 @@ export function mergeGroup(people, limit = 8) {
     const result = { ...item, score: +(0.6 * minimum + 0.4 * mean).toFixed(4), scoreComponents: { minimum, mean, missingScore: 0.05 }, reasons, favoriteMembers, inAll };
     result.why = explainCandidate(result);
     return result;
-  }).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)).slice(0, limit);
+  }).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)).filter((item,index)=>index<limit||kept.has(item.id));
   const summary = [
     `${items.filter((i) => i.inAll).length} of ${items.length} picks appear in every member's candidate list.`,
     "Group scores are a ranking heuristic. Missing candidates are unknown preferences, not dislikes.",

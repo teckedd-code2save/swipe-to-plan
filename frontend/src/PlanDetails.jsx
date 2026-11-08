@@ -1,3 +1,4 @@
+import {selectedPlaceGap} from '../../shared/selection-evidence.js';
 import {isStopPinned} from './stop-controls.js';
 import {Badge,Button,Card,Flex,Heading,Text} from '@radix-ui/themes';
 import {routeLink} from './route-links.js';
@@ -18,7 +19,7 @@ export { BeforeGoing } from './PlaceGuide.jsx';
 
 export function Stop({stop,plan,busy,onPin,onSwap,onTrace,onBudget,onDetails,onMenus,onRemove,actions,discovery=false}) {
   const [imageFailed,setImageFailed]=useState(false),item=stop.item;
-  if(!item)return <Card className="outing-empty"><Heading size="3">{stop.label||'A place still to find'}</Heading><Text as="p">{stop.reason==='no_open_place'?'The places found don’t fit this time. Change the time or explore another option.':'No matching place returned for this part of your request.'}</Text></Card>;
+  if(!item)return <Card className="outing-empty"><Heading size="3">{stop.label||'A place still to find'}</Heading><Text as="p">{selectedPlaceGap(stop)||(stop.reason==='no_open_place'?'The places found don’t fit this time. Change the time or explore another option.':'No matching place returned for this part of your request.')}</Text></Card>;
   const pinned=isStopPinned(plan,stop);
   const names=[...new Set((stop.connections||[]).map(edge=>plan.people?.find(p=>p.id===edge.personId)?.name).filter(Boolean))];
   return <Card className="outing-place" size="3" data-stop-id={stop.id} tabIndex={-1} aria-label={item.name}>

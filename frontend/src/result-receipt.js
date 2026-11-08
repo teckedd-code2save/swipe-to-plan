@@ -1,3 +1,4 @@
+import {selectionGapSummary} from '../../shared/selection-evidence.js';
 // The result card always opens the current plan, so it must describe that plan.
 export function resultPlaceLabel(plan){
   const count=plan.stops.filter(stop=>stop.item).length;
@@ -18,5 +19,6 @@ export function resultRouteSummary(plan){
   const visits=plan.stops.map((stop,index)=>`${index+1}. ${stop.item?.name||'Still to find'}`).join(' → ');
   const missing=plan.stops.filter(stop=>!stop.item).length;
   const status=missing?` ${missing} requested ${missing===1?'visit is':'visits are'} still unfilled.`:plan.phase==='needs_timing'?' Visit times still need adjusting.':plan.phase==='discovery'?' Visit times are not set.':'';
-  return `Current outing: ${visits}.${status}`;
+  const evidenceGap=selectionGapSummary(plan.stops);
+  return `Current outing: ${visits}.${status}${evidenceGap?` ${evidenceGap}`:''}`;
 }

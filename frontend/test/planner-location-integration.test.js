@@ -546,10 +546,10 @@ test('a selection before local retrieval completes preserves the newest budget, 
   assert.equal(builds.length,2);assert.equal(builds[1].budget,90);assert.equal(builds[1].date,'2026-12-04');assert.deepEqual(builds[1].people[0].artists,['Tems']);assert.deepEqual(builds[1].people[0].vibes,['v-art']);assert.deepEqual(builds[1].route.map(s=>s.placeId),['a','b','a']);
 });
 
-async function installUndoReceiptFixture({guest=false,partial=false,failRestore=false,pendingComparison=false,pendingRestore=false}={}){
+async function installUndoReceiptFixture({guest=false,partial=false,failRestore=false,pendingComparison=false,pendingRestore=false,titleSource}={}){
   const {decisionStops,comparisonKey}=await import('../src/decision-evidence.js');
   const {resultRouteSummary,resultPlaceLabel}=await import('../src/result-receipt.js');
-  const initial=repeatedPlan({title:'Synthetic return visits',activities:['coffee','dinner'],stopIntents:['coffee','dinner','coffee'],route:[{intent:'coffee',placeId:'a'},{intent:'dinner',placeId:'b'},{intent:'coffee',placeId:'a'}]});
+  const initial=repeatedPlan({title:'Synthetic return visits',...(titleSource?{titleSource}:{}),activities:['coffee','dinner'],stopIntents:['coffee','dinner','coffee'],route:[{intent:'coffee',placeId:'a'},{intent:'dinner',placeId:'b'},{intent:'coffee',placeId:'a'}]});
   initial.stops[0].intent='coffee';initial.stops[1].intent='dinner';initial.stops.push({...initial.stops[0],id:'stop-2'});initial.budget.allocations.push({stopId:'stop-2',intent:'coffee',amount:null});
   if(partial){initial.stops[1]={...initial.stops[1],item:null,reason:'no_eligible_places',status:'unfilled'};initial.status='partial';}
   if(guest)localStorage.setItem('outing.saved-plans.v1',JSON.stringify([{id:'local-day',savedAt:'2026-11-08T00:00:00Z',plan:initial}]));
@@ -630,4 +630,34 @@ for(const transition of ['account switch','sign out'])test(`${transition} cannot
   await installUndoReceiptFixture();state.user=transition==='sign out'?null:{...state.user,id:'another-account',profile:{...profile,id:'another-account'}};
   await act(async()=>window.dispatchEvent(new Event('focus')));
   assert.equal(sessionStorage.getItem(`outing.chat:${state.user?.id||'guest'}:saved-day`),null);assert.doesNotMatch(document.body.textContent,/Historical comparison stays unchanged/);
+});
+
+for(const guest of [true,false])for(const rejected of [true,false])test(`${guest?'guest':'account'} reopened result explains selected ${rejected?'hard rejection':'missing evidence'} without substituting a venue`,async()=>{
+  const initial=repeatedPlan({activities:['coffee'],stopIntents:['coffee','coffee'],route:[{intent:'coffee',placeId:'a'},{intent:'coffee',placeId:'b'}]});initial.status='partial';initial.stops[0].intent='coffee';initial.stops[1]={...initial.stops[1],intent:'coffee',item:null,status:'unfilled',reason:rejected?'selected_place_rejected':'selected_evidence_unavailable',selectionEvidence:{placeId:'b',status:rejected?'rejected':'unavailable',reason:rejected?'over_price_limit':'selected_evidence_unavailable'}};
+  if(guest)localStorage.setItem('outing.saved-plans.v1',JSON.stringify([{id:'selected-local',savedAt:'2026-11-08T00:00:00Z',plan:initial}]));
+  else {account(london);initial.savedPlan={id:'saved-day',revision:1};state.savedPlan=initial;history.replaceState(null,'','/#/plan/saved-day');}
+  await mount();if(guest){await click('Saved days');await act(async()=>document.querySelector('.pl-saved-item > button').click());}
+  const expected=rejected?/exceeds the current provider price-tier limit/:/compatible recent provider evidence is unavailable/;
+  assert.match(currentReceipt(),expected);assert.match(document.body.textContent,/no other place was substituted/);assert.doesNotMatch(document.body.textContent,/couldn.t find coffee in this area/);assert.equal(document.querySelectorAll('.outing-place').length,1);assert.match(document.querySelector('.cs-result-card small').textContent,/1 stop/);
+});
+
+for(const titleSource of ['auto','custom','legacy'])test(`guest saved days and Undo retain ${titleSource} title provenance`,async()=>{
+  const fixture=await installUndoReceiptFixture({guest:true,titleSource});
+  await shortenUndoFixture(false);assert.equal(fixture.builds.at(-1).titleSource,titleSource);
+  await click('Undo');assert.equal((await send()).context.titleSource,titleSource);
+  await click('Save');
+  const saved=JSON.parse(localStorage.getItem('outing.saved-plans.v1'));assert.equal(saved[0].plan.request.titleSource,titleSource);
+  await click('New day');await click('Saved days');await act(async()=>document.querySelector('.pl-saved-item > button').click());
+  const restored=await send();assert.equal(restored.context.titleSource,titleSource);assert.equal(restored.context.title,fixture.initial.request.title);
+});
+
+for(const guest of [true,false])test(`${guest?'guest':'account'} explicit name edits mark custom, ordinary details preserve it, and clearing resets automatic naming`,async()=>{
+  const fixture=await installUndoReceiptFixture({guest,titleSource:'auto'});
+  await click('Details');await input('.pl-trip-dialog input[maxlength="80"]','A day out');await input('.pl-trip-dialog input[type="date"]','2099-01-01');await click('Update this plan');
+  assert.equal(fixture.builds.at(-1).titleSource,'custom');assert.equal(fixture.builds.at(-1).title,'A day out');assert.equal(document.querySelector('.cs-day-header h2').textContent,'A day out');
+  await click('Details');await input('.pl-trip-dialog input[max="10000000"]','75');await click('Update this plan');
+  assert.equal(fixture.builds.at(-1).titleSource,'custom');assert.equal(fixture.builds.at(-1).title,'A day out');
+  await click('Details');await input('.pl-trip-dialog input[maxlength="80"]','');await click('Update this plan');
+  assert.equal(fixture.builds.at(-1).titleSource,'auto');assert.equal(fixture.builds.at(-1).title,'');
+  if(guest){await click('Undo');assert.equal((await send()).context.titleSource,'custom');assert.equal(document.querySelector('.cs-day-header h2').textContent,'A day out');}
 });
