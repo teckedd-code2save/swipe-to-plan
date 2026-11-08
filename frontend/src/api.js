@@ -8,7 +8,15 @@ async function json(url, options = {}) {
 }
 const post = (body) => ({ method: "POST", body: JSON.stringify(body) });
 const dayRequest = (token, method='GET', body) => ({ method, headers: {'content-type':'application/json', authorization:`Bearer ${token}`}, ...(body === undefined ? {} : {body:JSON.stringify(body)}), signal:AbortSignal.timeout(45000) });
+const bookingRequest=(scope,suffix='',method='GET',body,signal)=>json(`/api/${scope.type==='day'?'days':'account/plans'}/${encodeURIComponent(scope.id)}/bookings${suffix}`,{method,...(body?{body:JSON.stringify(body)}:{}),...(scope.type==='day'?{headers:{authorization:`Bearer ${scope.token}`}}:{}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(25000)]):AbortSignal.timeout(25000)});
 export const api = {
+  bookings:(scope,signal)=>bookingRequest(scope,'','GET',undefined,signal),
+  createBooking:(scope,body,signal)=>bookingRequest(scope,'','POST',body,signal),
+  updateBooking:(scope,id,body,signal)=>bookingRequest(scope,`/${encodeURIComponent(id)}`,'PATCH',body,signal),
+  bookingHandoff:(scope,id,body,signal)=>bookingRequest(scope,`/${encodeURIComponent(id)}/handoff`,'POST',body,signal),
+  reportBooking:(scope,id,body,signal)=>bookingRequest(scope,`/${encodeURIComponent(id)}/report`,'POST',body,signal),
+  actionCapabilities:signal=>json('/api/actions/capabilities',{signal:signal?AbortSignal.any([signal,AbortSignal.timeout(10000)]):AbortSignal.timeout(10000)}),
+  routeEstimate:(body,signal)=>json('/api/actions/routes/estimate',{...post(body),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(25000)]):AbortSignal.timeout(25000)}),
   locations:(q,signal)=>json(`/api/locations?q=${encodeURIComponent(q)}`,{signal}),
   nearbyLocations:(point,signal)=>json('/api/locations/nearby',{...post(point),signal}),
   suggestLocations:(locationId,brief,signal)=>json('/api/locations/suggest',{...post({locationId,brief}),signal}),

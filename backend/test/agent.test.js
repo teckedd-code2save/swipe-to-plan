@@ -214,6 +214,23 @@ test('a practical-details request opens checks without inventing verification or
  assert.deepEqual(result,{status:'show_ui',panel:'checks'});
 });
 
+test('booking requests open preparation in the conversation without mutating the plan or granting execution',async()=>{
+  const context=parseItinerary({people:[{id:'you',name:'You'}],budget:500});
+  const before=JSON.stringify(context);let payload;
+  const agent=createAgent({getKey:()=> 'test',fetchImpl:async(_,options)=>{
+    payload=JSON.parse(options.body);return response('show_ui',{panel:'bookings'});
+  }});
+  const result=await agent.interpret({message:'Reserve these places and help me track the replies',context,mode:'autopilot'});
+  assert.deepEqual(result,{status:'show_ui',panel:'bookings'});
+  assert.equal(JSON.stringify(context),before);
+  const surface=payload.tools.find(t=>t.function.name==='show_ui');
+  assert.ok(surface.function.parameters.properties.panel.enum.includes('bookings'));
+  assert.match(surface.function.description,/does not send provider messages, submit reservations, take payments/);
+  assert.match(surface.function.description,/user-reported confirmation is not provider verification/);
+  assert.match(payload.messages[0].content,/handoff authorizes future automatic sending/);
+  assert.ok(!payload.tools.some(t=>/submit_booking|send_message|pay/.test(t.function.name)));
+});
+
 test('signed-in additions use connected identities or prepare an invite; guest names stay simple',async()=>{
   const context=parseItinerary({people:[{id:'alex',name:'Alex'}]});
   const contacts=[{id:'sam',name:'Sam',artists:['Sade'],vibes:[]}];

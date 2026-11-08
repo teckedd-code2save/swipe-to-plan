@@ -17,9 +17,11 @@ import { AGENT_TOOLS, AUTOPILOT_TOOL, AgentError } from "./agent.js";
 import { createAccounts } from './accounts.js';
 import {createMetrics,CLIENT_EVENTS,visitorId} from './metrics.js';
 import { createPlaceGuide } from './place-guide.js';
+import { createRouteActions, RouteActionError } from './route-actions.js';
 
-export function createApp({ provider, prisma = null, agent = null, dayStore, metrics, accounts=createAccounts(), rateLimit = true, trustProxy = process.env.TRUST_PROXY === '1' ? 1 : false, now = Date.now } = {}) {
+export function createApp({ provider, prisma = null, agent = null, dayStore, metrics, accounts=createAccounts(), routeActions, rateLimit = true, trustProxy = process.env.TRUST_PROXY === '1' ? 1 : false, now = Date.now } = {}) {
   metrics??=createMetrics({now});
+  routeActions??=createRouteActions({now});
   const app = express();
   // Production is reachable only through the one host-level Caddy proxy.
   app.set('trust proxy', trustProxy);
@@ -33,9 +35,9 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   app.use(express.json({ limit: "50kb" }));
   app.use("/api", (_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
   const hits = new Map();
-  const limit = (max) => (req, res, next) => {
+  const limit = (max, bucket) => (req, res, next) => {
     if (!rateLimit) return next();
-    const key = `${req.ip}:${req.method}:${req.path}`;
+    const key = `${req.ip}:${req.method}:${bucket ?? req.path}`;
     const recent = (hits.get(key) ?? []).filter((t) => now() - t < 60000);
     if (recent.length >= max) return res.status(429).json({ code: "rate_limited", error: "Please wait a minute and try again." });
     if (hits.size > 5000) hits.delete(hits.keys().next().value);
@@ -64,6 +66,17 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   app.get('/api/admin/usage',limit(30),route(async(req,res)=>{const users=await accounts.adminUsers(req);res.json(await metrics.report(users,Number(req.query.days||7)));}));
   app.get("/api/health", (_req, res) => res.json({ ok: true, provider: provider.name, roomsConfigured: !!prisma, agentConfigured: !!agent?.configured() }));
   app.get("/api/schema", (_req, res) => res.json(API_SCHEMA));
+  // Public, stateless route evidence. No saved-plan lookup, ownership inference or writes.
+  // Route-specific statuses and sanitization do not change the existing API error contract.
+  const routeAction = fn => route(async (req, res) => {
+    try { res.json(await fn(req)); }
+    catch (error) {
+      const safe = error instanceof RouteActionError || error instanceof InputError ? error : new RouteActionError('routes_provider_error');
+      res.status(safe.status).json({code:safe.code,error:safe.message});
+    }
+  });
+  app.get('/api/actions/capabilities',limit(60,'actions_capabilities'),routeAction(() => routeActions.capabilities()));
+  app.post('/api/actions/routes/estimate',limit(12,'route_estimates'),routeAction(req => routeActions.estimate(req.body)));
   app.get('/api/locations',limit(60),route(async(req,res)=>{
     const query=req.query.q;if(typeof query!=='string'||query.trim().length<2||query.length>160||/[\x00-\x1f<>]/.test(query))throw new InputError('Type at least two characters of a city, town or neighborhood.');
     if(!provider.searchLocations)throw new InputError('Location search is unavailable on this server.');
@@ -141,6 +154,11 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     if(!day.plan||day.planRevision!==day.revision)return res.status(409).json({error:'The shared day is still updating.'});
     res.json(await accounts.keepPlan({...target,id:day.id,revision:day.planRevision,sourceDayId:day.id},day.plan));
   }));
+  const bookingMutation=fn=>route(async(req,res)=>{if(req.get('origin')!==accounts.origin||!req.is('application/json'))return res.status(403).json({error:'Use Unstressed to change booking details.'});res.set('Cache-Control','no-store');res.json(await fn(req));});
+  app.get('/api/days/:id/bookings',limit(60,'booking-read'),route(async(req,res)=>{res.set('Cache-Control','no-store');res.json(await days.bookings(req.params.id,credential(req)));}));
+  app.post('/api/days/:id/bookings',limit(30,'booking-mutation'),bookingMutation(req=>days.bookings(req.params.id,credential(req),'create',req.body)));
+  app.patch('/api/days/:id/bookings/:bookingId',limit(30,'booking-mutation'),bookingMutation(req=>days.bookings(req.params.id,credential(req),'patch',req.body,req.params.bookingId)));
+  for(const operation of ['handoff','report'])app.post(`/api/days/:id/bookings/:bookingId/${operation}`,limit(30,'booking-mutation'),bookingMutation(req=>days.bookings(req.params.id,credential(req),operation,req.body,req.params.bookingId)));
   app.post('/api/days', limit(10), route(async (req,res) => res.status(201).json(await days.create(req.body))));
   app.get('/api/days/:id', limit(120), route(async (req,res) => res.json(await days.get(req.params.id, credential(req)))));
   app.post('/api/days/:id/members', limit(20), route(async (req,res) => res.status(201).json(await days.add(req.params.id, credential(req), req.body))));
@@ -214,7 +232,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     if (e.type === "entity.parse.failed") return res.status(400).json({ code: "invalid_json", error: "Request body must be valid JSON." });
     if (e.type === "entity.too.large") return res.status(413).json({ code: "body_too_large", error: "Request body exceeds 50 KB." });
     const status = [400,401,403,404,409].includes(e.status) ? e.status : 503;
-    res.status(status).json({ code: e.code && ["location_not_found", "location_ambiguous", "account_error", "invalid_request", "provider_unavailable", "provider_not_configured", "provider_response_invalid", "provider_auth_error", "provider_rate_limited", "agent_not_configured", "agent_unavailable", "day_not_found", "day_forbidden", "day_conflict", "day_unavailable"].includes(e.code) ? e.code : "service_unavailable", error: e.status ? e.message : "The service is temporarily unavailable. Please retry." });
+    res.status(status).json({ code: e.code && ["booking_conflict", "location_not_found", "location_ambiguous", "account_error", "invalid_request", "provider_unavailable", "provider_not_configured", "provider_response_invalid", "provider_auth_error", "provider_rate_limited", "agent_not_configured", "agent_unavailable", "day_not_found", "day_forbidden", "day_conflict", "day_unavailable"].includes(e.code) ? e.code : "service_unavailable", error: e.status ? e.message : "The service is temporarily unavailable. Please retry." });
   });
   const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../frontend/dist");
   if (fs.existsSync(path.join(dist, "index.html"))) {

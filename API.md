@@ -72,6 +72,53 @@ Relative contributions are not ratings, probabilities or predicted satisfaction.
 
 The UI confirms area independently of budget, tastes and discovery. Selecting an area does not search for venues. It opens taste cards or a review card; the user can edit activities, timing and allowance before Plan it. A new area defaults to its local currency unless a custom currency was requested. No exchange conversion occurs.
 
+## Per-journey travel estimates
+
+Travel estimates are optional, same-process Google Routes evidence. They do not change the planner, selected stops, visit durations, fixed planning buffers, saved/shared plans or bookings. Both guests and signed-in people can request them without a separate service API key. Requests are stateless: account cookies, analytics visitor IDs and correlation fields are not ownership evidence, and no saved plan is read or written.
+
+`GET /api/actions/capabilities` returns:
+
+```json
+{
+  "routeEstimates": false,
+  "routeProvider": "google_routes",
+  "modes": ["DRIVE", "WALK", "TRANSIT"],
+  "bookingSubmission": false,
+  "confirmedBookings": false
+}
+```
+
+`routeEstimates` is true only when the optional server-only `GOOGLE_MAPS_API_KEY` is configured. The key needs Google Routes API access and stays out of frontend bundles and API responses. Missing configuration returns `503 provider_not_configured` for valid estimate requests without contacting Google; planning and ordinary Maps directions remain available. Google OAuth settings are unrelated and unchanged. Configuration presence is not a live health or quota check.
+
+`POST /api/actions/routes/estimate` accepts exactly one journey:
+
+```json
+{
+  "origin": {"id": "start", "address": "Explicit starting address"},
+  "stops": [{
+    "id": "coffee-second",
+    "entityId": "qloo:venue-id",
+    "name": "Selected venue",
+    "coordinates": {"lat": 5.56, "lng": -0.18}
+  }],
+  "mode": "DRIVE",
+  "requestId": "route-request-7",
+  "itineraryRevision": 3
+}
+```
+
+- `origin` is required; the service never substitutes the planning area, account location or device location. Each location requires a nonempty `address` (up to 300 characters) or finite numeric `coordinates: {lat,lng}` within geographic bounds. If both are supplied, coordinates drive the provider request. Malformed supplied coordinates are rejected even when an address exists.
+- `stops` contains exactly one selected destination. Request subsequent journeys separately, using their actual preceding venue as origin. Optional location `id` (up to 160 characters) identifies the itinerary slot; `entityId` (up to 200) identifies the venue. Keep these separate for repeated activities. Optional `name` is limited to 200 characters. Names/IDs are correlation/display data, not provider lookups.
+- `mode` is `DRIVE`, `WALK` or `TRANSIT`; omitted means `DRIVE`. Unknown fields, including `sourcePlanId`, `revision`, `visitorId`, `optimize` and nested venue fields, are rejected. Strings cannot contain control characters or angle brackets.
+- Optional `departureAt` is a real offset-aware ISO timestamp at or after the server clock, normalized to UTC in the response. Omit it to request a current estimate. It is sent to Google for driving/transit only. Walking retains requested departure context but does not claim provider-timed departure: its leg `departureAt` is always null. No departure time is derived from the suggested outing schedule.
+- Optional `requestId` is a nonempty string up to 160 characters, trimmed and echoed. Optional `itineraryRevision` is a nonnegative safe integer, echoed unchanged. They are client correlation markers only. Clients must discard stale responses after a change of plan, selected venue, origin, mode, timing or request generation.
+
+Successful results contain `source: "google_routes"`, `measuredAt` (UTC), `mode`, numeric `distanceMeters` and `durationSeconds`, normalized `selectedStops`, optional echoed correlation/departure fields, and exactly one `legs` entry. A leg contains `from`, `to`, the same source/time/mode, its own measurements and `departureAt` (null when no timed departure was requested or for walking). Zero distance/duration is valid; missing or malformed measurements never become zero. `trafficAware` is true for successful driving estimates. The requested top-level Google `fallbackInfo` is validated: traffic-unaware driving fallbacks fail explicitly rather than becoming estimates labeled with current traffic, and unknown/malformed fallback metadata fails safely. `navigationUrl` opens Google Maps with the explicit endpoints and mode.
+
+Every result states `scheduleFeasibility: "not_evaluated"`, `includesVisitDurations: false` and `includesPlanningBuffers: false`, plus a travel-only warning. A route estimate is not outing feasibility, a booking, a guaranteed arrival, or proof that a venue is open. The result is ephemeral and does not amend persisted plans.
+
+All failures use `{code,error}` with sanitized messages: `400 invalid_request`; `422 route_not_found`; `429 routes_rate_limited` for upstream quota or `rate_limited` for the app guard; `502 routes_unreachable`, `routes_provider_error`, `routes_bad_response` or `routes_traffic_unavailable`; `503 provider_not_configured`; `504 routes_timeout`. The provider deadline is 12 seconds, including response-body reading, with no automatic retry. Requests share the API's 50 KB JSON limit. Estimate requests are limited to 12 per IP per minute, capabilities to 60, with case/trailing-slash variants sharing the same bucket. Both endpoints send `Cache-Control: no-store`. The server stores no route history and does not expose provider error bodies or credentials.
+
 ## Conversational agent
 
 `GET /api/agent/tools` exposes OpenAI-compatible function schemas for planning, revisions, people, circles, interface cards and replies, plus the `plan_day` HTTP mapping. External agents can invoke the tool without the built-in model adapter.
@@ -234,6 +281,14 @@ A circle returns `{id,name,owner,people,accountIds,inviteToken?}`. Only its orga
 
 `GET /api/places/:entityId` retrieves an exact Qloo place (UUID), returning normalized description, links, weekly hours, menu highlights, reported features and provenance. Public provider data is cached for five minutes; concurrent lookups share the same request. No user-supplied URL is fetched.
 
+Place results include `contact` evidence for provider-supplied telephone and website data. The phone has `display`, `format` (`international`, `local_only`, `invalid`, `missing`), `dialUrl`, source provider/entity/field/retrieval time, and explicit unverified ownership/reachability. Only conservative explicit `+` international syntax produces a `tel:` link. The app does not infer a country prefix, service extension, WhatsApp capability or recipient opt-in. A syntactically usable number is not a verified venue or reachable line.
+
+Website links are sanitized HTTP(S) destinations; unsafe schemes, embedded credentials and obvious local targets are rejected. No arbitrary website is fetched for this contact feature. Both channels distinguish retrieval time from the unknown provider update time. Legacy saved plans without contact metadata are re-sanitized and shown with unknown provenance/time, never upgraded to verified. Existing five-minute place-detail caching retains the original retrieval timestamp on cache hits.
+
+Contradictory contact-source identity disables both phone and website links, including retained legacy URLs. Place-detail responses whose provider entity does not match the requested venue are rejected and not cached; case-only UUID differences are accepted.
+
+Call handoff is a user-selected device dialer link, not an Unstressed call, completed-call event or reservation confirmation. Booking snapshots retain contact evidence, but only changed identity/destination affects the review hash; a retrieval timestamp refresh alone does not revoke approval. Newly fetched detail contacts never silently replace a stored reviewed booking destination.
+
 `POST /api/place-checks` accepts a destination-local date and one to three stops:
 
 ```json
@@ -242,7 +297,7 @@ A circle returns `{id,name,owner,people,accountIds,inviteToken?}`. Only its orga
 
 Each result contains the place and an hours assessment: `fits_reported_hours`, `outside_reported_hours`, `reported_closed` or `unknown`. The comparison covers the entire stop, split opening periods, midnight and previous-day overnight hours. Invalid or missing hours remain unknown; one provider failure does not discard other stops. Weekly schedules are provider reports, not confirmation for a specific date, holiday, kitchen service or reservation.
 
-The studio runs these checks when a Qloo plan's venues/date/times change and discards stale responses. Timing issues appear in the day view. `show_ui` also accepts `panel:"checks"` for conversational requests about hours, menus, routes or reservations. Clicking a place opens its detail dialog, source-backed information, participant connections and an editable enquiry. Enquiries are copied by the user, never sent automatically. Travel modes create Maps directions links; no routing estimate is inserted into the plan. Prices remain relative provider bands and user allowances, not verified menu totals. Check confirmations are session-local and never represent agent-made bookings.
+The studio runs these checks when a Qloo plan's venues/date/times change and discards stale responses. Timing issues appear in the day view. `show_ui` accepts `panel:"checks"` for hours and menus, `panel:"routes"` for travel estimates/navigation, and `panel:"bookings"` for reservation preparation and private tracking. Clicking a place opens its detail dialog, source-backed information, participant connections and an editable enquiry. Enquiries are copied by the user, never sent automatically. Travel modes create Maps directions links; no routing estimate is inserted into the plan. Prices remain relative provider bands and user allowances, not verified menu totals. Per-stop booking outcomes are explicitly user-reported and never represent agent-made or provider-verified bookings. Private booking records use the separate owner-scoped endpoints below; they are not part of the plan or model context.
 
 ## Autopilot and private connections
 
@@ -251,3 +306,31 @@ The studio runs these checks when a Qloo plan's venues/date/times change and dis
 For signed-in sessions, the server replaces supplied contacts and circles with accepted circle memberships from the account store. Unknown people open `invite_person`; `add_saved_person` references a current connection by ID. Neither endpoint searches public accounts by name or email. Guests retain name-only `add_person` behavior.
 
 `POST /api/days/:id/autopilot` takes `{request, revision}` with the day owner bearer credential. It atomically applies the composed brief, preserves existing personal links, rejects dropped members or stale revisions, and rebuilds once. It cannot change account profiles, invite contacts externally or book a venue.
+
+
+## Private per-stop booking preparation
+
+These endpoints store reviewed preparation and the owner's own report. They never contact a provider, submit a reservation, look up availability, collect a payment or verify a confirmation. Capability flags remain `bookingSubmission:false` and `confirmedBookings:false`.
+
+Use one of these owner-scoped bases:
+
+- `/api/account/plans/:planId/bookings`: valid account session, and that account must own the saved plan. Circle membership grants no booking access.
+- `/api/days/:dayId/bookings`: shared-day owner Bearer token only. Participant/invitation tokens grant no booking access. Existing seven-day expiry applies.
+
+Unknown/inaccessible scopes and records return the same 404 booking error. Mutations require the exact app Origin and JSON content type. All responses are `Cache-Control: no-store`. The existing 50 KB body limit applies; reads share a 60-request bucket and mutations a 30-request bucket per IP, HTTP method and minute across both account/day routes. Case, trailing-slash and record-ID variants do not create new buckets.
+
+- `GET <base>` → `{planRevision,bookings}`.
+- `POST <base>` accepts `{planRevision,idempotencyKey,stopId,itemId,entityId,kind,notes?}`. `kind` is `enquiry` or `reservation`; `notes` is the exact editable enquiry text, at most 2,000 characters, preserving ordinary whitespace.
+- `PATCH <base>/:bookingId` accepts `{planRevision,bookingVersion,idempotencyKey,kind?,notes?}`. Re-review changes before another handoff.
+- `POST <base>/:bookingId/handoff` accepts `{planRevision,bookingVersion,idempotencyKey,channel,reviewed:true}`. `channel` is `copy`, `website` or `phone`; website/phone must have evidence on the stored venue. Approval covers only this user-completed contact step, never future automatic sending.
+- `POST <base>/:bookingId/report` accepts `{planRevision,bookingVersion,idempotencyKey,outcome,reference?}`. `outcome` is `awaiting_reply`, `confirmed`, `unavailable` or `cancelled`. Optional reference is private, at most 160 characters. Reporting cancellation does not contact the provider or cancel anything.
+
+Mutations return `{planRevision,booking}`. Clients must use the current plan revision and booking version, and must not send venue facts, ownership, execution permission, payment data or provider URLs. The server derives the exact selected occurrence and ordered stop identities from its stored plan; repeated visits are not identified solely by venue ID. A reservation requires confirmed date/time, a real future instant, valid venue time zone and the existing party limits. Nonexistent/ambiguous DST times are rejected; an undated general enquiry remains allowed.
+
+Records contain the reviewed visit snapshot, editable message, version, timestamps, current state, handoff evidence and optional user-reported outcome. Each report preserves its own immutable original snapshot/message/version. Re-review sets the current record back to draft and marks prior reports as historical; up to 50 earlier reports remain available per record. Owners may update their own report of an old booking without applying it to the current stop or contacting the venue. All have `verifiedByService:false`, `submission:{status:"not_submitted",provider:null}` and `payment:{status:"not_requested"}`. A ready handoff is not a sent request. No card information or authentication material belongs in these records.
+
+Idempotency is confined to the owning plan/day. The same key and exact operation/payload returns the same result while its record version remains current; changed reuse or replay after a subsequent record change returns 409 rather than restoring old approval. Each plan/day permits at most 50 records and 500 recorded mutation requests. Writes share the existing atomic store transaction with itinerary updates. There is no provider call inside these transactions.
+
+Changing venue, stop order, timing, party or sourced contact invalidates review. Removed/replaced records remain history rather than transferring confirmation to a new stop. Undo does not restore invalidated approval. Plan deletion removes its private tracking but does not cancel an external reservation. Copying/forking a shared plan does not copy booking authority, messages or references. No booking records are included in normal plan responses, daybooks, calendar exports, Circle views or model context.
+
+See [the execution roadmap](docs/OUTING-ACTIONS.md) for the distinct future adapter, customer mandate, reply correlation, reconciliation and payment requirements.

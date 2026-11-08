@@ -283,3 +283,98 @@ test('repeated stops: keep one, replace the other, undo and edit details retain 
   const snapshots=Object.keys(localStorage).filter(key=>key.includes('saved')).flatMap(key=>{try{return JSON.parse(localStorage.getItem(key));}catch{return [];}});
   assert.ok(snapshots.some(entry=>entry.plan?.request.stopIntents?.length===2));
 });
+
+// Synthetic route fixtures never make live provider calls.
+async function installRouteFixture({sharedRole}={}) {
+  const {syntheticRoutePlan,syntheticRouteResult,syntheticCapabilities}=await import('./fixtures/route-plan.js');
+  if(!sharedRole)account(london);
+  state.savedPlan=syntheticRoutePlan();
+  if(sharedRole){
+    state.shared={id:'synthetic-shared',revision:1,planRevision:1,status:'ready',access:{role:sharedRole,memberId:'synthetic-person'},request:state.savedPlan.request,plan:state.savedPlan,events:[]};
+    history.replaceState(null,'','/#/day/synthetic-shared?key=synthetic-only');
+  }else history.replaceState(null,'','/#/plan/saved-day');
+  const base=globalThis.fetch,pending=[];
+  globalThis.fetch=async(input,options={})=>{
+    const path=new URL(input,location.origin).pathname;
+    if(path==='/api/actions/capabilities')return new Response(JSON.stringify(syntheticCapabilities));
+    if(path==='/api/actions/routes/estimate'){
+      const body=JSON.parse(options.body);let resolve;const promise=new Promise(done=>resolve=done);pending.push({body,resolve,signal:options.signal});await promise;
+      return new Response(JSON.stringify(syntheticRouteResult(body)));
+    }
+    return base(input,options);
+  };
+  return pending;
+}
+async function openRouteFixture(){
+  await click('Getting ready');await click('Drive');await input('.pg-estimate-form input','Synthetic start, Accra');await click('Estimate this journey');
+}
+
+test('route integration: repeated venue details select the exact slot, not the first matching entity',async()=>{
+  const pending=await installRouteFixture();await mount();
+  await act(async()=>document.querySelector('[data-stop-id="second-drinks"] .outing-place-name').click());await click('Getting there');
+  assert.equal(document.querySelector('select[aria-label="Place to review"]').value,'second-drinks');
+  assert.equal(document.querySelector('.pg-route-guide select').value,'second-drinks');
+  await click('Drive');await click('Estimate this journey');
+  assert.equal(pending[0].body.origin.id,'first-drinks');assert.equal(pending[0].body.stops[0].id,'second-drinks');
+  await act(async()=>pending[0].resolve());assert.ok(document.querySelector('.pg-route-estimate'));
+  await act(async()=>{const picker=document.querySelector('select[aria-label="Place to review"]');picker.value='first-drinks';picker.dispatchEvent(new Event('change',{bubbles:true}));});
+  assert.equal(document.querySelector('.pg-route-guide select').value,'first-drinks');assert.ok(document.querySelector('.pg-estimate-form input'));assert.equal(document.querySelector('.pg-route-estimate'),null);
+});
+for(const transition of ['Back to chat','New day','account switch','sign out','date edit'])test(`route integration: ${transition} rejects pending evidence without changing its selected venues`,async()=>{
+  const pending=await installRouteFixture();await mount();await openRouteFixture();assert.equal(pending.length,1);
+  if(transition==='account switch'||transition==='sign out'){
+    state.user=transition==='sign out'?null:{...state.user,id:'another-account',profile:{...profile,id:'another-account'}};
+    await act(async()=>window.dispatchEvent(new Event('focus')));
+  }else if(transition==='date edit'){
+    await click('Places');await click('Details');await input('.pl-trip-dialog input[type="date"]','2027-02-12');
+  }else await click(transition);
+  assert.equal(pending[0].signal.aborted,true);await act(async()=>pending[0].resolve());assert.equal(document.querySelector('.pg-route-estimate'),null);
+  if(transition==='Back to chat'){
+    await click('Your day');assert.equal(document.querySelector('.pg-estimate-form input').value,'');assert.equal(document.querySelector('.pg-route-estimate'),null);
+  }
+  assert.deepEqual(state.savedPlan.stops.map(stop=>stop.id),['first-drinks','second-drinks']);assert.equal(state.savedPlan.request.pins['first-drinks'],'catalog-item');
+});
+test('route integration: a guest can explicitly estimate a shared day; shared revision cancels evidence',async()=>{
+  const pending=await installRouteFixture({sharedRole:'member'});await mount();await click('Your day');await openRouteFixture();
+  assert.equal(pending.length,1);
+  state.shared={...state.shared,revision:2,planRevision:1,status:'updating',request:{...state.shared.request,date:'2027-02-13'}};
+  await act(async()=>document.dispatchEvent(new Event('visibilitychange')));
+  assert.equal(pending[0].signal.aborted,true);await act(async()=>pending[0].resolve());assert.equal(document.querySelector('.pg-route-estimate'),null);
+});
+test('route integration: a restored local saved day starts with no previous estimate or origin',async()=>{
+  const pending=await installRouteFixture();await mount();await openRouteFixture();await act(async()=>pending[0].resolve());assert.ok(document.querySelector('.pg-route-estimate'));
+  await click('Places');await click('Save');await click('New day');await click('Saved days');
+  const saved=[...document.querySelectorAll('.pl-saved-item>button')].find(node=>node.textContent.includes('Synthetic two-stop outing'));assert.ok(saved);await act(async()=>saved.click());
+  await click('Getting ready');assert.equal(document.querySelector('.pg-estimate-form input').value,'');assert.equal(document.querySelector('.pg-route-estimate'),null);
+  const serialized=Object.keys(localStorage).map(key=>localStorage.getItem(key)).join('');assert.doesNotMatch(serialized,/Synthetic start, Accra|durationSeconds|distanceMeters/);
+});
+
+for(const previewChange of ['empty slot','new venue entity','new catalog item','updated timing'])test(`route integration: streamed ${previewChange} cannot crash or retain another venue’s modal state`,async()=>{
+  const pending=await installRouteFixture();
+  const base=globalThis.fetch;let stream;
+  globalThis.fetch=async(input,options={})=>{
+    if(new URL(input,location.origin).pathname==='/api/itineraries')return new Response(new ReadableStream({start(controller){stream=controller;}}),{headers:{'content-type':'application/x-ndjson'}});
+    return base(input,options);
+  };
+  await mount();
+  // Start replacing this slot, then inspect its existing result while the search streams.
+  await act(async()=>[...document.querySelector('[data-stop-id="second-drinks"]').querySelectorAll('button')].find(node=>node.textContent==='Find another').click());
+  assert.ok(stream);
+  await act(async()=>document.querySelector('[data-stop-id="second-drinks"] .outing-place-name').click());await click('Getting there');await click('Drive');await click('Estimate this journey');assert.equal(pending.length,1);
+  const preview=structuredClone(state.savedPlan);
+  if(previewChange==='empty slot')preview.stops[1].item=null;
+  else if(previewChange==='new venue entity')preview.stops[1].item={...preview.stops[1].item,entityId:'different-entity',name:'Other synthetic venue'};
+  else if(previewChange==='new catalog item')preview.stops[1].item={...preview.stops[1].item,id:'different-item',name:'Other synthetic item'};
+  else {preview.stops[1].start='20:30';preview.stops[1].end='21:30';}
+  const emit=event=>stream.enqueue(new TextEncoder().encode(JSON.stringify(event)+'\n'));
+  await act(async()=>emit({type:'discovery',plan:preview}));
+  assert.equal(pending[0].signal.aborted,true);await act(async()=>pending[0].resolve());assert.equal(document.querySelector('.pg-route-estimate'),null);
+  if(previewChange==='updated timing'){
+    assert.ok(document.querySelector('.pg-dialog'));await click('Booking');assert.match(document.querySelector('.pg-enquiry textarea').value,/20:30/);
+  }else {
+    assert.equal(document.querySelector('.pg-dialog'),null);
+    // Restoring the original slot in another preview must not reopen a dismissed modal.
+    await act(async()=>emit({type:'discovery',plan:state.savedPlan}));assert.equal(document.querySelector('.pg-dialog'),null);
+  }
+  await act(async()=>{emit({type:'complete',plan:state.savedPlan});stream.close();});
+});

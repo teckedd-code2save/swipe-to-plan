@@ -1,6 +1,8 @@
+import VenueContact from './VenueContact.jsx';
 import {useQueryClient} from '@tanstack/react-query';
 import VenueMenuEvidence from './VenueMenuEvidence.jsx';
 import RouteGuide from './RouteGuide.jsx';
+import BookingAction from './BookingAction.jsx';
 import {useEffect,useRef,useState} from 'react';
 import {api} from './api.js';
 import {ACTIVITY_NAMES,Icon,PERSON_COLORS,dateLabel} from './PlannerIcons.jsx';
@@ -27,9 +29,9 @@ const hourTone = status => status==='fits_reported_hours'?'found':['outside_repo
 const hourLabel = status => ({fits_reported_hours:'Fits reported hours',outside_reported_hours:'Timing needs a look',reported_closed:'Reported closed'})[status] || 'Hours to confirm';
 const periods = rows => rows === null || rows === undefined ? 'Not listed' : rows.length ? rows.map(row=>`${row.opens}–${row.closes}${row.overnight?' (+1 day)':''}`).join(' · ') : 'Closed';
 function VenueLinks({place}) {
-  return <div className="pg-links">{place.links?.website&&<a href={place.links.website} target="_blank" rel="noreferrer">Venue website <Icon name="arrowUpRight" size={14}/></a>}{place.links?.menu&&<a href={place.links.menu} target="_blank" rel="noreferrer">Menu <Icon name="arrowUpRight" size={14}/></a>}{place.links?.phone&&<a href={place.links.phone}>Call venue <Icon name="arrowUpRight" size={14}/></a>}{place.links?.map&&<a href={place.links.map} target="_blank" rel="noreferrer">Google Maps <Icon name="arrowUpRight" size={14}/></a>}</div>;
+  return <div className="pg-links">{place.links?.website&&<a href={place.links.website} target="_blank" rel="noreferrer">Venue website <Icon name="arrowUpRight" size={14}/></a>}{place.links?.menu&&<a href={place.links.menu} target="_blank" rel="noreferrer">Menu <Icon name="arrowUpRight" size={14}/></a>}{place.links?.map&&<a href={place.links.map} target="_blank" rel="noreferrer">Google Maps <Icon name="arrowUpRight" size={14}/></a>}</div>;
 }
-export function BeforeGoing({plan,checks,done,setDone,onDetails,onTiming}) {
+export function BeforeGoing({plan,checks,onDetails,onTiming,routeScope}) {
   const filled=plan.stops.filter(s=>s.item), reports=checks.data?.stops||[];
   const fits=reports.filter(s=>s.hours?.status==='fits_reported_hours').length;
   const flags=reports.filter(s=>hourTone(s.hours?.status)==='attention').length;
@@ -41,8 +43,8 @@ export function BeforeGoing({plan,checks,done,setDone,onDetails,onTiming}) {
     {checks.error&&<p className="pg-note" role="alert">{checks.error}</p>}
     <div className="pg-check-places">{filled.map(stop=>{const report=checkedStop(checks,stop);return <button className="pg-check-place" key={stop.id} onClick={()=>onDetails(stop)}><span className="pg-check-time">{stop.start}</span><span><strong>{stop.item.name}</strong><span className={`pg-badge ${hourTone(report?.hours?.status)}`}>{checks.status==='loading'?'Checking hours…':hourLabel(report?.hours?.status)}</span><small>{report?.error||report?.hours?.summary||'Open the place to see its details.'}</small></span><Icon name="arrow" size={18}/></button>;})}</div>
     <p className="pg-note">Weekly hours are a useful first check. Special dates, kitchen hours and availability still need the venue’s confirmation.</p>
-    <RouteGuide plan={plan} checks={checks} onTiming={onTiming}/>
-    <div className="pg-human"><h3>The final human touch</h3><p>Each place has an editable enquiry ready for you—your chosen visit details included. Open a place to copy it or call the venue.</p><label><input type="checkbox" checked={!!done.book} onChange={e=>setDone(d=>({...d,book:e.target.checked}))}/><span>I’ve confirmed bookings, prices and any specific needs with the venues.</span></label><small>This is your confirmation. Unstressed hasn’t contacted or booked a venue.</small></div>
+    <RouteGuide routeScope={routeScope} plan={plan} checks={checks} onTiming={onTiming}/>
+    <div className="pg-human"><h3>Bookings, one stop at a time</h3><p>Open each place to review an enquiry and privately track what you hear back. Hours and prices are separate checks, not booking evidence.</p>{filled.map(stop=><button key={stop.id} onClick={()=>onDetails(stop,'booking')}>Prepare booking · {stop.start||'Time to choose'} · {stop.item.name}</button>)}</div>
   </section>;
 }
 export function PlaceCheckNotice({checks,onOpen}) {
@@ -50,32 +52,28 @@ export function PlaceCheckNotice({checks,onOpen}) {
   if(!issues)return null;
   return <button className="pg-plan-alert" onClick={onOpen}><Icon name="clock" size={17}/><span>{issues===1?'One stop needs a timing check.':`${issues} stops need a timing check.`}<small>I found a mismatch with reported opening hours.</small></span><Icon name="arrow" size={17}/></button>;
 }
-function enquiry(plan,stop) {
-  if(!stop.start||!stop.end)return `Hello ${stop.item.name},\n\nWe’re considering a visit. Could you share your current menu, prices, opening hours and reservation process?\n\nThank you!`;
-  return `Hello ${stop.item.name},\n\nWe’re planning to visit on ${dateLabel(plan.request.date)} ${plan.request.date.slice(0,4)}, around ${stop.start}–${stop.end}, with ${plan.request.party.adults} adult${plan.request.party.adults===1?'':'s'}${plan.request.party.children?` and ${plan.request.party.children} ${plan.request.party.children===1?'child':'children'}`:''}.\n\nCould you confirm you’ll be open, whether we need a reservation, and any deposits or entry fees? Please share your current menu or prices${stop.intent==='dinner'||stop.intent==='coffee'?' and the kitchen’s serving hours':''}.\n\nWe’ll confirm any dietary, accessibility or other specific needs with you before visiting.\n\nThank you!`;
-}
-export function PlaceDetails({stop,plan,checks,onClose,onSwap,canSwap,initialView='overview',onSelect,onTiming}) {
+export function PlaceDetails({stop,plan,checks,onClose,onSwap,canSwap,initialView='overview',onSelect,onTiming,routeScope,bookingScope}) {
   const cache=useQueryClient();
   const [view,setView]=useState(initialView);
   const filled=plan.stops.filter(s=>s.item);
-  const dialog=useRef(null),[imageFailed,setImageFailed]=useState(false),[draft,setDraft]=useState(()=>enquiry(plan,stop)),[copyState,setCopyState]=useState('');
+  const dialog=useRef(null),[imageFailed,setImageFailed]=useState(false);
   const existingReport=checkedStop(checks,stop),[detail,setDetail]=useState(null);
-  useEffect(()=>{if(existingReport?.place||stop.id!=='shortlist-place')return;const abort=new AbortController();api.place(stop.item.entityId,abort.signal).then(place=>{if(!abort.signal.aborted){setDetail(place);cache.setQueryData(['venue',stop.item.entityId],place);}}).catch(()=>{});return()=>abort.abort();},[stop.item.entityId,existingReport?.place]);
-  const report=existingReport||(detail?{place:detail,hours:{status:'unknown',summary:'Choose a visit time to check reported opening hours.'},menu:{highlights:detail.highlights||[],link:detail.links?.menu||null}}:null),place=report?.place||stop.item,allowance=plan.budget.allocations.find(a=>a.stopId===stop.id||!a.stopId&&a.intent===stop.intent);
+  useEffect(()=>{if(existingReport?.place||stop.id!=='shortlist-place')return;const abort=new AbortController();api.place(stop.item.entityId,abort.signal).then(place=>{if(!abort.signal.aborted){setDetail({entityId:stop.item.entityId,place});cache.setQueryData(['venue',stop.item.entityId],place);}}).catch(()=>{});return()=>abort.abort();},[stop.item.entityId,existingReport?.place]);
+  const currentDetail=detail?.entityId===stop.item.entityId?detail.place:null;
+  const report=existingReport||(currentDetail?{place:currentDetail,hours:{status:'unknown',summary:'Choose a visit time to check reported opening hours.'},menu:{highlights:currentDetail.highlights||[],link:currentDetail.links?.menu||null}}:null),place=report?.place||stop.item,allowance=plan.budget.allocations.find(a=>a.stopId===stop.id||!a.stopId&&a.intent===stop.intent);
   useEffect(()=>{const element=dialog.current,trigger=document.activeElement;element.showModal();return()=>{element.close();if(trigger?.isConnected)trigger.focus({preventScroll:true});};},[]);
-  async function copy(){try{await navigator.clipboard.writeText(draft);setCopyState('Copied. Ready to send yourself.');}catch{setCopyState('Select and copy the enquiry below.');}}
   return <dialog className="pl-dialog pg-dialog" ref={dialog} onCancel={onClose} aria-labelledby="place-details-title">
     <div className="pg-dialog-top"><div className="pg-visit-control"><span>{ACTIVITY_NAMES[stop.intent]} · {stop.start&&stop.end?`${stop.start}–${stop.end}`:"Time to choose"}</span>{onTiming&&<button type="button" className="pg-link" onClick={onTiming}><Icon name="clock" size={15}/>{stop.start?'Review visit time':'Find a good time'}</button>}</div><button type="button" className="pl-dialog-close" aria-label="Close place details" onClick={onClose}>Close<Icon name="close" size={18}/></button></div>
-    {filled.length>1&&stop.id!=='shortlist-place'&&<label className="pg-stop-picker">Place in your day<select aria-label="Place to review" value={stop.item.entityId} onChange={e=>onSelect?.(e.target.value,view)}>{filled.map(s=><option key={s.id} value={s.item.entityId}>{s.start||'Time to choose'} · {s.item.name}</option>)}</select></label>}
-    <nav className="pg-detail-tabs" aria-label="Place details sections">{[['overview','Overview'],['practical','Hours & menu'],['route','Getting there']].map(([id,label])=><button type="button" key={id} aria-pressed={view===id} onClick={()=>setView(id)}>{label}</button>)}</nav>
+    {filled.length>1&&stop.id!=='shortlist-place'&&<label className="pg-stop-picker">Place in your day<select aria-label="Place to review" value={stop.id} onChange={e=>onSelect?.(e.target.value,view)}>{filled.map(s=><option key={s.id} value={s.id}>{s.start||'Time to choose'} · {s.item.name}</option>)}</select></label>}
+    <nav className="pg-detail-tabs" aria-label="Place details sections">{[['overview','Overview'],['practical','Hours & menu'],['route','Getting there'],['booking','Booking']].map(([id,label])=><button type="button" key={id} aria-pressed={view===id} onClick={()=>setView(id)}>{label}</button>)}</nav>
     <div className="pg-dialog-scroll" key={view}>
       {view==='overview'&&<div className={`pg-photo ${!place.image||imageFailed?'empty':''}`}>{place.image&&!imageFailed?<img src={place.image} alt={place.name} onError={()=>setImageFailed(true)}/>:<Icon name={stop.intent} size={56}/>}<span>YOUR KIND OF PLACE</span></div>}
       <div className="pg-detail-body"><div className="pg-place-heading"><h2 id="place-details-title">{place.name}</h2><p><Icon name="pin" size={16}/>{place.address}</p></div>
         {view==='overview'&&place.description&&<p className="pg-description">{place.description}</p>}
         {view==='overview'&&!!place.tagNames?.length&&<div className="pg-tags">{place.tagNames.map(tag=><span key={tag}>{tag}</span>)}</div>}
-        {view==='route'?<RouteGuide plan={stop.id==='shortlist-place'?{...plan,stops:[stop]}:plan} checks={checks} initialStopId={stop.id} onTiming={onTiming}/>:<>
+        {view==='booking'?<BookingAction scope={bookingScope} context={routeScope} plan={plan} stop={stop} place={place}/>:view==='route'?<RouteGuide routeScope={routeScope} plan={stop.id==='shortlist-place'?{...plan,stops:[stop]}:plan} checks={checks} initialStopId={stop.id} onTiming={onTiming}/>:<>
         {view==='practical'&&<VenueMenuEvidence place={place}/>}
-        <VenueLinks place={place}/>
+        <VenueLinks place={place}/><VenueContact place={place}/>
         {checks.status==='error'&&<p className="pg-note" role="alert">Details couldn’t load. <button className="pg-link" onClick={checks.refresh}>Try again</button></p>}
         {stop.item?.experienceFit&&<section className="pg-detail-section pg-experience-fit"><span className="pg-eyebrow">HOW IT FITS YOUR REQUEST</span>
           {stop.item.experienceFit.cuisine&&<p><strong>{stop.item.experienceFit.cuisine.requested} cuisine:</strong> {stop.item.experienceFit.cuisine.status==='provider_text_signal'?'Mentioned in provider text, but dishes and menu are not confirmed.':'Not verified from available venue information.'}</p>}
@@ -86,7 +84,7 @@ export function PlaceDetails({stop,plan,checks,onClose,onSwap,canSwap,initialVie
         <section className="pg-detail-section"><span className="pg-eyebrow">THE FOOD & THE SPEND</span><h3>A feel for the place.</h3>{!!place.highlights?.length&&<p>{place.highlights.join(' · ')}</p>}<div className="pg-spend"><span><strong>{formatMoney(plan.request.budget??plan.allowance?.amount,plan.request.currency)}</strong><small>{(plan.request.budget==null?'Suggested outing total':'Your outing limit')}</small></span><span><strong>{place.facts?.price?.level?['','Lower price range','Mid price range','Higher price range','Premium price range'][place.facts.price.level]:'Prices to confirm'}</strong><small>{place.facts?.price?.level?'Relative price band, not a quote':'No price band provided'}</small></span></div><p className="pg-note">{place.links?.menu?"The venue’s menu link may provide current dishes and prices; availability at your visit is unverified.":place.links?.website?'The venue website above is the best next step for its current menu and prices.':'Use the Maps or contact link to ask for current prices.'} Your allowance is not an estimate of the bill.</p></section>
         {view==='overview'&&!!stop.connections.length&&<section className="pg-detail-section"><span className="pg-eyebrow">THE PEOPLE BEHIND THIS PICK</span><h3>A few familiar threads.</h3><div className="pg-connections">{plan.people.map((person,index)=>{const edges=stop.connections.filter(e=>e.personId===person.id);return edges.length?<div key={person.id}><span className="cs-person-dot" style={{background:PERSON_COLORS[index%6]}}>{person.name[0]}</span><div><strong>{person.name}</strong>{edges.map(edge=><p key={edge.id}><b>{plan.tasteMap.nodes.find(n=>n.id===edge.from)?.label}</b><span>{edge.kind==='search_signal'?'Used to discover this place; not a confirmed individual match.':edge.label}</span></p>)}</div></div>:null;})}</div></section>}
         {view==='overview'&&!!place.practicalTags?.length&&<section className="pg-detail-section"><h3>Reported features</h3><div className="pg-tags">{place.practicalTags.map((tag,i)=><span key={`${tag}-${i}`}>{tag}</span>)}</div><p className="pg-note">Provider descriptions don’t establish suitability. Ask the venue about your specific dietary or access needs.</p></section>}
-        <details className="pg-enquiry"><summary><span><Icon name="edit" size={19}/><strong>Your enquiry, already drafted.</strong></span><Icon name="plus" size={18}/></summary><p>Edit anything you’d like to ask, then copy it or call the venue. Nothing is sent automatically.</p><label htmlFor="venue-enquiry">Message to {place.name}</label><textarea id="venue-enquiry" value={draft} onChange={e=>{setDraft(e.target.value);setCopyState('');}} rows={10}/><div><button className="pl-button" onClick={copy}><Icon name="copy" size={15}/>Copy enquiry</button>{place.links?.phone&&<a className="pl-secondary-button" href={place.links.phone}>Call venue</a>}</div><p role="status">{copyState}</p></details>
+        <button className="pl-button" onClick={()=>setView('booking')}>Prepare enquiry & track booking</button>
         {report?.place&&<details className="pg-source"><summary>Sources & freshness</summary><p>Place details supplied by Qloo. Retrieved {new Date(place.provenance.retrievedAt).toLocaleString()}. Its last update time is unknown; holidays and private events may differ.</p></details>}
         </>}
       </div>

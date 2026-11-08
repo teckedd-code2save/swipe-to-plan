@@ -25,3 +25,10 @@ The selection/evidence fixtures use future dates so that running the suite after
 The Autopilot switch sits beside Send as a compass-and-spark control, with a visible active treatment and an accessible label and tooltip. Its existing on/off explanation stays in the conversation, including on mobile.
 
 Browser checks also exposed coffee offerings incorrectly qualifying a fast-food restaurant for a café stop. Coffee stops now require an actual café, coffee shop or tea-room category; serving coffee alone is insufficient.
+
+
+## Booking preparation inside the conversation
+
+A reservation, venue-contact or booking-tracking request opens `show_ui bookings` for the exact selected stop, without changing the itinerary. Show supplied facts and prepared text before the contact step. Ask for missing timing only when it is required for a reservation; an undated general enquiry is still useful. Do not ask the same questions again in prose when the card already handles them.
+
+This release can save preparation and user-reported outcomes, but cannot send venue messages, submit bookings, charge the customer or independently verify a confirmation. Never turn a copied enquiry, opened website, call link, reported outcome or payment into a provider-confirmed booking claim. Private messages and references are not included in the model context. The intended next step is customer-approved execution through supported providers and channels, not permanent manual handoff; see `OUTING-ACTIONS.md`.
