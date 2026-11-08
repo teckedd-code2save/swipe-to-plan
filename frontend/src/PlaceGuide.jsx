@@ -1,3 +1,4 @@
+import {checkedVisit} from './decision-evidence.js';
 import VenueContact from './VenueContact.jsx';
 import {useQueryClient} from '@tanstack/react-query';
 import VenueMenuEvidence from './VenueMenuEvidence.jsx';
@@ -24,7 +25,6 @@ export function usePlaceChecks(plan) {
   },[payload,revision]);
   return {...(state.key===payload?state:{status:payload?'loading':'idle'}),refresh:()=>setRevision(v=>v+1)};
 }
-const checkedStop = (checks,stop) => checks.data?.stops.find(s=>s.entityId===stop.item?.entityId&&s.start===stop.start&&s.end===stop.end);
 const hourTone = status => status==='fits_reported_hours'?'found':['outside_reported_hours','reported_closed'].includes(status)?'attention':'unknown';
 const hourLabel = status => ({fits_reported_hours:'Fits reported hours',outside_reported_hours:'Timing needs a look',reported_closed:'Reported closed'})[status] || 'Hours to confirm';
 const periods = rows => rows === null || rows === undefined ? 'Not listed' : rows.length ? rows.map(row=>`${row.opens}–${row.closes}${row.overnight?' (+1 day)':''}`).join(' · ') : 'Closed';
@@ -41,7 +41,7 @@ export function BeforeGoing({plan,checks,onDetails,onTiming,routeScope,savedArea
     <div className="pg-intro"><span className="pg-eyebrow">A LITTLE LESS HOMEWORK</span><h2>Let’s get you ready.</h2><p>Open a place for its reported hours, available menu links and contact details. Check each leg of your journey below.</p></div>
     <div className={`pg-progress ${flags?'attention':''}`} role="status"><Icon name={checks.status==='loading'?'clock':flags||unknown?'info':'check'} size={18}/><span>{checks.status==='loading'?'Checking your places…':checks.status==='error'?'The place check needs another try.':summary}</span><button onClick={checks.refresh} disabled={checks.status==='loading'}>Refresh</button></div>
     {checks.error&&<p className="pg-note" role="alert">{checks.error}</p>}
-    <div className="pg-check-places">{filled.map(stop=>{const report=checkedStop(checks,stop);return <button className="pg-check-place" key={stop.id} onClick={()=>onDetails(stop)}><span className="pg-check-time">{stop.start}</span><span><strong>{stop.item.name}</strong><span className={`pg-badge ${hourTone(report?.hours?.status)}`}>{checks.status==='loading'?'Checking hours…':hourLabel(report?.hours?.status)}</span><small>{report?.error||report?.hours?.summary||'Open the place to see its details.'}</small></span><Icon name="arrow" size={18}/></button>;})}</div>
+    <div className="pg-check-places">{filled.map(stop=>{const report=checkedVisit(checks,stop);return <button className="pg-check-place" key={stop.id} onClick={()=>onDetails(stop)}><span className="pg-check-time">{stop.start}</span><span><strong>{stop.item.name}</strong><span className={`pg-badge ${hourTone(report?.hours?.status)}`}>{checks.status==='loading'?'Checking hours…':hourLabel(report?.hours?.status)}</span><small>{report?.error||report?.hours?.summary||'Open the place to see its details.'}</small></span><Icon name="arrow" size={18}/></button>;})}</div>
     <p className="pg-note">Weekly hours are a useful first check. Special dates, kitchen hours and availability still need the venue’s confirmation.</p>
     <RouteGuide onSaveArea={onSaveArea} signedIn={signedIn} savedAreas={savedAreas} routeScope={routeScope} plan={plan} checks={checks} onTiming={onTiming}/>
     <div className="pg-human"><h3>Bookings, one stop at a time</h3><p>Open each place to review an enquiry and privately track what you hear back. Hours and prices are separate checks, not booking evidence.</p>{filled.map(stop=><button key={stop.id} onClick={()=>onDetails(stop,'booking')}>Prepare booking · {stop.start||'Time to choose'} · {stop.item.name}</button>)}</div>
@@ -57,7 +57,7 @@ export function PlaceDetails({stop,plan,checks,onClose,onSwap,canSwap,initialVie
   const [view,setView]=useState(initialView);
   const filled=plan.stops.filter(s=>s.item);
   const dialog=useRef(null),[imageFailed,setImageFailed]=useState(false);
-  const existingReport=checkedStop(checks,stop),[detail,setDetail]=useState(null);
+  const existingReport=checkedVisit(checks,stop),[detail,setDetail]=useState(null);
   useEffect(()=>{if(existingReport?.place||stop.id!=='shortlist-place')return;const abort=new AbortController();api.place(stop.item.entityId,abort.signal).then(place=>{if(!abort.signal.aborted){setDetail({entityId:stop.item.entityId,place});cache.setQueryData(['venue',stop.item.entityId],place);}}).catch(()=>{});return()=>abort.abort();},[stop.item.entityId,existingReport?.place]);
   const currentDetail=detail?.entityId===stop.item.entityId?detail.place:null;
   const report=existingReport||(currentDetail?{place:currentDetail,hours:{status:'unknown',summary:'Choose a visit time to check reported opening hours.'},menu:{highlights:currentDetail.highlights||[],link:currentDetail.links?.menu||null}}:null),place=report?.place||stop.item,allowance=plan.budget.allocations.find(a=>a.stopId===stop.id||!a.stopId&&a.intent===stop.intent);

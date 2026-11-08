@@ -1,4 +1,5 @@
 import {checkHours} from './place-guide.js';
+import {pinnedPlace} from '../../shared/stop-intents.js';
 
 export const minutes = value => Number(value.slice(0,2))*60+Number(value.slice(3));
 export const clockTime = value => `${String(Math.floor(value/60)).padStart(2,'0')}:${String(value%60).padStart(2,'0')}`;
@@ -9,14 +10,14 @@ export function localNow(timeZone, now=Date.now()) {
   return {date:`${get('year')}-${get('month')}-${get('day')}`,minutes:Number(get('hour'))*60+Number(get('minute'))};
 }
 
-// Pick useful distinct places before dates or times are chosen. No opening-hour
-// promise and no placeholder timetable is attached to a discovery result.
-export function discoverPlaces(pools,schedule){
+// Pick distinct places by default; only explicit occurrence selections can repeat.
+// No opening-hour promise or placeholder timetable is attached to discovery.
+export function discoverPlaces(pools,schedule,request={}){
   let best=null;
   function visit(index,used,stops,score){
     if(index===schedule.length){if(!best||score>best.score)best={stops,score};return;}
     const base={...schedule[index],start:null,end:null,bufferAfterMinutes:0};
-    for(const [rank,item]of pools[index].entries())if(!used.has(item.id)){const next=new Set(used);next.add(item.id);visit(index+1,next,[...stops,{...base,item}],score+10000-rank);}
+    for(const [rank,item]of pools[index].entries())if(!used.has(item.id)||pinnedPlace(request,index)===item.id){const next=new Set(used);next.add(item.id);visit(index+1,next,[...stops,{...base,item}],score+10000-rank);}
     visit(index+1,used,[...stops,{...base,item:null,reason:pools[index].length?'no_distinct_place':'no_eligible_places'}],score);
   }
   visit(0,new Set(),[],0);return {stops:best.stops,notes:[]};
@@ -59,7 +60,7 @@ export async function schedulePlaces(pools, schedule, request, {details, timeZon
     if(index===schedule.length){if(!best||score>best.score)best={stops,score};return;}
     const base=schedule[index];
     for(const [rank,item] of pools[index].entries()){
-      if(used.has(item.id))continue;
+      if(used.has(item.id)&&pinnedPlace(request,index)!==item.id)continue;
       const slot=slotFor(item,base,cursor,index);if(!slot)continue;
       const next=new Set(used);next.add(item.id);
       visit(index+1,minutes(slot.end)+base.bufferAfterMinutes,next,[...stops,slot],score+10000+(slot.hours.status==='fits_reported_hours'?1000:0)-rank*10-(minutes(slot.start)-cursor)/10);

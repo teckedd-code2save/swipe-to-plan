@@ -73,14 +73,12 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
   if(body.route!==undefined){
     if(!Array.isArray(body.route)||!body.route.length||body.route.length>3)throw new InputError('Choose one to three places for this outing.');
     route=body.route.map(stop=>{object(stop,['intent','placeId'],'route stop');if(!activities.includes(stop.intent))throw new InputError('Route stops must use the selected outing categories.');return {intent:stop.intent,placeId:text(stop.placeId,160,'a selected place')};});
-    if(new Set(route.map(s=>s.placeId)).size!==route.length)throw new InputError('Choose different places for each stop.');
   }
   if(route&&body.stopIntents&&JSON.stringify(route.map(s=>s.intent))!==JSON.stringify(body.stopIntents))throw new InputError('The selected route must match the requested stop sequence.');
   const intents=stopIntents(body);
   const pins = object(body.pins ?? {}, [...activities,...intents.map((_,i)=>`stop-${i}`)], 'kept stops');
   if(intents.some((intent,i)=>intents.indexOf(intent)===i&&body.pins?.[intent]&&body.pins?.[`stop-${i}`]))throw new InputError('Keep only one place per stop.');
   Object.values(pins).forEach((id) => text(id,160,'a kept place ID'));
-  if (new Set(Object.values(pins)).size !== Object.values(pins).length) throw new InputError('Keep a different place for each stop.');
   const constraints = parseRequest({ constraints: { excludeIds: body.excludeIds ?? [], ...(body.maxPriceLevel !== undefined ? { maxPriceLevel: body.maxPriceLevel } : {}) } }).constraints;
   const experienceInput=body.experience===undefined?null:object(body.experience,['cuisine','atmosphere','occasion','notes','explore','searchTags'],'experience');
   const experience=experienceInput?Object.fromEntries(Object.entries(experienceInput).map(([key,value])=>[key,key==='searchTags'?(Array.isArray(value)&&value.length<=8&&value.every(id=>byId[id]?.kind==='vibe')?[...new Set(value)]:(()=>{throw new InputError('Choose supported outing search topics.');})()):key==='explore'?(typeof value==='boolean'?value:(()=>{throw new InputError('Choose a valid exploration mode.');})()):text(value,key==='notes'?220:80,key)])):{};
@@ -211,7 +209,7 @@ export async function buildItinerary(discovery, request, {deferNearby=false}={})
   const makePools=(limit)=>ranked.map((items,index) => desired(index) ? items.filter((item) => item.id===desired(index)) : items.filter((item) => !reserved.has(item.id)).slice(0,limit));
   const pools=makePools(8);
   const timeZone=members[0][0].provenance.locality?.timeZone||(['Accra','Osu','East Legon','Cantonments','Labone','Airport Residential'].includes(request.area)?'Africa/Accra':null);
-  const fit=p=>exploring?Promise.resolve(discoverPlaces(p,schedule)):schedulePlaces(p,schedule,planningRequest,{details:discovery.placeDetails,timeZone,now:discovery.now?.()});
+  const fit=p=>exploring?Promise.resolve(discoverPlaces(p,schedule,planningRequest)):schedulePlaces(p,schedule,planningRequest,{details:discovery.placeDetails,timeZone,now:discovery.now?.()});
   let fitted=await fit(pools);
   // Expand only when an initial shortlist cannot fill the outing. Preserve hard
   // constraints, pinned venues, and the previous result if the retry is no better.
@@ -223,7 +221,7 @@ export async function buildItinerary(discovery, request, {deferNearby=false}={})
   // requested date/window intact, and show matching places as unscheduled.
   let needsTiming=false;
   if(!exploring&&fitted.stops.some(s=>!s.item&&['time_in_past','no_open_place'].includes(s.reason))){
-    const fallback=discoverPlaces(pools.map((pool,i)=>fitted.stops[i].item?[fitted.stops[i].item]:pool),schedule);
+    const fallback=discoverPlaces(pools.map((pool,i)=>fitted.stops[i].item?[fitted.stops[i].item]:pool),schedule,planningRequest);
     fitted={...fitted,stops:fitted.stops.map((stop,i)=>{if(stop.item||!fallback.stops[i].item)return stop;needsTiming=true;return {...stop,item:fallback.stops[i].item,start:null,end:null,bufferAfterMinutes:0,timeStatus:'needs_time'};})};
   }
   const selected=fitted.stops.map(s=>s.item);
@@ -261,7 +259,7 @@ export async function buildItinerary(discovery, request, {deferNearby=false}={})
     provenance:{provider,retrievedAt:members[0][0].provenance.retrievedAt,...(members[0][0].provenance.locality?{locality:members[0][0].provenance.locality}:{})},
     timeZone,timingNotes:fitted.notes,
     links:{directions:provider!=='demo'&&filled.length>=1?directions.href:null},
-    checks:[{label:'Distinct stops',status:'passed'},{label:'Time window',status:exploring?'not_set':needsTiming?'needs_review':'passed'},{label:'Budget allocated',status:request.budget==null?'not_set':'passed'},{label:'Opening hours',status:filled.length&&filled.every(s=>s.hours?.status==='fits_reported_hours')?'checked':'unverified'},{label:'Travel time',status:'unverified'},...(request.party.children?[{label:'Child suitability',status:'unverified'}]:[])],
+    checks:[{label:new Set(filled.map(s=>s.item.id)).size<filled.length?'Requested repeat visits':'Distinct stops',status:'passed'},{label:'Time window',status:exploring?'not_set':needsTiming?'needs_review':'passed'},{label:'Budget allocated',status:request.budget==null?'not_set':'passed'},{label:'Opening hours',status:filled.length&&filled.every(s=>s.hours?.status==='fits_reported_hours')?'checked':'unverified'},{label:'Travel time',status:'unverified'},...(request.party.children?[{label:'Child suitability',status:'unverified'}]:[])],
     activity:[{label:'Preferences resolved',detail:`${members.reduce((sum,r)=>sum+r[0].taste.resolved.length,0)} artist signals across ${members.length} taste profile${members.length===1?'':'s'}`},{label:'Qloo places considered',detail:`${members.reduce((sum,r)=>sum+r[0].fetched,0)} candidate appearances before activity and area checks`},{label:'A day assembled',detail:`${filled.length} of ${stops.length} stops filled; no filters widened`},{label:'Budget and time checked',detail:request.budget==null?'Suggested time slots calculated; no budget specified':'Spending allowances and suggested time slots calculated'}],
     warnings:[...fitted.notes,...(provider==='demo'?['Sample plan with synthetic places.']:[]),...(unresolved.length?[`Unresolved artists: ${unresolved.map((entry)=>`${entry.requested} (${entry.person})`).join(', ')}.`]:[]),...(members.some(results=>results.some(result=>result.taste.signalsUnavailable))?['Some taste signals were unavailable during this search.']:[]),...(filled.length<stops.length?['Some stops could not be filled without changing your preferences.']:[]),
       ...(request.experience?.cuisine&&request.activities.includes('dinner')&&!stops.some(stop=>stop.intent==='dinner'&&stop.item?.experienceFit?.cuisine?.status==='provider_text_signal')?[`I couldn't verify ${request.experience.cuisine} cuisine among the available places. The current alternatives may not meet that request.`]:[]),'Suggested times do not verify opening hours. Travel buffers are not route estimates.','Budget figures are allowances, not venue quotes. Confirm prices and availability before going.',...(request.party.children?['Check child suitability directly with the venues.']:[])],

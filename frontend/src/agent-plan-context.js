@@ -1,4 +1,4 @@
-import {decisionStops} from './decision-evidence.js';
+import {decisionStops,checkedVisit} from './decision-evidence.js';
 
 // Keep the evidence valid JSON even for long opening-hours or menu data.
 function practicalEvidence(stop,place,report,picks,menu,request){
@@ -27,10 +27,12 @@ function practicalEvidence(stop,place,report,picks,menu,request){
 export function agentPlanContext(plan,checks={},picks=[],venues=new Map(),menus=new Map(),optionIds) {
   if(!plan)return undefined;
   const allowed=optionIds?new Set(optionIds):null;
-  const options=decisionStops(plan).filter(stop=>!allowed||allowed.has(stop.item.id)).slice(0,12).map(stop=>{
-    const report=checks.data?.stops.find(s=>s.entityId===stop.item.entityId),place=venues.get(stop.item.entityId)||report?.place||stop.item;
+  const summarize=stop=>{
+    const report=checkedVisit(checks,stop),place=venues.get(stop.item.entityId)||report?.place||stop.item;
     return {id:stop.item.id,intent:stop.intent,name:place.name,connections:(stop.connections||[]).map(e=>({personId:e.personId,kind:e.kind,label:e.label,preference:plan.tasteMap?.nodes.find(n=>n.id===e.from)?.label})),practical:practicalEvidence(stop,place,report,picks,menus.get(stop.item.entityId),plan.request)};
-  });
-  const selected=new Set(plan.stops.filter(s=>s.item).map(s=>s.item.id));
-  return {stops:options.filter(s=>selected.has(s.id)).slice(0,3),options,warnings:plan.warnings||[]};
+  };
+  // Option filters limit the comparison, never rewrite the current itinerary.
+  const selected=plan.stops.filter(s=>s.item);
+  const options=decisionStops(plan).filter(stop=>!allowed||allowed.has(stop.item.id)).slice(0,12).map(summarize);
+  return {stops:selected.map(stop=>({...summarize(stop),stopId:stop.id})),requestedStopCount:plan.stops.length,options,warnings:plan.warnings||[]};
 }
