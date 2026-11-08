@@ -125,3 +125,26 @@ test('a mobile map pan cannot dismiss the outing panel while its ordinary pull g
   const pan=async target=>{await act(async()=>{for(const [type,y] of [['touchstart',10],['touchmove',140],['touchend',140]]){const event=new Event(type,{bubbles:true,cancelable:true});Object.defineProperty(event,'touches',{value:type==='touchend'?[]:[{clientX:100,clientY:y}]});target.dispatchEvent(event);}});};
   await pan(document.querySelector('.leaflet-tile'));assert.equal(dismissed,0);assert.equal(panel.style.translate,'');await pan(document.querySelector('.cs-day-header h2'));assert.equal(dismissed,1);
 });
+
+test('ready chrome is scoped to its open plan and returning to chat retains account, saved days and plan access',async()=>{
+  let dismissed=0,opened=0,saved=0,account=0;const noop=()=>{};
+  const studioProps={brief:props.plan.request,plan:props.plan,chat:[],message:'',owner:true,configured:true,planOpen:true,planView:'checklist',onClosePlan:()=>dismissed++,onPlanView:noop,onTool:noop,onNew:noop,onSaved:()=>saved++,onOpenPlan:()=>opened++,onMessage:noop,onSend:noop,accountButton:React.createElement('button',{'aria-label':'Sign in',onClick:()=>account++},'Sign in')};
+  async function studio(changes={}){Object.assign(studioProps,changes);await act(async()=>{root??=createRoot(document.querySelector('#root'));root.render(React.createElement(ChatStudio,studioProps));});}
+  const outside=document.querySelector('#outside');outside.focus();
+  await studio();assert.ok(document.querySelector('.chat-studio.ready-open'));assert.ok(document.querySelector('.cs-header').hasAttribute('inert'));
+  assert.equal(document.activeElement?.getAttribute('aria-label'),'Back to chat','Opening ready must focus its visible close control, not the hidden people button');
+  // A visibility-hidden node still has a client rect in browsers. Model that
+  // explicitly because jsdom does not lay out this compact header.
+  const people=document.querySelector('.cs-day-people'),content=document.querySelector('.cs-day-content');people.style.visibility='hidden';
+  for(const node of [people,button('Back to chat'),...document.querySelectorAll('[role="tab"]'),content])node.getClientRects=()=>[{}];
+  await act(async()=>button('Back to chat').dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true})));
+  assert.equal(document.activeElement?.className,'cs-day-content','Shift+Tab wraps past hidden header controls');
+  await act(async()=>content.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true})));
+  assert.equal(document.activeElement?.getAttribute('aria-label'),'Back to chat','Tab wraps to the visible close control');
+  await click('Back to chat');assert.equal(dismissed,1);await studio({planOpen:false});
+  assert.equal(document.querySelector('.chat-studio.ready-open'),null);assert.equal(document.querySelector('.cs-header').hasAttribute('inert'),false);
+  assert.equal(document.activeElement,outside,'Closing restores the previous focus');
+  await click('Sign in');await click('Saved days');await click('Your day');assert.deepEqual([account,saved,opened],[1,1,1]);
+  await studio({planOpen:true,planView:'itinerary'});assert.equal(document.querySelector('.chat-studio.ready-open'),null);
+  await studio({planView:'checklist',discovery:{},discoveryPanel:React.createElement('p',null,'Synthetic discovery')});assert.equal(document.querySelector('.chat-studio.ready-open'),null);
+});
