@@ -20,8 +20,8 @@ export function tasteFromSwipe(person, card, like) {
 }
 export function planChanges(before, after) {
   if(!before)return after.stops.filter(s=>s.item).map(s=>({intent:s.intent,label:'Found',to:s.item.name}));
-  return after.stops.flatMap(stop=>{
-    const old=before.stops.find(s=>s.intent===stop.intent);
+  return after.stops.flatMap((stop,index)=>{
+    const old=(stop.id?before.stops.find(s=>s.id===stop.id):undefined)||(before.stops[index]?.intent===stop.intent?before.stops[index]:undefined);
     if(old?.item?.id===stop.item?.id)return [];
     return [{intent:stop.intent,label:stop.item?'Updated':'Still looking',from:old?.item?.name,to:stop.item?.name}];
   });

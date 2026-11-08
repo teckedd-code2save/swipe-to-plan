@@ -113,3 +113,19 @@ test('Autopilot applies group and trip changes once, preserves personal links an
   await days.settled(day.id);const ready=await days.get(day.id,day.token);
   assert.equal(ready.planRevision,updated.revision);assert.deepEqual(ready.plan.request.people,request.people);assert.equal(ready.plan.stops.length,1);
 });
+
+test('shared repeated slots and their independent pins survive save, reload and a date revision',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'repeated-shared-day-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+  const file=join(directory,'days.json');
+  const days=createDays({discovery:engine(),store:createDayStore({file})});
+  const day=await days.create({request:{area:'Osu',date:'2099-01-01',activities:['coffee'],stopIntents:['coffee','coffee'],experience:{notes:'No meal.'},people:[person('host','Alex')],party:{adults:1}}});
+  await days.settled(day.id);
+  const first=await days.get(day.id,day.token);assert.equal(first.plan.stops.length,2);assert.ok(first.plan.stops[1].item);
+  const id=first.plan.stops[1].item.id;
+  await days.updateBrief(day.id,day.token,{request:{...first.request,pins:{'stop-1':id}},revision:first.revision});await days.settled(day.id);
+  const saved=await days.get(day.id,day.token);
+  const loaded=createDays({discovery:engine(),store:createDayStore({file})});
+  const restored=await loaded.get(day.id,day.token);assert.deepEqual(restored.request,saved.request);assert.deepEqual(restored.plan.stops,saved.plan.stops);
+  await loaded.updateBrief(day.id,day.token,{request:{...restored.request,date:'2099-01-02'},revision:restored.revision});await loaded.settled(day.id);
+  const revised=await loaded.get(day.id,day.token);assert.deepEqual(revised.request.stopIntents,['coffee','coffee']);assert.equal(revised.request.experience.notes,'No meal.');assert.equal(revised.plan.stops[1].item.id,id);assert.equal(new Set(revised.plan.stops.map(s=>s.item.id)).size,2);
+});

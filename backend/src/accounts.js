@@ -97,7 +97,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
           const current={plan:entry.plan,revision:entry.revision};entry.plan=entry.previous.plan;entry.previous=current;
         }else{
           const request=parseItinerary({...entry.plan.request,pins:body.pins});
-          if(Object.entries(request.pins).some(([intent,id])=>!entry.plan.stops.some(s=>s.intent===intent&&s.item?.id===id)))throw new InputError('Only keep places already in this day.');
+          if(Object.entries(request.pins).some(([intent,id])=>!entry.plan.stops.some(s=>(s.id===intent||s.intent===intent&&entry.plan.stops.find(x=>x.intent===intent)?.id===s.id)&&s.item?.id===id)))throw new InputError('Only keep places already in this day.');
           entry.plan={...entry.plan,request};
         }
         entry.revision++;entry.savedAt=new Date(now()).toISOString();return {...entry.plan,savedPlan:planSummary(entry)};

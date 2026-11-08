@@ -63,7 +63,7 @@ Official references: [Qloo explainability](https://github.com/qloo/docs-public/b
 ## Agent and API surfaces
 
 - `GET /api/agent/tools`: schemas for day planning, revisions, participant/circle actions, interactive cards and replies; HTTP transport for `plan_day`.
-- `POST /api/itineraries`: full structured day-planning tool; no model required.
+- `POST /api/itineraries`: full structured day-planning tool; no model required. `activities` contains unique retrieval categories. Optional `stopIntents` is an ordered list of one to three slots and may repeat categories (for example, `["drinks","drinks"]`); it must use exactly the selected categories. Omission preserves the legacy one-slot-per-category behavior. `route` chooses known venue IDs in that sequence. Pins accept `stop-0` through `stop-2` for independent slots; legacy category pins apply only to the first matching slot. Missing inventory leaves explicit unfilled slots instead of inventing or duplicating venues.
 - `POST /api/agent`: optional conversational interpretation, then the same planning tool. `mode: "autopilot"` returns a validated composed brief for location confirmation and execution; optional `contacts` contains up to 72 saved profiles, addressed by stable ID.
 - `POST /api/days/:id/autopilot`: owner-only atomic group/taste/trip update with `{request, revision}`. Preserves existing personal links, rejects removed participants and stale revisions, then rebuilds once.
 - `POST /api/recommend`: legacy single-activity discovery; model independent.

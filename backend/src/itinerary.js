@@ -1,3 +1,4 @@
+import {stopIntents,pinnedPlace} from '../../shared/stop-intents.js';
 import {suggestBudget} from '../../shared/budget-suggestion.js';
 import {reviewCandidatePools} from './candidate-review.js';
 import {locationId as parseLocationId} from './locations.js';
@@ -24,7 +25,7 @@ const minutes = (time) => Number(time.slice(0,2)) * 60 + Number(time.slice(3));
 const time = (value) => `${String(Math.floor(value / 60)).padStart(2,'0')}:${String(value % 60).padStart(2,'0')}`;
 
 export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
-  object(body, ['title','area','locationId','currencyMode','timing','date','party','people','budget','currency','startTime','endTime','pace','activities','pins','excludeIds','maxPriceLevel','experience','route','searchRadiusKm'], 'planning field');
+  object(body, ['title','area','locationId','currencyMode','timing','date','party','people','budget','currency','startTime','endTime','pace','activities','stopIntents','pins','excludeIds','maxPriceLevel','experience','route','searchRadiusKm'], 'planning field');
   const area = allowMissingLocation&&body.area===''?'':parseArea(body.area);
   const locationId=body.locationId?parseLocationId(body.locationId):undefined;
   const currencyMode=body.currencyMode??(body.currency?'custom':'local');
@@ -63,7 +64,8 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
   const pace = body.pace ?? 'easy';
   if (!['easy','balanced'].includes(pace)) throw new InputError('Choose an easy or balanced pace.');
   // An unfinished brief has no activities until the person chooses them.
-  if (!Array.isArray(activities) || activities.length > 3 || activities.some((item) => !ACTIVITIES.includes(item)) || new Set(activities).size !== activities.length) {const error=new InputError('Choose up to three different outing categories.');error.modelFeedback='activities must be an array using only coffee, activity, dinner, drinks, without duplicates. Bars, cocktails and nightlife use drinks. These are retrieval categories, not a repeated sequence of venues; preserve the sequence in experience.notes.';throw error;}
+  if (!Array.isArray(activities) || activities.length > 3 || activities.some((item) => !ACTIVITIES.includes(item)) || new Set(activities).size !== activities.length) {const error=new InputError('Choose up to three different outing categories.');error.modelFeedback='activities must be an array using only coffee, activity, dinner, drinks, without duplicates. Bars, cocktails and nightlife use drinks. These are retrieval categories, not a repeated sequence of venues; use stopIntents for the ordered sequence, including repeated categories.';throw error;}
+  if(body.stopIntents!==undefined&&(!Array.isArray(body.stopIntents)||!body.stopIntents.length||body.stopIntents.length>3||body.stopIntents.some(intent=>!activities.includes(intent))||activities.some(intent=>!body.stopIntents.includes(intent))))throw new InputError('Choose one to three ordered stop intents using exactly the selected outing categories.');
   if (children && activities.includes('drinks')) throw new InputError('Choose coffee, discovery or a meal for a family outing with children.');
   const searchRadiusKm=body.searchRadiusKm??0;
   if(![0,20,50,100].includes(searchRadiusKm))throw new InputError('Choose the selected area or a nearby search distance.');
@@ -73,14 +75,17 @@ export function parseItinerary(body = {}, {allowMissingLocation=false}={}) {
     route=body.route.map(stop=>{object(stop,['intent','placeId'],'route stop');if(!activities.includes(stop.intent))throw new InputError('Route stops must use the selected outing categories.');return {intent:stop.intent,placeId:text(stop.placeId,160,'a selected place')};});
     if(new Set(route.map(s=>s.placeId)).size!==route.length)throw new InputError('Choose different places for each stop.');
   }
-  const pins = object(body.pins ?? {}, activities, 'kept stops');
+  if(route&&body.stopIntents&&JSON.stringify(route.map(s=>s.intent))!==JSON.stringify(body.stopIntents))throw new InputError('The selected route must match the requested stop sequence.');
+  const intents=stopIntents(body);
+  const pins = object(body.pins ?? {}, [...activities,...intents.map((_,i)=>`stop-${i}`)], 'kept stops');
+  if(intents.some((intent,i)=>intents.indexOf(intent)===i&&body.pins?.[intent]&&body.pins?.[`stop-${i}`]))throw new InputError('Keep only one place per stop.');
   Object.values(pins).forEach((id) => text(id,160,'a kept place ID'));
   if (new Set(Object.values(pins)).size !== Object.values(pins).length) throw new InputError('Keep a different place for each stop.');
   const constraints = parseRequest({ constraints: { excludeIds: body.excludeIds ?? [], ...(body.maxPriceLevel !== undefined ? { maxPriceLevel: body.maxPriceLevel } : {}) } }).constraints;
   const experienceInput=body.experience===undefined?null:object(body.experience,['cuisine','atmosphere','occasion','notes','explore','searchTags'],'experience');
   const experience=experienceInput?Object.fromEntries(Object.entries(experienceInput).map(([key,value])=>[key,key==='searchTags'?(Array.isArray(value)&&value.length<=8&&value.every(id=>byId[id]?.kind==='vibe')?[...new Set(value)]:(()=>{throw new InputError('Choose supported outing search topics.');})()):key==='explore'?(typeof value==='boolean'?value:(()=>{throw new InputError('Choose a valid exploration mode.');})()):text(value,key==='notes'?220:80,key)])):{};
-  const request = { title: text((typeof body.title==='string'&&!body.title.trim()||body.title==null ? null : body.title) || (activities.length ? `${activities.map(item=>({coffee:'Coffee',activity:'Something fun',dinner:'Dinner',drinks:'Drinks'}[item])).join(' & ')}${area?' in '+area.split(',')[0]:''}` : children ? 'Family day' : adults > 2 ? 'A day together' : 'A day out'),80,'a title'), area,...(route?{route}:{}),...(searchRadiusKm?{searchRadiusKm}:{}),...(locationId?{locationId}:{}),currencyMode, timing:{...timing}, date, party:{ adults, children }, people:profiles, budget, currency, startTime, endTime, pace, activities, ...(Object.keys(experience).length?{experience}:{}), pins:{...pins}, excludeIds:constraints.excludeIds, ...(body.maxPriceLevel !== undefined ? { maxPriceLevel:body.maxPriceLevel } : {}) };
-  if(request.timing.dateConfirmed&&request.timing.timeConfirmed)makeSchedule({...request,activities:route?.map(s=>s.intent)||activities}); // Only chosen timing constrains scheduling.
+  const request = { title: text((typeof body.title==='string'&&!body.title.trim()||body.title==null ? null : body.title) || (activities.length ? `${activities.map(item=>({coffee:'Coffee',activity:'Something fun',dinner:'Dinner',drinks:'Drinks'}[item])).join(' & ')}${area?' in '+area.split(',')[0]:''}` : children ? 'Family day' : adults > 2 ? 'A day together' : 'A day out'),80,'a title'), area,...(body.stopIntents?{stopIntents:[...body.stopIntents]}:{}),...(route?{route}:{}),...(searchRadiusKm?{searchRadiusKm}:{}),...(locationId?{locationId}:{}),currencyMode, timing:{...timing}, date, party:{ adults, children }, people:profiles, budget, currency, startTime, endTime, pace, activities, ...(Object.keys(experience).length?{experience}:{}), pins:{...pins}, excludeIds:constraints.excludeIds, ...(body.maxPriceLevel !== undefined ? { maxPriceLevel:body.maxPriceLevel } : {}) };
+  if(request.timing.dateConfirmed&&request.timing.timeConfirmed)makeSchedule({...request,activities:stopIntents(request)}); // Only chosen timing constrains scheduling.
   return request;
 }
 
@@ -181,7 +186,7 @@ export async function buildItinerary(discovery, request, {deferNearby=false}={})
     if(request.currencyMode==='local'&&!location.currency)throw new InputError('Choose a budget currency for this area.');
     request={...request,area:location.label,currency:request.currencyMode==='local'?location.currency:request.currency};
   }
-  const intents=request.route?.map(s=>s.intent)||request.activities;
+  const intents=stopIntents(request);
   const planningRequest={...request,activities:intents};
   const schedule = exploring?intents.map(intent=>({intent,start:null,end:null,durationMinutes:DEFAULT_MINUTES[intent],bufferAfterMinutes:0,status:'unscheduled'})):makeSchedule(planningRequest);
   const voters=request.people.map((person,index)=>({person,index})).filter(({person})=>person.artists.length||person.vibes.length||person.context?.audiences?.length||person.context?.interests?.length);
@@ -201,7 +206,7 @@ export async function buildItinerary(discovery, request, {deferNearby=false}={})
     const review=await reviewCandidatePools(ranked,{...request,activities:intents},discovery.reviewCandidates);
     ranked=review.pools;qualityReview={status:review.status,basis:'model_relevance_judgment',providerFactsVerified:false};
   }
-  const desired=index=>request.route?.[index]?.placeId||request.pins[intents[index]];
+  const desired=index=>pinnedPlace(request,index);
   const reserved = new Set(request.route?request.route.map(s=>s.placeId):Object.values(request.pins));
   const makePools=(limit)=>ranked.map((items,index) => desired(index) ? items.filter((item) => item.id===desired(index)) : items.filter((item) => !reserved.has(item.id)).slice(0,limit));
   const pools=makePools(8);
@@ -251,7 +256,7 @@ export async function buildItinerary(discovery, request, {deferNearby=false}={})
   const budget=allocateBudget(planningRequest,filled.map(stop=>stop.intent));
   return {
     version:'1.0',allowance:{amount:request.budget??suggestBudget(request),kind:request.budget==null?'suggested':'specified',pricesVerified:false},qualityReview,shortlist,nearbySuggestions,nearbyStatus,searchScope:request.searchRadiusKm?{kind:'nearby',radiusKm:request.searchRadiusKm,area:request.area}:{kind:'area',area:request.area},phase:exploring?'discovery':needsTiming?'needs_timing':'scheduled',activityBasis,status:filled.length===stops.length&&!needsTiming?'complete':'partial',request:{...request,title:resultTitle(request,stops)},stops,tasteMap,
-    budget:{...budget,allocations:budget.allocations.map((a,index)=>({...a,stopId:`stop-${index}`}))},
+    budget:{...budget,allocations:budget.allocations.map((a,index)=>({...a,assigned:!!stops[index].item,stopId:`stop-${index}`}))},
     people:request.people.map((person,index)=>({id:person.id || `person-${index}`,name:person.name,taste:members[index][0].taste})),
     provenance:{provider,retrievedAt:members[0][0].provenance.retrievedAt,...(members[0][0].provenance.locality?{locality:members[0][0].provenance.locality}:{})},
     timeZone,timingNotes:fitted.notes,
