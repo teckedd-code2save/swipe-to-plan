@@ -1,3 +1,5 @@
+import RouteStart from './RouteStart.jsx';
+import {startingLocation} from './route-start.js';
 import {DialerLink} from './VenueContact.jsx';
 import {useEffect,useId,useLayoutEffect,useRef,useState} from 'react';
 import {api} from './api.js';
@@ -5,7 +7,7 @@ import {Icon} from './PlannerIcons.jsx';
 import {routeLegs,routeLink} from './route-links.js';
 import {routeDistance,routeDuration,routeEstimateError,routeEstimateFingerprint,routeEstimateRequest,routeModes,validRouteEstimate} from './route-estimates.js';
 
-export default function RouteGuide({plan,checks,initialStopId,onTiming,routeScope=''}) {
+export default function RouteGuide({plan,checks,initialStopId,onTiming,routeScope='',savedAreas=[]}) {
   const legs=routeLegs(plan),[selected,setSelected]=useState(initialStopId||legs[0]?.stop.id),[mode,setMode]=useState(''),[problem,setProblem]=useState(false);
   const [startingPoint,setStartingPoint]=useState({scope:routeScope,value:''}),[capability,setCapability]=useState({status:'loading'}),[estimate,setEstimate]=useState({status:'idle'});
   const origin=startingPoint.scope===routeScope?startingPoint.value:'',leg=legs.find(item=>item.stop.id===selected)||legs[0];
@@ -32,7 +34,7 @@ export default function RouteGuide({plan,checks,initialStopId,onTiming,routeScop
     invalidate();const generation=request.current.generation,key=fingerprint;
     let payload;
     try{payload={...routeEstimateRequest(leg,mode,origin),requestId:crypto.randomUUID(),itineraryRevision:generation};}
-    catch(error){setEstimate({key,status:'error',error:error.message});if(!leg.from&&!origin.trim())inputRef.current?.focus();return;}
+    catch(error){setEstimate({key,status:'error',error:error.message});if(!leg.from&&!startingLocation(origin))inputRef.current?.focus();return;}
     const controller=new AbortController();request.current.controller=controller;
     const isCurrent=()=>request.current.generation===generation&&current.current===key;
     setEstimate({key,status:'loading'});
@@ -50,14 +52,14 @@ export default function RouteGuide({plan,checks,initialStopId,onTiming,routeScop
     {legs.length>1?<label>Which part of your journey?<select value={leg.stop.id} onChange={e=>change(()=>{setSelected(e.target.value);setProblem(false);})}>{legs.map((item,index)=><option key={item.stop.id} value={item.stop.id}>{index+1}. {item.label}</option>)}</select></label>:<p>To {leg.stop.item.name}.</p>}
     <div className="pg-modes" role="group" aria-label="Travel mode">{[['','Compare'],['driving','Drive'],['walking','Walk'],['transit','Transit']].map(([value,label])=><button type="button" key={value} aria-pressed={mode===value} onClick={()=>change(()=>setMode(value))}>{label}</button>)}</div>
     <form className="pg-estimate-form" onSubmit={estimateJourney} noValidate>
-      {!leg.from?<><label htmlFor={inputId}>Starting address</label><input ref={inputRef} id={inputId} type="text" autoComplete="off" maxLength={300} value={origin} placeholder="Enter an address and city" aria-describedby={noteId} onChange={e=>change(()=>setStartingPoint({scope:routeScope,value:e.target.value}))}/><p className="pg-note" id={noteId}>Your planning area is not your starting point. Enter an address for this journey; it is not saved.</p></>:<p className="pg-note">Starting from {leg.from.item.name}, the preceding selected place.</p>}
+      {!leg.from?<RouteStart key={JSON.stringify([routeScope,plan,leg.stop.id,mode])} value={origin} onChange={value=>change(()=>setStartingPoint({scope:routeScope,value}))} savedAreas={savedAreas} planningArea={plan.request?.area?{id:plan.request.locationId,label:plan.request.area}:null} inputId={inputId} noteId={noteId} inputRef={inputRef}/>:<p className="pg-note">Starting from {leg.from.item.name}, the preceding selected place.</p>}
       <p className="pg-note"><strong>{mode==='driving'?'Leaving now, with current traffic estimates.':mode==='walking'?'Walking estimate requested now.':mode==='transit'?'Transit estimate for departure now.':'Estimates are for departure now.'}</strong> This is not an estimate for your scheduled outing, date or visit time. Estimating sends this journey’s starting point and selected venue to Google Routes. Unstressed keeps the starting point and estimate only in this view.</p>
       <button className="pl-secondary-button" type="submit" disabled={!supported||state.status==='loading'}>{state.status==='loading'?'Estimating journey…':'Estimate this journey'}</button>
       {!mode&&<p className="pg-note">Choose Drive, Walk or Transit to estimate. Compare opens Maps only.</p>}
       {capability.status==='loading'?<p className="pg-note" role="status">Checking whether route estimates are available…</p>:!enabled?<p className="pg-note">Route estimates are unavailable here. You can still open directions in Maps.</p>:mode&&!supported?<p className="pg-note">Estimates for this mode are unavailable. Try Maps instead.</p>:null}
       {state.status==='loading'&&<p className="pg-note" role="status">Checking this journey only. Your plan stays unchanged.</p>}
       {state.status==='error'&&<p className="pg-note" role="alert">{state.error}</p>}
-      {state.status==='ready'&&<div className="pg-route-estimate" role="status"><strong>{routeDuration(state.data.durationSeconds)} travel · {routeDistance(state.data.distanceMeters)}</strong><p>{({driving:'Driving estimate for departure at the measured time.',walking:'Walking estimate requested at the measured time.',transit:'Transit estimate for departure at the measured time.'})[mode]}</p><p>Source: Google Routes · Measured <time dateTime={state.data.measuredAt}>{new Date(state.data.measuredAt).toLocaleString(undefined,{timeZoneName:'short'})}</time>.</p><p><strong>Travel only.</strong> No visit durations or planning buffers included. Schedule feasibility has not been checked. Visit times, selected places and buffers are unchanged. Routes and conditions can change. Estimate again before leaving for an updated travel estimate.</p></div>}
+      {state.status==='ready'&&<div className="pg-route-estimate" role="status"><strong>{routeDuration(state.data.durationSeconds)} travel · {routeDistance(state.data.distanceMeters)}</strong><p>{({driving:'Driving estimate for departure at the measured time.',walking:'Walking estimate requested at the measured time.',transit:'Transit estimate for departure at the measured time.'})[mode]}</p><p>Source: Google Routes · Measured <time dateTime={state.data.measuredAt}>{new Date(state.data.measuredAt).toLocaleString(undefined,{timeZoneName:'short'})}</time>.</p><p><strong>Travel only.</strong> {origin?.kind==='area'&&!leg.from?'Approximate route from the selected area, not your exact position. ':''} No visit durations or planning buffers included. Schedule feasibility has not been checked. Visit times, selected places and buffers are unchanged. Routes and conditions can change. Estimate again before leaving for an updated travel estimate.</p></div>}
     </form>
     <a className="pl-button" href={routeLink(leg,mode,origin)} target="_blank" rel="noreferrer">{mode==='driving'?'Open driving directions':mode==='walking'?'Open walking directions':mode==='transit'?'Try transit directions':'Compare routes in Maps'}<Icon name="arrowUpRight" size={16}/></a>
     <p className="pg-note">Maps opens separately. Unstressed can’t see its result or change your schedule from it automatically.</p>

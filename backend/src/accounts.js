@@ -1,3 +1,4 @@
+import {createExecutionProtocol,invalidateExecution,executionCapabilities} from './execution-ledger.js';
 import {bookingOperation,invalidateBookings} from './booking-actions.js';
 import {sendCircleMail} from './circle-mail.js';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
@@ -27,6 +28,7 @@ export function createAccountStore({file=null,now=Date.now}={}){
 }
 
 export function createAccounts({store=createAccountStore(),now=Date.now,origin=process.env.APP_ORIGIN||'http://127.0.0.1:5173',clientId=process.env.GOOGLE_OAUTH_CLIENT_ID,clientSecret=process.env.GOOGLE_OAUTH_CLIENT_SECRET,adminEmails=(process.env.ADMIN_EMAILS||'').split(',').map(e=>e.trim().toLowerCase()).filter(Boolean),oauthFactory}={}){
+  const executionProtocol=createExecutionProtocol({now});
   origin=new URL(origin).origin;
   const secure=origin.startsWith('https://');
   const isAdmin=user=>!!user&&adminEmails.includes(user.email.toLowerCase());
@@ -77,11 +79,19 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
           const circleIds=[...new Set([...(previous?.circleIds||[]),...(target.circleId?[target.circleId]:[])])];
           const entry={id:target.id,revision:target.revision,savedAt:new Date(now()).toISOString(),plan:structuredClone(plan),previous:previous?{plan:previous.plan,revision:previous.revision}:null,...(circleIds.length?{circleIds}:{}),...(target.sourceDayId?{sourceDayId:target.sourceDayId}:{})};
           delete entry.plan.savedPlan;delete entry.plan.saveError;
+          if(previous?.executionLedger){entry.executionLedger=previous.executionLedger;invalidateExecution(entry);}
           if(previous?.bookingActions){entry.bookingActions=previous.bookingActions;invalidateBookings(entry);}
           entries[entry.id]=entry;user.savedPlans=entries;return planSummary(entry);
         });
         return {...plan,savedPlan:saved};
       }catch(e){return {...plan,saveError:e.status?e.message:'Your day is ready, but account saving failed. Keep a copy on this device before leaving.'};}
+    },
+    executionCapabilities,
+    // Internal owner-only foundation. No HTTP mutation routes or live approvals.
+    async executions(session,id,operation='list',body={},actionId=null){
+      if(!['list','prepare','revoke'].includes(operation))throw fail('Live execution and approval are disabled.',409);
+      const apply=data=>{const user=resolve(data,session);if(!user||!Object.hasOwn(user.savedPlans||{},id))throw fail('Execution not found.',404);if(operation==='prepare'&&Object.values(user.savedPlans).some(entry=>entry.id!==id&&entry.executionLedger?.records.some(r=>r.snapshot.venue.entityId===body.snapshot?.entityId&&['submission_pending','submission_unknown','submitted_awaiting_response','provider_confirmed'].includes(r.status))))throw fail('Reconcile the existing venue action before preparing a separate day.',409);return executionProtocol(user.savedPlans[id],user.id,operation,body,actionId);};
+      return operation==='list'?store.read(apply):store.transact(apply);
     },
     async bookings(session,id,operation='list',body={},bookingId=null){
       const apply=data=>{const user=resolve(data,session);if(!user||!Object.hasOwn(user.savedPlans||{},id))throw Object.assign(new Error('Booking not found.'),{status:404,code:'booking_conflict'});return bookingOperation(user.savedPlans[id],operation,body,bookingId,{now});};
@@ -97,7 +107,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       return store.transact(data=>{
         const user=requireUser(data,session);let entry=savedPlan(user,id);
         if(body.revision!==entry.revision)throw fail('This day changed elsewhere. Reopen it from Saved days before editing.',409);
-        if(entry.sourceDayId){if(Object.keys(user.savedPlans).length>=100)throw fail('Remove an old saved day to make room for this private copy.',409);entry=structuredClone(entry);entry.id=randomUUID();delete entry.sourceDayId;delete entry.bookingActions;user.savedPlans[entry.id]=entry;}
+        if(entry.sourceDayId){if(Object.keys(user.savedPlans).length>=100)throw fail('Remove an old saved day to make room for this private copy.',409);entry=structuredClone(entry);entry.id=randomUUID();delete entry.sourceDayId;delete entry.bookingActions;delete entry.executionLedger;user.savedPlans[entry.id]=entry;}
         if(body.restoreRevision!==undefined){
           if(!entry.previous||body.restoreRevision!==entry.previous.revision||body.pins!==undefined)throw fail('That earlier version is no longer available.',409);
           const current={plan:entry.plan,revision:entry.revision};entry.plan=entry.previous.plan;entry.previous=current;
@@ -106,10 +116,10 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
           if(Object.entries(request.pins).some(([intent,id])=>!entry.plan.stops.some(s=>(s.id===intent||s.intent===intent&&entry.plan.stops.find(x=>x.intent===intent)?.id===s.id)&&s.item?.id===id)))throw new InputError('Only keep places already in this day.');
           entry.plan={...entry.plan,request};
         }
-        invalidateBookings(entry);entry.revision++;entry.savedAt=new Date(now()).toISOString();return {...entry.plan,savedPlan:planSummary(entry)};
+        invalidateExecution(entry);invalidateBookings(entry);entry.revision++;entry.savedAt=new Date(now()).toISOString();return {...entry.plan,savedPlan:planSummary(entry)};
       });
     },
-    async removePlan(session,id){await store.transact(data=>{const user=requireUser(data,session);savedPlan(user,id);delete user.savedPlans[id];});},
+    async removePlan(session,id){await store.transact(data=>{const user=requireUser(data,session);const entry=savedPlan(user,id);if(entry.executionLedger?.records.some(r=>['submission_pending','submission_unknown','submitted_awaiting_response','provider_confirmed'].includes(r.status)))throw fail('Reconcile pending venue submissions before deleting this day.',409);delete user.savedPlans[id];});},
     async current(session){return store.read(data=>{const user=resolve(data,session);return {configured:enabled,user:user?{...safeUser(user),admin:isAdmin(user)}:null,circles:user?myCircles(data,user):[]};});},
     async identity(req){return store.read(data=>{const user=resolve(data,cookie(req,sessionName));return user?{id:user.id,admin:isAdmin(user)}:null;});},
     async adminUsers(req){return store.read(data=>{const user=requireUser(data,cookie(req,sessionName));if(!isAdmin(user))throw fail('This dashboard is private.');return Object.values(data.users).map(u=>({id:u.id,name:u.profile.name,email:u.email,createdAt:u.createdAt,lastSignedInAt:u.lastSignedInAt||null,circles:Object.values(data.circles).filter(c=>c.members.some(m=>m.userId===u.id)).length,hasTastes:!!(u.profile.artists.length||u.profile.vibes.length)}));});},

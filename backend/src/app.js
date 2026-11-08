@@ -1,3 +1,4 @@
+import {executionCapabilities} from './execution-ledger.js';
 import {compareOpenAreas} from './open-location.js';
 import {createContactEvidence} from './contact-evidence.js';
 import {createMenuEvidence} from './menu-evidence.js';
@@ -77,6 +78,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
       res.status(safe.status).json({code:safe.code,error:safe.message});
     }
   });
+  app.get('/api/actions/execution-capabilities',limit(60,'execution_capabilities'),(_req,res)=>res.json(executionCapabilities()));
   app.get('/api/actions/capabilities',limit(60,'actions_capabilities'),routeAction(() => routeActions.capabilities()));
   app.post('/api/actions/routes/estimate',limit(12,'route_estimates'),routeAction(req => routeActions.estimate(req.body)));
   app.get('/api/locations',limit(60),route(async(req,res)=>{

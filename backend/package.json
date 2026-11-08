@@ -21,7 +21,8 @@
     "geo-tz": "^8.1.10",
     "google-auth-library": "^10.9.1",
     "ipaddr.js": "^2.5.0",
-    "prisma": "^6.0.0"
+    "prisma": "^6.0.0",
+    "tldts": "^7.4.19"
   },
   "engines": {
     "node": ">=20"

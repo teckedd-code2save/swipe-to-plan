@@ -15,14 +15,15 @@ export function menuUrl(value){
  return url;
 }
 // Resolve and pin a public address for each redirect. No browser session, cookies or credentials.
-export async function readMenuPage(value,{resolve=lookup,request,allowedOrigin,signal=AbortSignal.timeout(10000)}={}){
- let url=menuUrl(value);
- for(let redirects=0;redirects<3;redirects++){
+export async function readMenuPage(value,{resolve=lookup,request,allowedOrigin,validateRedirect,signal=AbortSignal.timeout(10000)}={}){
+ let url=menuUrl(value);const checkedUrls=[];
+ try{for(let redirects=0;redirects<3;redirects++){
   if(allowedOrigin&&url.origin!==allowedOrigin)throw Error('Cross-origin page redirect');
   const hostname=url.hostname.replace(/^\[|\]$/g,'');
   const addresses=await Promise.race([resolve(hostname,{all:true}),new Promise((_,reject)=>{if(signal.aborted)reject(Error('Menu timeout'));else signal.addEventListener('abort',()=>reject(Error('Menu timeout')),{once:true});})]);
   if(!addresses.length||addresses.some(a=>!publicAddress(a.address)))throw Error('Non-public menu destination');
   const pinned=addresses[0];
+  checkedUrls.push(url.href);
   const result=await new Promise((resolve,reject)=>{
    const get=request||(url.protocol==='https:'?https.request:http.request);
    const req=get(url,{method:'GET',signal,agent:false,lookup:(_host,options,callback)=>options?.all?callback(null,[pinned]):callback(null,pinned.address,pinned.family),headers:{accept:'text/html,application/xhtml+xml','accept-encoding':'identity','user-agent':'UnstressedMenu/1.0 (+https://unstressed.serendepify.com)'}},res=>{
@@ -32,10 +33,13 @@ export async function readMenuPage(value,{resolve=lookup,request,allowedOrigin,s
     let size=0;const chunks=[];res.on('data',chunk=>{size+=chunk.length;if(size>500000){req.destroy(Error('Menu page too large'));return;}chunks.push(chunk);});res.on('end',()=>resolve({html:Buffer.concat(chunks).toString('utf8'),url:url.href}));res.on('error',reject);
    });req.on('error',reject);req.end();
   });
-  if(!result.redirect)return result;
-  url=menuUrl(new URL(result.redirect,url).href);
+  if(!result.redirect)return {...result,checkedUrls};
+  const next=menuUrl(new URL(result.redirect,url).href);
+  if(validateRedirect&&!validateRedirect(url,next))throw Error('Unsupported page redirect');
+  url=next;
  }
  throw Error('Too many menu redirects');
+ }catch(error){error.checkedUrls=checkedUrls;throw error;}
 }
 const list=value=>Array.isArray(value)?value:value?[value]:[];
 const currencies=new Set(Intl.supportedValuesOf('currency'));

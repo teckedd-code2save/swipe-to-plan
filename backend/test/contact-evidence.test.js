@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import {once,EventEmitter} from 'node:events';
 import {Readable} from 'node:stream';
-import {createContactEvidence,extractContactEvidence} from '../src/contact-evidence.js';
+import {createContactEvidence,extractContactEvidence,canonicalContactRedirect} from '../src/contact-evidence.js';
 import {readMenuPage} from '../src/menu-evidence.js';
 import {shapePlace} from '../src/plan.js';
 import {createApp} from '../src/app.js';
@@ -40,7 +40,7 @@ test('adversarial structured markup is bounded and invalid schemas are ignored',
  let node=business;for(let i=0;i<25;i++)node={nested:node};assert.equal(parse(json(node)).candidates.length,0);
 });
 test('contact service follows at most one explicit same-origin page, coalesces and caches all outcomes',async()=>{
- let calls=0,clock=0;const service=createContactEvidence({places:{details:async()=>place},now:()=>clock,readPage:async(url,options)=>{calls++;assert.equal(options.allowedOrigin,new URL(source).origin);assert.ok(options.signal);return {url,html:url===source?'<a href="/contact">Contact</a><a href="/other">Contact</a>':json(business)+'<a href="/next">Contact</a>'};}});
+ let calls=0,clock=0;const service=createContactEvidence({places:{details:async()=>place},now:()=>clock,readPage:async(url,options)=>{calls++;if(url===source)assert.equal(options.validateRedirect,canonicalContactRedirect);else assert.equal(options.allowedOrigin,new URL(source).origin);assert.ok(options.signal);return {url,html:url===source?'<a href="/contact">Contact</a><a href="/other">Contact</a>':json(business)+'<a href="/next">Contact</a>'};}});
  const [a,b]=await Promise.all([service.get(id),service.get(id)]);assert.equal(calls,2);assert.deepEqual(a,b);assert.equal(a.status,'match');assert.equal(a.pages.length,2);assert.equal(a.whatsappOptIn,false);assert.equal(a.ownershipVerified,false);assert.equal(a.reachabilityVerified,false);assert.equal(a.providerPhone,raw.properties.phone);
  await service.get(id);assert.equal(calls,2);clock=900001;await service.get(id);assert.equal(calls,4);
  let failures=0;const failed=createContactEvidence({places:{details:async()=>place},readPage:async()=>{failures++;throw Error('private failure');}});assert.equal((await failed.get(id)).status,'unavailable');assert.equal((await failed.get(id)).status,'unavailable');assert.equal(failures,1);
@@ -90,4 +90,51 @@ test('public reader enforces HTML success, body size and shared abort without ex
 test('different single-venue branches across the checked pages downgrade all assignment',async()=>{
  const service=createContactEvidence({places:{details:async()=>place},readPage:async url=>({url,html:url===source?json(business)+'<a href="/contact">Contact</a>':json({...business,address:'2 Main St, Accra',telephone:'+233201234568'})})});
  const result=await service.get(id);assert.equal(result.status,'manual_review');assert.ok(result.candidates.every(c=>c.assignment==='manual_review'&&c.identityCue===null));
+});
+
+const publicDns=async()=>[{address:'8.8.8.8',family:4}];
+function scriptedReader(responses,seen=[]){
+ return (url,options,callback)=>{
+  seen.push(url.href);assert.equal(options.agent,false);assert.equal(options.method,'GET');
+  assert.equal(options.headers.cookie,undefined);assert.equal(options.headers.authorization,undefined);
+  options.lookup(url.hostname,{all:true},(_,addresses)=>assert.deepEqual(addresses,[{address:'8.8.8.8',family:4}]));
+  const req=new EventEmitter();req.destroy=error=>req.emit('error',error);
+  req.end=()=>{const data=responses[url.href];assert.ok(data,`Unexpected fetch ${url.href}`);const res=Readable.from([Buffer.from(data.html||'')]);res.statusCode=data.location?302:200;res.headers=data.location?{location:data.location,'set-cookie':'secret=yes'}:{'content-type':'text/html'};callback(res);};return req;
+ };
+}
+test('canonical contact policy allows only default-port upgrades and exact registrable apex/www aliases',()=>{
+ for(const [from,to] of [['http://www.example.com','https://example.com'],['http://example.com:80','https://example.com:443'],['https://example.co.uk','https://www.example.co.uk'],['https://www.example.com','https://example.com/contact'],['https://bücher.de','https://www.xn--bcher-kva.de']])assert.equal(canonicalContactRedirect(from,to),true,`${from} -> ${to}`);
+ for(const [from,to] of [['https://example.com','http://example.com'],['http://example.com:443','https://example.com'],['http://example.com','https://example.com:80'],['https://example.com','https://example.com.evil.com'],['https://one.example.com','https://www.one.example.com'],['https://www.github.io','https://github.io'],['https://tenant.github.io','https://www.tenant.github.io'],['https://www.co.uk','https://co.uk'],['https://www.example.invalid','https://example.invalid'],['https://example.com','https://user:pass@example.com'],['https://example.com','https://127.0.0.1'],['https://example.com','ftp://example.com'],['https://one.blogspot.com','https://two.blogspot.com'],['https://tenant.vercel.app','https://www.tenant.vercel.app'],['https://tenant.netlify.app','https://www.tenant.netlify.app'],['https://tenant.s3.amazonaws.com','https://www.tenant.s3.amazonaws.com'],['https://example.com.','https://www.example.com'],['https://example.com','https://www.exаmple.com'],['https://bücher.de','https://www.bucher.de']])assert.equal(canonicalContactRedirect(from,to),false,`${from} -> ${to}`);
+});
+test('canonical redirects keep DNS pinning and retain provider, checked URLs and final two-page scope',async()=>{
+ const initial='http://www.example.com/',canonical='https://example.com/',seen=[];
+ const p=shapePlace({...raw,properties:{...raw.properties,website:initial}},'qloo',new Date(0).toISOString());
+ const request=scriptedReader({[initial]:{location:'https://www.example.com/'},'https://www.example.com/':{location:canonical},[canonical]:{html:'<a href="/contact">Contact</a><a href="http://www.example.com/other">Contact</a>'},[canonical+'contact']:{html:json(business)+'<a href="/third">Contact</a>'}},seen);
+ const service=createContactEvidence({places:{details:async()=>p},readPage:(url,options)=>readMenuPage(url,{...options,resolve:publicDns,request})});
+ const result=await service.get(id);assert.equal(result.status,'match');assert.equal(result.providerSourceUrl,initial);assert.equal(result.sourceUrl,canonical);assert.equal(result.pages.length,2);assert.deepEqual(result.pages[0].checkedUrls,[initial,'https://www.example.com/',canonical]);assert.deepEqual(seen,[initial,'https://www.example.com/',canonical,canonical+'contact']);assert.equal(result.candidates[0].sourceUrl,canonical+'contact');
+});
+test('canonical redirect checks reject before fetching unsafe targets, recheck DNS and bound loops',async()=>{
+ const initial='http://www.example.com/';
+ for(const target of ['https://evil.com/','http://example.com:443/','https://user:pass@example.com/','http://127.0.0.1/']){
+  const seen=[];await assert.rejects(readMenuPage(initial,{validateRedirect:canonicalContactRedirect,resolve:publicDns,request:scriptedReader({[initial]:{location:target}},seen)}));assert.deepEqual(seen,[initial]);
+ }
+ let resolutions=0;const seen=[];
+ await assert.rejects(readMenuPage(initial,{validateRedirect:canonicalContactRedirect,resolve:async()=>++resolutions===1?publicDns():[{address:'127.0.0.1',family:4}],request:scriptedReader({[initial]:{location:'https://example.com/'}},seen)}),/Non-public/);assert.equal(resolutions,2);assert.deepEqual(seen,[initial]);
+ const loop=[];await assert.rejects(readMenuPage(initial,{validateRedirect:canonicalContactRedirect,resolve:publicDns,request:scriptedReader({[initial]:{location:initial}},loop)}),/Too many/);assert.equal(loop.length,3);
+});
+test('canonical second page cannot escape back to initial origin; link-only and multi-branch evidence remain manual',async()=>{
+ const initial='http://www.example.com/',canonical='https://example.com/';
+ const p=shapePlace({...raw,properties:{...raw.properties,website:initial}},'qloo',new Date(0).toISOString());
+ for(const html of ['<a href="tel:+233201234567">Call</a>',json([business,{...business,address:'2 Main St'}])]){
+  const seen=[],request=scriptedReader({[initial]:{location:canonical},[canonical]:{html:html+'<a href="/contact">Contact</a>'},[canonical+'contact']:{location:initial}},seen);
+  const result=await createContactEvidence({places:{details:async()=>p},readPage:(url,options)=>readMenuPage(url,{...options,resolve:publicDns,request})}).get(id);
+  assert.equal(result.status,'manual_review');assert.equal(result.pages[1].status,'unavailable');assert.deepEqual(seen,[initial,canonical,canonical+'contact']);assert.ok(result.candidates.every(c=>c.assignment==='manual_review'));
+ }
+});
+test('failed canonical checks retain only attempted URLs and HTTPS cannot downgrade mid-chain',async()=>{
+ const initial='http://www.example.com/',secure='https://www.example.com/',seen=[];
+ const p=shapePlace({...raw,properties:{...raw.properties,website:initial}},'qloo',new Date(0).toISOString());
+ const request=scriptedReader({[initial]:{location:secure},[secure]:{location:'http://example.com/'}},seen);
+ const result=await createContactEvidence({places:{details:async()=>p},readPage:(url,options)=>readMenuPage(url,{...options,resolve:publicDns,request})}).get(id);
+ assert.equal(result.status,'unavailable');assert.equal(result.providerSourceUrl,initial);assert.deepEqual(result.pages,[{url:initial,status:'unavailable',checkedUrls:[initial,secure]}]);assert.deepEqual(seen,[initial,secure]);assert.deepEqual(result.candidates,[]);
 });

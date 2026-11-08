@@ -1,3 +1,4 @@
+import {startingLocation} from './route-start.js';
 const point=place=>place.coordinates?`${place.coordinates.lat},${place.coordinates.lng}`:`${place.name}, ${place.address||''}`;
 export function routeLegs(plan) {
   const stops=(plan?.stops||[]).filter(stop=>stop.item);
@@ -9,7 +10,7 @@ export function routeLink(leg,mode='',startingPoint='') {
   const url=new URL('https://www.google.com/maps/dir/');
   url.searchParams.set('api','1');url.searchParams.set('destination',point(leg.stop.item));
   if(leg.from)url.searchParams.set('origin',point(leg.from.item));
-  else if(startingPoint.trim())url.searchParams.set('origin',startingPoint.trim());
+  else {const origin=startingLocation(startingPoint);if(origin)url.searchParams.set('origin',origin.coordinates?`${origin.coordinates.lat},${origin.coordinates.lng}`:origin.address);}
   if(['walking','driving','transit'].includes(mode))url.searchParams.set('travelmode',mode);
   return url.href;
 }
