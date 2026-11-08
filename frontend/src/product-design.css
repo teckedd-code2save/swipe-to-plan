@@ -84,3 +84,31 @@
 .chat-studio .cs-tastes-open .deck-collection-card{height:auto;min-height:0;position:relative;overflow:visible}
 .chat-studio .cs-tastes-open .deck-view-controls button{min-width:40px;min-height:40px;padding:0}
 @media(max-width:600px){.chat-studio .cs-tastes-open .card-stack,.chat-studio .cs-tastes-request .card-stack{height:clamp(250px,36dvh,320px)}}
+
+/* At zoomed/very narrow widths the wordmark yields, never the app actions.
+   The sun keeps its existing accessible "Start a new day" name. */
+@media screen and (max-width:360px){
+ .chat-studio .cs-header{height:56px;min-height:56px;padding:0 10px;gap:8px}
+ .chat-studio .cs-header .cs-brand{min-width:44px;min-height:44px;justify-content:center}
+ .chat-studio .cs-header .cs-brand>span{display:none}
+ .chat-studio .cs-header .cs-header-actions{gap:2px;min-width:0}
+ .chat-studio .cs-header .cs-icon-button{width:44px;height:44px}
+ .chat-studio .cs-header .cs-view-day{min-height:44px}
+ .chat-studio .cs-header .cs-account-button{min-height:44px;min-width:44px}
+ .chat-studio.day-open .cs-day-panel{top:56px}
+}
+
+/* Only the active short-screen ready panel takes the full viewport. Its app
+   header is already inert while this modal is open. Back to chat restores all
+   global actions; desktop and ordinary phones keep their existing layout. */
+@media screen and (max-width:600px) and (max-height:500px){
+ .chat-studio.ready-open > .cs-header{display:none}
+ .chat-studio.ready-open .cs-day-panel.getting-ready-panel{top:0}
+ .chat-studio.ready-open .getting-ready-panel .cs-day-header{padding:0 12px;align-items:center;gap:8px}
+ .chat-studio.ready-open .getting-ready-panel .cs-day-header>div{min-width:0}
+ .chat-studio.ready-open .getting-ready-panel .cs-day-header h2{font-size:18px;line-height:1.25}
+ .chat-studio.ready-open .getting-ready-panel .cs-close-day{width:44px;height:44px}
+ .chat-studio.ready-open .getting-ready-panel .cs-day-tabs{padding:0 12px;gap:10px;justify-content:space-between}
+ .chat-studio.ready-open .getting-ready-panel .cs-day-tabs button{min-height:44px}
+ .chat-studio.ready-open .getting-ready-panel .cs-day-content{padding-top:6px;scroll-padding-bottom:12px}
+}
