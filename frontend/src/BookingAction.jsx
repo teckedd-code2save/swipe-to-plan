@@ -27,7 +27,7 @@ function BookingSession({scope={allowed:true,type:'guest'},plan,stop,place,conte
     const saved=unchanged?current:await state.mutate(current?'updateBooking':'createBooking',current,current?body:{...body,stopId:stop.id,itemId:stop.item.id,entityId:stop.item.entityId});
     if(!saved)return;
     setRecord(saved);
-    const reviewedDestination=value=>JSON.stringify([value.name,value.entityId,value.date,value.localTime,value.timeZone,value.party,channel==='phone'?value.contacts.phone:channel==='website'?value.contacts.website:null]);
+    const reviewedDestination=value=>JSON.stringify([value.name,value.entityId,value.intent,value.orderedStops,value.date,value.localTime,value.timeZone,value.party,channel==='phone'?value.contacts.phone:channel==='website'?value.contacts.website:null]);
     if(reviewedDestination(saved.snapshot)!==reviewedDestination(contactSnapshot)){setReviewed(null);setMessage('Saved venue details differ from those shown. Review the updated recipient and details before continuing.');return;}
     // The same deliberate review covers this exact text/channel, but never a future send.
     const approved=await state.mutate('bookingHandoff',saved,{channel,reviewed:true});

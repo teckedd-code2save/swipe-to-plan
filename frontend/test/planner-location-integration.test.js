@@ -661,3 +661,38 @@ for(const guest of [true,false])test(`${guest?'guest':'account'} explicit name e
   assert.equal(fixture.builds.at(-1).titleSource,'auto');assert.equal(fixture.builds.at(-1).title,'');
   if(guest){await click('Undo');assert.equal((await send()).context.titleSource,'custom');assert.equal(document.querySelector('.cs-day-header h2').textContent,'A day out');}
 });
+
+for(const guest of [true,false])test(`${guest?'guest':'account'} semantic selection applies requested roles and timing instead of old retrieval buckets`,async()=>{
+ const initial=repeatedPlan({title:'Cafés & A meal',titleSource:'auto',activities:['coffee','dinner'],stopIntents:['coffee','dinner']});initial.stops[0].intent='coffee';initial.stops[1].intent='dinner';
+ initial.shortlist=[{intent:'dinner',item:{id:'c',entityId:'fixture-c',name:'Fixture c',links:{}}}];
+ if(guest)localStorage.setItem('outing.saved-plans.v1',JSON.stringify([{id:'composition-local',savedAt:'2026-11-08T00:00:00Z',plan:initial}]));else{account(london);state.savedPlan=initial;history.replaceState(null,'','/#/plan/saved-day');}
+ const fetchBase=globalThis.fetch,builds=[],comparisons=[];const route=[{intent:'coffee',placeId:'a'},{intent:'coffee',placeId:'c'}];
+ globalThis.fetch=async(input,options={})=>{
+  const path=new URL(input,location.origin).pathname;
+  if(path==='/api/agent'){
+   const body=JSON.parse(options.body);if(body.task==='compare'){comparisons.push(body);return new Response(JSON.stringify({status:'reply',text:'Synthetic current comparison.'}));}
+   state.requests.push(body);return new Response(JSON.stringify({status:'action',action:'select_places',route,request:{...body.context,title:'',titleSource:'auto',activities:['coffee'],stopIntents:['coffee','coffee'],route,pins:{},date:'2099-01-02',startTime:'14:00',endTime:'18:00',budget:120}}));
+  }
+  if(path==='/api/itineraries'){
+   const request=JSON.parse(options.body);builds.push(request);const stops=route.map((visit,index)=>({...initial.stops[0],id:`stop-${index}`,intent:visit.intent,item:index?initial.shortlist[0].item:initial.stops[0].item}));
+   return new Response(JSON.stringify({...initial,request:{...request,title:'Cafés in London'},stops,budget:{...initial.budget,allocations:stops.map(stop=>({stopId:stop.id,intent:stop.intent,amount:null}))},...(!guest?{savedPlan:{id:'saved-day',revision:2}}:{})}));
+  }
+  return fetchBase(input,options);
+ };
+ await mount();if(guest){await click('Saved days');await act(async()=>document.querySelector('.pl-saved-item > button').click());}await send();
+ assert.equal(builds.length,1);assert.deepEqual(builds[0].route,route);assert.deepEqual(builds[0].activities,['coffee']);assert.deepEqual(builds[0].stopIntents,['coffee','coffee']);assert.equal(builds[0].date,'2099-01-02');assert.equal(builds[0].startTime,'14:00');assert.equal(builds[0].budget,120);
+ assert.equal(document.querySelector('.cs-day-header h2').textContent,'Cafés in London');assert.deepEqual([...document.querySelectorAll('[data-stop-id]')].map(node=>node.dataset.stopId),['stop-0','stop-1']);assert.doesNotMatch(document.querySelector('.cs-day-content').textContent,/A good meal/);
+});
+
+for(const transition of ['New day','account switch','sign out'])test(`late semantic role selection after ${transition} cannot apply its old request`,async()=>{
+ account(london);const initial=repeatedPlan({activities:['coffee','dinner'],stopIntents:['coffee','dinner']});initial.stops[0].intent='coffee';initial.stops[1].intent='dinner';state.savedPlan=initial;history.replaceState(null,'','/#/plan/saved-day');
+ const fetchBase=globalThis.fetch,builds=[];let release;const gate=new Promise(resolve=>release=resolve);
+ globalThis.fetch=async(input,options={})=>{
+  const path=new URL(input,location.origin).pathname;
+  if(path==='/api/agent'){const body=JSON.parse(options.body);if(body.task==='compare')return new Response(JSON.stringify({status:'reply',text:'Synthetic comparison.'}));state.requests.push(body);await gate;const route=[{intent:'coffee',placeId:'a'},{intent:'coffee',placeId:'b'}];return new Response(JSON.stringify({status:'action',action:'select_places',route,request:{...body.context,activities:['coffee'],stopIntents:['coffee','coffee'],route,budget:999}}));}
+  if(path==='/api/itineraries'){builds.push(JSON.parse(options.body));return new Response(JSON.stringify(initial));}
+  return fetchBase(input,options);
+ };
+ await mount();await send();if(transition==='New day')await click('New day');else{state.user=transition==='sign out'?null:{...state.user,id:'other-composition-account',profile:{...profile,id:'other-composition-account'}};await act(async()=>window.dispatchEvent(new Event('focus')));}
+ await act(async()=>release());assert.equal(builds.length,0);assert.equal(document.querySelector('.cs-result-card'),null);assert.doesNotMatch(document.body.textContent,/999/);
+});

@@ -11,14 +11,15 @@ const message=value=>{if(typeof value!=='string'||value.length>2000||/[\x00-\x08
 const canonical=value=>JSON.stringify(value,(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b))):v);
 const digest=value=>createHash('sha256').update(canonical(value)).digest('hex');
 // Evidence timestamps describe retrieval, not a change in the approved destination.
-// Excluding this display-only evidence also preserves hashes of legacy snapshots.
+// Legacy snapshots without visit roles remain readable; their first revalidation
+// conservatively requires fresh preparation instead of guessing old purpose.
 const snapshotDigest = snapshot => { const {contactEvidence, ...identity} = snapshot; return digest(identity); };
 export function bookingSnapshot(plan,selection){
   const stop=plan?.stops?.find(s=>s.id===selection.stopId);
   if(!stop?.item||stop.item.id!==selection.itemId||stop.item.entityId!==selection.entityId)throw fail('The selected place changed. Review the current day.');
   const contact = contactForItem(stop.item);
-  return {stopId:stop.id,itemId:stop.item.id,entityId:stop.item.entityId,name:stop.item.name,address:stop.item.address||null,
-    orderedStops:plan.stops.map(s=>({stopId:s.id,itemId:s.item?.id??null,entityId:s.item?.entityId??null})),
+  return {stopId:stop.id,intent:stop.intent??null,itemId:stop.item.id,entityId:stop.item.entityId,name:stop.item.name,address:stop.item.address||null,
+    orderedStops:plan.stops.map(s=>({stopId:s.id,intent:s.intent??null,itemId:s.item?.id??null,entityId:s.item?.entityId??null})),
     date:plan.request?.timing?.dateConfirmed===true?plan.request.date:null,localTime:plan.request?.timing?.timeConfirmed===true?stop.start||null:null,endTime:stop.end||null,timeZone:plan.timeZone||null,
     timing:structuredClone(plan.request?.timing||{dateConfirmed:false,timeConfirmed:false}),
     party:structuredClone(plan.request?.party||{}),contacts:{website:contact.website.url,phone:contact.phone.dialUrl},contactEvidence:contact};

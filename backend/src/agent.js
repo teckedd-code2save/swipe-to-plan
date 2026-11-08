@@ -1,4 +1,5 @@
 import {TITLE_SOURCES,titleSource,editPlanTitle} from '../../shared/plan-title.js';
+import {withSelectedRoute,preservedVisitRoute} from '../../shared/selected-route.js';
 import {editSelectedStops} from './stop-edits.js';
 import {reviseStops} from '../../shared/stop-intents.js';
 import {modelOptions} from './model-options.js';
@@ -49,6 +50,10 @@ Object.assign(QUESTION_TOOL.function.parameters.properties,{
 });
 QUESTION_TOOL.function.parameters.required=['question','topic','outingRequested','changes'];
 const LOCATION_FIELDS = REVISION_FIELDS.filter(key=>key!=='area');
+// Venue selection can carry simultaneous day edits, but new geography still
+// uses location confirmation. Requested roles travel separately from evidence.
+const SELECTION_FIELDS=REVISION_FIELDS.filter(key=>!['area','title','activities','stopIntents'].includes(key));
+const SELECTION_CHANGES={type:'object',additionalProperties:false,properties:Object.fromEntries(SELECTION_FIELDS.map(key=>[key,PLAN_TOOL.function.parameters.properties[key]])),description:'Other requested edits to apply with these selected visits, including date, time, budget and experience. Omit unchanged details. Replace superseded search topics. Location changes use the location action.'};
 const NEARBY_FIELD={type:'boolean',description:'True only when the user asks to plan near their current physical location. The app requests device permission and asks them to confirm a nearby area. Never invent coordinates or infer current whereabouts from a saved area.'};
 export const AUTOPILOT_TOOL = {type:'function',function:{name:'autopilot_day',description:'In Autopilot, compose a complete outing in one action using the current people and their saved tastes. Optionally bring one named saved circle and/or named saved contacts by exact ID. Apply all requested trip changes and explicit taste edits together. Existing participants and their current tastes take priority over saved copies. Do not invent people or tastes, increase the budget to accommodate them, or change saved account profiles. Missing location is confirmed by the app before discovery. Use empty changes to plan from the current brief.',parameters:{type:'object',additionalProperties:false,properties:{
   circleId:{type:'string'},personIds:strings(6),nearby:NEARBY_FIELD,
@@ -57,8 +62,8 @@ export const AUTOPILOT_TOOL = {type:'function',function:{name:'autopilot_day',de
 },required:['changes']}}};
 export const CHAT_TOOLS = [
   {type:'function',function:{name:'name_day',description:'Set the exact name explicitly chosen by the person for this outing. Only use for a naming or renaming request, never for an ordinary planning title suggestion. A nonempty name is preserved through all route and detail changes. Use an empty title only when they ask to return to automatic naming. Include other requested day edits in changes so a combined naming and planning request is applied together.',parameters:{type:'object',additionalProperties:false,properties:{title:{type:'string',maxLength:80},changes:{type:'object',additionalProperties:false,properties:Object.fromEntries(REVISION_FIELDS.filter(key=>key!=='title').map(key=>[key,PLAN_TOOL.function.parameters.properties[key]]))}},required:['title']}}},
-  {type:'function',function:{name:'edit_stops',description:'Edit one selected visit while code preserves every other occurrence, current people, budget, timing, location and requirements. Use insert to add a visit, including returning to a place already selected. Use replace or remove with the exact stopId occurrence, never a venue ID. Use move to reorder one occurrence. afterStopId is the existing stop after which to insert/move; null means the start. placeId must be an exact ID in planContext.options. Repeat visits to the same place are valid only when explicitly requested. Never drop a kept visit to fit the three-stop limit; ask if the edit conflicts.',parameters:{type:'object',additionalProperties:false,properties:{operation:{type:'string',enum:['insert','replace','remove','move']},stopId:{type:'string'},placeId:{type:'string'},afterStopId:{type:['string','null']}},required:['operation']}}},
-  {type:'function',function:{name:'select_places',description:'Choose a complete route from actual planContext.options when the user chooses the whole route or delegates a fresh choice. For edits to an existing route, prefer edit_stops so untouched visits are preserved automatically. Supply the complete intended route in visit order. An intentional return visit repeats the same exact place ID; never substitute a different venue. Use exact option IDs only, never venue names or invented IDs. One place is valid. Keep the current budget, people, location and timing. This updates the outing; it does not book anything.',parameters:{type:'object',additionalProperties:false,properties:{placeIds:{type:'array',minItems:1,maxItems:3,items:{type:'string'}}},required:['placeIds']}}},
+  {type:'function',function:{name:'edit_stops',description:'Edit one selected visit while code preserves every other occurrence, current people, budget, timing, location and requirements. Use insert to add a visit, including returning to a place already selected. Use replace or remove with the exact stopId occurrence, never a venue ID. Use move to reorder one occurrence. afterStopId is the existing stop after which to insert/move; null means the start. placeId must be an exact ID in planContext.options. Set intent for insert/replace to the requested visit role; an option intent is its previous retrieval bucket, not a restriction on the requested purpose. Include simultaneous day changes in changes. Repeat visits to the same place are valid only when explicitly requested. Never drop a kept visit to fit the three-stop limit; ask if the edit conflicts.',parameters:{type:'object',additionalProperties:false,properties:{operation:{type:'string',enum:['insert','replace','remove','move']},stopId:{type:'string'},placeId:{type:'string'},afterStopId:{type:['string','null']},intent:{type:['string','null'],enum:[...ACTIVITIES,null],description:'Requested role for insert/replace, or null to keep the existing role/category. Null for move/remove.'},changes:SELECTION_CHANGES},required:['operation','intent']}}},
+  {type:'function',function:{name:'select_places',description:'Choose a complete route from actual planContext.options when the user chooses the whole route or delegates a fresh choice. For edits to an existing route, prefer edit_stops so untouched visits are preserved automatically. Supply the complete intended route in visit order. An intentional return visit repeats the same exact place ID; never substitute a different venue. Use exact option IDs only, never venue names or invented IDs. One place is valid. Set stopIntents to the requested role of each visit whenever the user changes the composition or purpose, including repeated roles. An option intent is only its previous retrieval bucket, not verified venue capability. Use null only when no role change was requested. Include simultaneous day changes in changes; otherwise preserve budget, people, location and timing. This updates the outing; it does not book anything.',parameters:{type:'object',additionalProperties:false,properties:{placeIds:{type:'array',minItems:1,maxItems:3,items:{type:'string'}},stopIntents:{...PLAN_TOOL.function.parameters.properties.stopIntents,type:['array','null'],description:'Exactly one requested role per placeId, in the same order. Repeated roles are valid. Use null only if no role/composition change was requested; never let an old retrieval bucket override the requested purpose.'},changes:SELECTION_CHANGES},required:['placeIds','stopIntents']}}},
   {type:'function',function:{name:'add_saved_person',description:'Add an existing connection from the supplied contacts by their exact ID. These are people already in the user’s circles, not a public directory. Ask if the name is ambiguous.',parameters:{type:'object',additionalProperties:false,properties:{personId:{type:'string'}},required:['personId']}}},
   {type:'function',function:{name:'invite_person',description:'Open an invitation card for someone not yet connected. This prepares a private circle link for the user to share; it never sends a message or adds an account before they accept. A name is only a label, never an identity lookup.',parameters:{type:'object',additionalProperties:false,properties:{name:{type:'string',maxLength:24}},required:['name']}}},
   {type:'function',function:{name:'set_location',description:'Ask for or confirm the planning area. Search real cities, towns and neighborhoods. Use when no area is confirmed, the user changes area, or asks to save a default. Include all requested day changes in the same call, especially activities for one-stop requests, dates, times and budget. The app shows searchable results and local currency for confirmation before planning. Use scope default only for an explicit request to always use or remember this area; otherwise plan.',parameters:{type:'object',additionalProperties:false,properties:{area:PLAN_TOOL.function.parameters.properties.area,nearby:NEARBY_FIELD,scope:{type:'string',enum:['plan','default']},...Object.fromEntries(LOCATION_FIELDS.map(key=>[key,PLAN_TOOL.function.parameters.properties[key]]))}}}},
@@ -289,8 +294,9 @@ export function createAgent({fetchImpl=globalThis.fetch,getKey=()=>process.env.L
           nameChange=editPlanTitle(args.title);
           args=args.changes??{};tool.name='revise_day';
         }
-        const timeChanges=tool.name==='autopilot_day'?args.changes:args;
-        if(['autopilot_day','set_location','revise_day','plan_day'].includes(tool.name)&&timeChanges){
+        const selecting=['select_places','edit_stops'].includes(tool.name);
+        const timeChanges=tool.name==='autopilot_day'||selecting?args.changes:args;
+        if(['autopilot_day','set_location','revise_day','plan_day','select_places','edit_stops'].includes(tool.name)&&timeChanges){
           if(timeChanges.weekday!==undefined){
             if(!WEEKDAYS.includes(timeChanges.weekday))throw new InputError('Choose a supported weekday.');
             timeChanges.date=nextWeekdayDate(destinationClock.date,timeChanges.weekday);
@@ -298,7 +304,7 @@ export function createAgent({fetchImpl=globalThis.fetch,getKey=()=>process.env.L
           }
           if(timeChanges.timing?.dateConfirmed===true&&brief?.timing.dateConfirmed===false&&timeChanges.date===undefined){const error=new InputError('Confirm a concrete date, not the inherited placeholder.');error.modelFeedback='For a named weekday, set weekday to its lowercase name; code computes the correct date. Otherwise include the explicit ISO date being confirmed, or leave dateConfirmed false.';throw error;}
         }
-        if(['autopilot_day','set_location','revise_day','plan_day'].includes(tool.name)&&timeChanges?.timePreference!==undefined){
+        if(['autopilot_day','set_location','revise_day','plan_day','select_places','edit_stops'].includes(tool.name)&&timeChanges?.timePreference!==undefined){
           const windows={morning:['09:00','12:00'],afternoon:['12:00','17:00'],evening:['17:00','22:00'],choose:['00:00','23:59']};
           const preference=timeChanges.timePreference;
           if(!Object.hasOwn(windows,preference)&&preference!=='exact')throw new InputError('Choose a supported time preference.');
@@ -310,14 +316,31 @@ export function createAgent({fetchImpl=globalThis.fetch,getKey=()=>process.env.L
         }
         const ready=(request)=>narrate(!request.activities.length?{status:'action',action:'choose_activities',request,model:getModel()}:{status:'ready',request,model:getModel()});
         const locationAction=(request,query,scope='plan')=>narrate({status:'action',action:'set_location',request,query:query||'',scope,model:getModel()});
-        if(tool.name==='edit_stops'){
-          return {status:'action',action:'select_places',route:editSelectedStops(currentPlan,args)};
-        }
-        if(tool.name==='select_places'){
-          fields(args,['placeIds'],'venue choice');
-          const allowed=new Set((currentPlan?.options||[]).map(p=>p.id));
-          if(!Array.isArray(args.placeIds)||!args.placeIds.length||args.placeIds.length>3||args.placeIds.some(id=>!allowed.has(id)))throw new InputError('Choose places from the current results.');
-          return {status:'action',action:'select_places',placeIds:args.placeIds};
+        if(selecting){
+          if(!brief)throw new InputError('Start an outing before choosing places.');
+          const changes=args.changes===undefined?{}:args.changes;
+          fields(changes,SELECTION_FIELDS,'selected day changes');
+          let route;
+          if(tool.name==='edit_stops'){
+            if(!Object.hasOwn(args,'intent'))throw new InputError('Specify the requested visit role, or null to preserve it.');
+            const {changes:ignored,...edit}=args;
+            route=editSelectedStops(currentPlan,edit);
+          }else{
+            fields(args,['placeIds','stopIntents','changes'],'venue choice');
+            const options=new Map((currentPlan?.options||[]).map(p=>[p.id,p]));
+            if(!Array.isArray(args.placeIds)||!args.placeIds.length||args.placeIds.length>3||args.placeIds.some(id=>!options.has(id)))throw new InputError('Choose places from the current results.');
+            if(args.stopIntents!==null&&(!Array.isArray(args.stopIntents)||args.stopIntents.length!==args.placeIds.length||args.stopIntents.some(intent=>!ACTIVITIES.includes(intent)))){
+              const error=new InputError('Specify one requested visit role per selected place, or null when the roles are unchanged.');
+              error.modelFeedback='Use stopIntents for the current requested composition, including repeated categories. Old option intents describe retrieval buckets, not the requested purpose. Do not drop simultaneous day edits.';throw error;
+            }
+            route=args.stopIntents===null?preservedVisitRoute(args.placeIds,currentPlan.stops,[...options.values()]):args.placeIds.map((placeId,index)=>({intent:args.stopIntents[index],placeId}));
+          }
+          const revised={...brief,...changes,...(changes.experience?{experience:{...brief.experience,...changes.experience}}:{}),timing:{...brief.timing,...changes.timing},party:{...brief.party,...changes.party},...plannerTitle(brief,changes)};
+          if(changes.currency)revised.currencyMode='custom';
+          const request=parseItinerary(withSelectedRoute(revised,route));
+          // Only requested identity/roles cross this boundary. Selection is not
+          // proof of venue eligibility or a completed itinerary.
+          return {status:'action',action:'select_places',route,request};
         }
         if(tool.name==='invite_person'){
           fields(args,['name'],'invitation');

@@ -59,3 +59,9 @@ test('explicit website evidence never changes reviewed booking recipient, draft 
   assert.equal(document.querySelector('option[value="phone"]').textContent,'Call venue');
   assert.equal(document.querySelector('a[href="tel:+233209999999"]'),null);assert.equal(requests.length,0);
 });
+
+test('role-only change clears guest reviewed preparation even with identical venue and visit times',async()=>{
+ await render();await change('textarea','Reviewed old-purpose enquiry');await click('Use these details');assert.ok(button('Copy enquiry'));
+ const plan=structuredClone(props.plan);plan.stops[0].intent=plan.stops[0].intent==='coffee'?'activity':'coffee';const stop=plan.stops[0];
+ await render({plan,stop});assert.equal(button('Copy enquiry'),undefined);assert.notEqual(document.querySelector('textarea').value,'Reviewed old-purpose enquiry');assert.equal(requests.length,0);
+});

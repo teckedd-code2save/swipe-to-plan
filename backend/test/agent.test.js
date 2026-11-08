@@ -429,14 +429,14 @@ test('post-discovery choice uses existing option IDs and preserves planning cont
  const context=parseItinerary({people:[{id:'you',name:'You'}],budget:350});
  let payload;
  const planContext={stops:[],options:[{id:'real-one',intent:'dinner',name:'One',connections:[],practical:'Provider menu highlights, no prices'},{id:'real-two',intent:'drinks',name:'Two',connections:[]}],warnings:[]};
- const invoke=ids=>createAgent({getKey:()=> 'test',fetchImpl:async(_,opts)=>{payload=JSON.parse(opts.body);return response('select_places',{placeIds:ids});}}).interpret({message:'Go with the second one',context,planContext,mode:'autopilot'});
- assert.deepEqual(await invoke(['real-two']),{status:'action',action:'select_places',placeIds:['real-two']});
+ const invoke=ids=>createAgent({getKey:()=> 'test',fetchImpl:async(_,opts)=>{payload=JSON.parse(opts.body);return response('select_places',{placeIds:ids,stopIntents:null});}}).interpret({message:'Go with the second one',context,planContext,mode:'autopilot'});
+ const selected=await invoke(['real-two']);assert.equal(selected.action,'select_places');assert.deepEqual(selected.route,[{placeId:'real-two',intent:'drinks'}]);assert.equal(selected.request.budget,350);
  assert.equal(context.budget,350);
  assert(payload.tools.some(t=>t.function.name==='select_places'));
  const sent=JSON.parse(payload.messages.find(m=>m.role==='user').content);
  assert.equal(sent.planContext.options.length,2);
  await assert.rejects(invoke(['invented']),e=>e.status===400);
- assert.deepEqual((await invoke(['real-one','real-one'])).placeIds,['real-one','real-one']);
+ assert.deepEqual((await invoke(['real-one','real-one'])).route.map(stop=>stop.placeId),['real-one','real-one']);
 });
 test('explicit comparison permits only a reply and keeps the existing plan unchanged',async()=>{
  const context=parseItinerary({area:'Accra'}),before=JSON.stringify(context);

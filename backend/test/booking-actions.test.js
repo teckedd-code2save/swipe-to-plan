@@ -147,3 +147,17 @@ test('copying unchanged confirmed details keeps the current report; real message
  ({booking}=await accounts.bookings('a','p','patch',update(booking,'actual-edit',{notes:booking.notes+'\nOne more question.'}),booking.id));
  assert.equal(booking.status,'draft');assert.equal(booking.userReport.stale,true);assert.equal(booking.userReport.reference,'KEEP');assert.equal(booking.handoff,null);
 });
+
+test('persisted legacy booking records without roles remain readable and stale conservatively without losing history',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'booking-legacy-role-'));
+ try{
+  const file=join(dir,'accounts.json'),{accounts,store}=await accountFixture(file);let {booking}=await accounts.bookings('a','p','create',body());
+  ({booking}=await accounts.bookings('a','p','report',update(booking,'legacy-report',{outcome:'confirmed',reference:'Historical reference'}),booking.id));
+  const legacy=snapshot=>{const copy=structuredClone(snapshot);delete copy.intent;copy.orderedStops.forEach(stop=>delete stop.intent);return copy;};
+  await store.transact(data=>{const record=data.users.a.savedPlans.p.bookingActions.records[0];record.snapshot=legacy(record.snapshot);record.userReport.snapshot=legacy(record.userReport.snapshot);const {contactEvidence,...identity}=record.snapshot;record.snapshotHash=createHash('sha256').update(JSON.stringify(identity,(_,value)=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b))):value)).digest('hex');});
+  const restarted=createAccounts({store:createAccountStore({file,now}),now});let listing=await restarted.bookings('a','p');assert.equal(listing.bookings[0].stale,false);assert.equal(listing.bookings[0].userReport.reference,'Historical reference');assert.equal(listing.bookings[0].snapshot.intent,undefined);
+  const revised=plan();revised.stops[0].intent='coffee';await restarted.keepPlan({session:'a',id:'p',revision:2},revised);
+  listing=await restarted.bookings('a','p');const old=listing.bookings[0];assert.equal(old.id,booking.id);assert.equal(old.stale,true);assert.equal(old.handoff,null);assert.equal(old.userReport.reference,'Historical reference');assert.equal(old.userReport.stale,true);assert.equal(old.status,'user_reported_confirmed');assert.equal(old.submission.status,'not_submitted');assert.equal(old.payment.status,'not_requested');
+  await restarted.editSavedPlan('a','p',{revision:2,restoreRevision:1});assert.equal((await restarted.bookings('a','p')).bookings[0].stale,true);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
