@@ -14,3 +14,4 @@
 
 .pg-venue-contact{border:1px solid var(--gray-a5,#ddd);border-radius:14px;padding:16px;margin:16px 0;overflow-wrap:anywhere}
 .pg-venue-contact h3{margin:0 0 10px}.pg-venue-contact small{display:block;margin-top:6px;line-height:1.5}.pg-venue-contact a{display:inline-block;min-height:44px;padding:8px 0}
+.pg-route-start{display:grid;gap:8px;min-width:0}.pg-route-start>.pg-note{margin:4px 0 8px}.pg-route-start .pg-link{min-height:44px;max-width:100%;text-align:left;white-space:normal;overflow-wrap:anywhere}.pg-route-start .pg-links{display:flex;flex-wrap:wrap;gap:8px;margin:0}.pg-route-start>strong{font-size:14px}

@@ -1,3 +1,4 @@
+import {startingLocation} from './route-start.js';
 // Route estimates are ephemeral travel evidence, never saved itinerary data.
 export const routeModes = {driving:'DRIVE',walking:'WALK',transit:'TRANSIT'};
 
@@ -11,9 +12,9 @@ export function routeLocation(stop) {
 }
 
 export function routeEstimateRequest(leg,mode,startingPoint) {
-  const origin=leg?.from?routeLocation(leg.from):startingPoint.trim()?{address:startingPoint.trim()}:null;
+  const origin=leg?.from?routeLocation(leg.from):startingLocation(startingPoint);
   const destination=routeLocation(leg?.stop);
-  if(!origin)throw Error(leg?.from?'The previous place has no verified address or coordinates. Try Maps instead.':'Enter your starting address before estimating this journey.');
+  if(!origin)throw Error(leg?.from?'The previous place has no verified address or coordinates. Try Maps instead.':'Choose your starting point before estimating this journey.');
   if(!destination)throw Error('This place has no verified address or coordinates. Try Maps instead.');
   if(!routeModes[mode])throw Error('Choose Drive, Walk or Transit for an estimate. Compare opens Maps only.');
   return {origin,stops:[destination],mode:routeModes[mode]};
