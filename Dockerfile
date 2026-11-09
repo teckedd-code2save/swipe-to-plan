@@ -16,6 +16,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY backend/src ./src
 COPY backend/test ./test
 # Release guard tests run against the actual script with isolated command mocks.
+COPY compose.yml /build/compose.yml
 COPY deploy/release.sh /build/deploy/release.sh
 COPY deploy/smoke-invitation-epoch.sh /build/deploy/smoke-invitation-epoch.sh
 COPY .github/workflows/deploy.yml /build/.github/workflows/deploy.yml
