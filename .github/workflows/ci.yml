@@ -18,3 +18,5 @@ jobs:
       - run: npm run build
       - run: bash -n deploy/release.sh
       - run: docker build -t unstressed-check .
+      - name: Smoke-check runtime invitation protocol
+        run: bash deploy/smoke-invitation-epoch.sh unstressed-check

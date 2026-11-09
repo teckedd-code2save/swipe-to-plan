@@ -10,6 +10,14 @@ const post = (body) => ({ method: "POST", body: JSON.stringify(body) });
 const dayRequest = (token, method='GET', body) => ({ method, headers: {'content-type':'application/json', authorization:`Bearer ${token}`}, ...(body === undefined ? {} : {body:JSON.stringify(body)}), signal:AbortSignal.timeout(45000) });
 const bookingRequest=(scope,suffix='',method='GET',body,signal)=>json(`/api/${scope.type==='day'?'days':'account/plans'}/${encodeURIComponent(scope.id)}/bookings${suffix}`,{method,...(body?{body:JSON.stringify(body)}:{}),...(scope.type==='day'?{headers:{authorization:`Bearer ${scope.token}`}}:{}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(25000)]):AbortSignal.timeout(25000)});
 export const api = {
+  listPlanInvitations:(id,signal)=>json(`/api/account/plans/${encodeURIComponent(id)}/invitations`,{signal}),
+  inviteToPlan:(id,body,signal)=>json(`/api/account/plans/${encodeURIComponent(id)}/invitations`,{...post(body),signal}),
+  withdrawPlanInvitation:(id,invitationId,signal)=>json(`/api/account/plans/${encodeURIComponent(id)}/invitations/${encodeURIComponent(invitationId)}`,{method:'DELETE',body:'{}',signal}),
+  invitationInbox:signal=>json('/api/account/invitations',{signal}),
+  updateInvitation:(id,action,signal)=>json(`/api/account/invitations/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({action}),signal}),
+  invitedPlan:(id,signal)=>json(`/api/account/invitations/${encodeURIComponent(id)}/plan`,{signal}),
+  invitationSettings:(badgeEnabled,signal)=>json('/api/account/invitation-settings',{method:'PATCH',body:JSON.stringify({badgeEnabled}),signal}),
+
   bookings:(scope,signal)=>bookingRequest(scope,'','GET',undefined,signal),
   createBooking:(scope,body,signal)=>bookingRequest(scope,'','POST',body,signal),
   updateBooking:(scope,id,body,signal)=>bookingRequest(scope,`/${encodeURIComponent(id)}`,'PATCH',body,signal),

@@ -7,6 +7,7 @@ import {build} from 'esbuild';
 import {JSDOM} from 'jsdom';
 import React,{act} from 'react';
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
+import {historyTraversal} from '../test-support/history-navigation.js';
 import {syntheticCapabilities,syntheticRoutePlan,syntheticRouteResult} from './fixtures/route-plan.js';
 let GettingReady,ChatStudio,createRoot,bundleDir,dom,root,props,maps,capabilities,estimates,gps,applied,lookups;
 const originalFetch=globalThis.fetch;
@@ -40,12 +41,37 @@ beforeEach(()=>{
 afterEach(async()=>{if(root)await act(async()=>root.unmount());root=null;dom.window.close();});
 async function render(next={}){props={...props,...next};await act(async()=>{root??=createRoot(document.getElementById('root'));root.render(React.createElement(QueryClientProvider,{client:new QueryClient()},React.createElement(GettingReady,props)));});}
 const button=name=>[...document.querySelectorAll('button')].find(node=>node.textContent.trim()===name||node.getAttribute('aria-label')===name);
-async function click(name){const node=button(name);assert.ok(node,`Missing ${name}`);node.focus();await act(async()=>node.click());}
-async function flushBack(){await act(async()=>{await new Promise(resolve=>setTimeout(resolve,25));});}
-async function close(){await click('Close and return to map');await flushBack();}
+function activate(name){const node=button(name);assert.ok(node,`Missing ${name}`);node.focus();node.click();}
+async function click(name){await act(async()=>activate(name));}
+async function navigate(action){await act(async()=>{await historyTraversal(action);});}
+async function close(){await navigate(()=>activate('Close and return to map'));}
 async function stop(index=0){const node=document.querySelectorAll('.gr-stop')[index];node.focus();await act(async()=>node.click());}
 async function input(selector,value){const node=document.querySelector(selector);await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(node,value);node.dispatchEvent(new Event('input',{bubbles:true}));});}
 async function start(){await click('Choose your starting point');await click('Use Synthetic start · approximate area');await close();}
+async function openPinGroup(){const map=maps.at(-1);assert.equal(typeof map.events.onSelectGroup,'function');await act(async()=>map.events.onSelectGroup(map.points.filter(point=>point.coordinates)));}
+
+test('co-located visits use one native choice sheet with exact occurrence numbers, evidence and focus',async()=>{
+  const plan=syntheticRoutePlan();plan.stops.splice(1,0,{id:'unfilled',item:null});await render({plan});
+  const marker=document.createElement('button');marker.id='group-marker';document.querySelector('.journey-map-canvas').append(marker);marker.focus();
+  const historyLength=history.length;await openPinGroup();
+  assert.equal(document.querySelectorAll('dialog').length,1);assert.equal(document.querySelector('.gr-sheet-header h2').textContent,'At this map pin');assert.equal(document.activeElement?.tagName,'H2');
+  let choices=[...document.querySelectorAll('.gr-pin-choices button')];assert.deepEqual(choices.map(node=>node.querySelector('.gr-stop-number').textContent),['1','3']);assert.match(choices[1].textContent,/20:00–21:00/);assert.equal(history.length,historyLength+1);
+  await act(async()=>choices[1].click());assert.match(document.querySelector('.gr-sheet-header').textContent,/Stop 3 · 20:00–21:00/);assert.match(document.querySelector('.gr-hours').textContent,/second visit is reported closed/);assert.equal(maps.at(-1).selected,'second-drinks');assert.equal(document.querySelectorAll('dialog').length,1);
+  await click('Directions to this stop');assert.match(document.querySelector('.gr-journey-path').textContent,/Stop 1/);await click('Back to previous sheet');await click('Back to previous sheet');
+  choices=[...document.querySelectorAll('.gr-pin-choices button')];await act(async()=>choices[0].click());assert.match(document.querySelector('.gr-sheet-header').textContent,/Stop 1 · 18:00–19:00/);assert.match(document.querySelector('.gr-hours').textContent,/first visit fits/);assert.equal(history.length,historyLength+1);
+  await close();assert.equal(document.activeElement?.id,'group-marker');assert.equal(document.querySelector('dialog'),null);assert.equal(gps.length,0);assert.equal(estimates.length,0);
+});
+test('co-located start stays a distinct choice and changing it cannot restore stale start details',async()=>{
+  await render({savedAreas:[{id:'co-located',label:'Synthetic start',center:{latitude:5.56,longitude:-0.18}}]});await start();await openPinGroup();
+  let choices=[...document.querySelectorAll('.gr-pin-choices button')];assert.deepEqual(choices.map(node=>node.querySelector('.gr-stop-number').textContent),['S','1','2']);assert.match(choices[0].textContent,/Synthetic start/);assert.match(choices[0].textContent,/Approximate area/);
+  await act(async()=>choices[0].click());assert.equal(document.querySelector('.gr-sheet-header h2').textContent,'Your starting point');await click('Clear starting point');await click('Back to previous sheet');
+  choices=[...document.querySelectorAll('.gr-pin-choices button')];assert.deepEqual(choices.map(node=>node.querySelector('.gr-stop-number').textContent),['1','2']);assert.equal(gps.length,0);assert.equal(localStorage.length,0);assert.equal(sessionStorage.length,0);await close();
+});
+test('group choices close on browser Back and cannot reopen after plan or account invalidation',async()=>{
+  await render();await openPinGroup();const firstMap=maps.at(-1);await navigate(()=>history.back());assert.equal(document.querySelector('dialog'),null);await navigate(()=>history.forward());assert.equal(document.querySelector('dialog'),null);
+  await openPinGroup();const plan=structuredClone(props.plan);plan.stops.reverse();await render({plan});assert.equal(document.querySelector('dialog'),null);await act(async()=>firstMap.events.onSelectGroup(firstMap.points));assert.equal(document.querySelector('dialog'),null);
+  await openPinGroup();const secondMap=maps.at(-1);await render({routeScope:'new-account'});assert.equal(document.querySelector('dialog'),null);await act(async()=>secondMap.events.onSelectGroup(secondMap.points));assert.equal(document.querySelector('dialog'),null);
+});
 
 test('entry automatically loads real pins, shows compact readiness and makes no GPS or estimate calls',async()=>{
   await render();assert.equal(maps.length,1);assert.equal(maps[0].points.length,3);assert.equal(gps.length,0);assert.equal(estimates.length,0);assert.equal(lookups.length,0);
@@ -57,10 +83,24 @@ test('start sheet preserves map and selection; focus and scroll lock return on C
   for(const method of ['close','escape','back']){
     await click('Choose your starting point');const trigger=button('Choose your starting point'),dialog=document.querySelector('dialog');assert.ok(dialog.open);assert.equal(document.activeElement,dialog.querySelector('h2'));assert.equal(document.body.style.overflow,'hidden');
     await click('Use Synthetic start · approximate area');assert.equal(gps.length,0);assert.equal(document.querySelectorAll('dialog').length,1);assert.match(document.querySelector('.gr-sheet').textContent,/approximate area centre|Approximate area centre/);
-    if(method==='close')await close();else if(method==='escape'){await act(async()=>dialog.dispatchEvent(new Event('cancel',{cancelable:true})));await flushBack();}else{history.back();await flushBack();}
+    if(method==='close')await close();else if(method==='escape'){await navigate(()=>dialog.dispatchEvent(new Event('cancel',{cancelable:true})));}else{await navigate(()=>history.back());}
     assert.equal(document.querySelector('dialog'),null);assert.equal(document.body.style.overflow,'');assert.equal(document.activeElement,trigger);assert.equal(maps.at(-1).points[0].label,'Synthetic start');
     await click('StartSynthetic start');await click('Clear starting point');await close();
   }
+});
+test('a delayed native Back completes before the next sheet opens, preserving history and focus',async()=>{
+  await render();await click('Choose your starting point');
+  const trigger=button('Choose your starting point'),dialog=document.querySelector('dialog'),sheetState=history.state;
+  const back=history.back.bind(history);let release,requests=0;
+  // Gate the actual traversal rather than choosing another sleep. The sheet
+  // must remain open until the native popstate arrives, even under load.
+  history.back=()=>{requests++;release=back;};
+  const closing=close();
+  assert.equal(requests,1);assert.equal(typeof release,'function');assert.equal(document.querySelector('dialog'),dialog);assert.equal(dialog.open,true);assert.equal(history.state,sheetState);
+  release();await closing;history.back=back;
+  assert.equal(document.querySelector('dialog'),null);assert.equal(document.body.style.overflow,'');assert.equal(document.activeElement,trigger);assert.notEqual(history.state?.readySheet,sheetState.readySheet);
+  await click('Choose your starting point');assert.ok(document.querySelector('dialog')?.open);assert.notEqual(history.state.readySheet,sheetState.readySheet);
+  await close();assert.equal(document.querySelector('dialog'),null);assert.equal(document.activeElement,trigger);
 });
 test('marker taps show the exact visit evidence and nested decisions reuse one sheet',async()=>{
   await render();await act(async()=>maps[0].events.onSelectStop('second-drinks'));
@@ -75,7 +115,7 @@ test('second-visit directions originate at the previous selected stop and disabl
 });
 test('timing stays over the map, preserves the existing request and applies only on submit',async()=>{
   const plan=syntheticRoutePlan();plan.request.timing={dateConfirmed:false,timeConfirmed:false,mode:'flexible'};plan.stops=plan.stops.map(stop=>({...stop,start:null,end:null}));await render({plan});
-  await click('Choose a time');assert.equal(applied.length,0);assert.ok(document.querySelector('.journey-map-canvas'));assert.equal(document.querySelector('.cs-tool-head'),null);await act(async()=>[...document.querySelectorAll('.cs-timing-choices button')].find(node=>node.querySelector('strong')?.textContent==='Tomorrow').click());await click('Evening');await click('Update outing');await flushBack();
+  await click('Choose a time');assert.equal(applied.length,0);assert.ok(document.querySelector('.journey-map-canvas'));assert.equal(document.querySelector('.cs-tool-head'),null);await act(async()=>[...document.querySelectorAll('.cs-timing-choices button')].find(node=>node.querySelector('strong')?.textContent==='Tomorrow').click());await click('Evening');await navigate(()=>activate('Update outing'));
   assert.equal(applied.length,1);assert.equal(applied[0].timing.window,'evening');assert.deepEqual(applied[0].pins,plan.request.pins);assert.equal(applied[0].locationId,plan.request.locationId);assert.equal(document.querySelector('dialog'),null);
 });
 test('explicit mock-enabled estimate works and dismissal rejects a delayed result',async()=>{
@@ -103,11 +143,11 @@ test('sheet layout isolates scrolling, uses safe-area and keyboard viewport, and
 
 test('rapid Close and Escape traverse history once; Forward never reopens a stale sheet',async()=>{
   await render();const href=location.href,state=history.state;await click('Choose your starting point');let backs=0;const original=history.back.bind(history);history.back=()=>{backs++;original();};
-  await act(async()=>{button('Close and return to map').click();button('Close and return to map').click();document.querySelector('dialog').dispatchEvent(new Event('cancel',{cancelable:true}));});await flushBack();assert.equal(backs,1);assert.equal(location.href,href);assert.deepEqual(history.state,state);assert.equal(document.querySelector('dialog'),null);
-  history.forward();await flushBack();assert.equal(document.querySelector('dialog'),null);assert.equal(estimates.length,0);assert.equal(gps.length,0);
+  await navigate(()=>{button('Close and return to map').click();button('Close and return to map').click();document.querySelector('dialog').dispatchEvent(new Event('cancel',{cancelable:true}));});assert.equal(backs,1);assert.equal(location.href,href);assert.deepEqual(history.state,state);assert.equal(document.querySelector('dialog'),null);
+  await navigate(()=>history.forward());assert.equal(document.querySelector('dialog'),null);assert.equal(estimates.length,0);assert.equal(gps.length,0);
 });
 test('timing apply removes its sheet entry before changing the outing',async()=>{
-  await render();const state=history.state,href=location.href;const chip=document.querySelector('.gr-readiness button');await act(async()=>chip.click());await click('Update outing');await flushBack();assert.equal(applied.length,1);assert.deepEqual(history.state,state);assert.equal(location.href,href);assert.equal(document.querySelector('dialog'),null);
+  await render();const state=history.state,href=location.href;const chip=document.querySelector('.gr-readiness button');await act(async()=>chip.click());await navigate(()=>activate('Update outing'));assert.equal(applied.length,1);assert.deepEqual(history.state,state);assert.equal(location.href,href);assert.equal(document.querySelector('dialog'),null);
 });
 test('a removed map trigger returns focus to the map hub; account invalidation does not steal new focus',async()=>{
   await render();const marker=document.createElement('button');marker.textContent='Synthetic marker';document.body.append(marker);marker.focus();await act(async()=>maps[0].events.onSelectStart());marker.remove();await close();assert.equal(document.activeElement,document.querySelector('.gr-hub'));

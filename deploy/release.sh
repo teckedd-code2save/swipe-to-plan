@@ -31,6 +31,44 @@ if [[ "$containers" == 'unstressed-web' ]]; then
 elif [[ -n "$containers" ]]; then
   echo 'Unexpected live container lookup; release aborted.'; exit 1
 fi
+# Missing labels identify legacy images; inspection errors and unknown versions
+# are NOT legacy and must abort before any writer/data changes.
+invitation_protocol() {
+  local label
+  label="$(docker image inspect "$1" --format '{{index .Config.Labels "io.unstressed.plan-invitations"}}')" || {
+    echo 'Cannot inspect invitation protocol; release/rollback blocked.' >&2; return 1;
+  }
+  case "$label" in
+    1) printf '1' ;;
+    ''|'<no value>') printf '0' ;;
+    *) echo 'Unknown invitation protocol; release/rollback blocked.' >&2; return 1 ;;
+  esac
+}
+next_invitation_protocol="$(invitation_protocol "$image")" || exit 1
+previous_invitation_protocol=0
+if [[ -n "$previous" ]]; then
+  previous_invitation_protocol="$(invitation_protocol "$previous")" || exit 1
+fi
+# Only invoke this after quiescence, recovery checks and backup. The helper
+# belongs to an immutable protocol-aware image, never to a legacy target.
+prepare_invitation_epoch() {
+  local from_protocol="$1" from_image="$2" to_protocol="$3" to_image="$4"
+  local epoch_image action
+  if [[ "$to_protocol" == 1 ]]; then
+    epoch_image="$to_image"; action=ensure
+  elif [[ "$from_protocol" == 1 ]]; then
+    epoch_image="$from_image"; action=rotate
+  else
+    return 0
+  fi
+  if ! timeout --kill-after=5s 45s docker run --rm --name "$epoch" --network none --user node --init \
+    --read-only --cap-drop ALL --security-opt no-new-privileges:true --no-healthcheck \
+    --memory 64m --pids-limit 32 --mount type=bind,src=/opt/unstressed/data,dst=/data \
+    --entrypoint node "$epoch_image" src/invitation-epoch.js "$action"; then
+    echo 'Invitation epoch preparation failed; keep writer stopped. Preserve data and reconcile recovery state with protocol-aware tooling before retrying.' >&2
+    return 1
+  fi
+}
 if [[ -z "$previous" ]] && ss -H -ltn '( sport = :13000 )' | grep -q .; then echo 'Live port 13000 is occupied.'; exit 1; fi
 # Pending recovery evidence includes dangling symlinks. Inspection failure is unsafe.
 intent_pending() {
@@ -55,7 +93,8 @@ resume_original() {
 }
 candidate="unstressed-candidate-${image##*:}"
 probe="unstressed-fsync-probe-${image##*:}"
-trap 'docker rm -f "$candidate" "$probe" >/dev/null 2>&1 || true' EXIT
+epoch="unstressed-invitation-epoch-${image##*:}"
+trap 'docker rm -f "$candidate" "$probe" "$epoch" >/dev/null 2>&1 || true' EXIT
 docker run -d --name "$candidate" --network unstressed --init --read-only --cap-drop ALL --security-opt no-new-privileges:true \
   --memory 640m --pids-limit 100 --env-file .env \
   --tmpfs /tmp:size=32m,mode=1777 --tmpfs /data:size=16m,uid=1000,gid=1000,mode=0700 \
@@ -95,6 +134,7 @@ if ! (mkdir -p backups && chmod 700 backups && tar -czf "backups/pre-${image##*:
   resume_original || true
   exit 1
 fi
+prepare_invitation_epoch "$previous_invitation_protocol" "$previous" "$next_invitation_protocol" "$image" || exit 1
 if UNSTRESSED_IMAGE="$image" docker compose -f compose.yml up -d --no-build --pull never && healthy 13000; then
   [[ -z "$previous" || "$previous" == "$image" ]] || printf '%s\n' "$previous" > previous-image.txt
   printf '%s\n' "$image" > current-image.txt
@@ -114,6 +154,10 @@ else
     exit 1
   fi
   if [[ -n "$previous" ]]; then
+    # Reinspect rather than treating any inspection failure as legacy-safe.
+    failed_protocol="$(invitation_protocol "$image")" || exit 1
+    rollback_protocol="$(invitation_protocol "$previous")" || exit 1
+    prepare_invitation_epoch "$failed_protocol" "$image" "$rollback_protocol" "$previous" || exit 1
     UNSTRESSED_IMAGE="$previous" docker compose -f compose.yml up -d --no-build --pull never
     healthy 13000
   fi
