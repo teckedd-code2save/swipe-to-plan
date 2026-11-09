@@ -96,3 +96,10 @@ Contact evidence uses the existing venue provider and place-detail cache. It int
 Account snapshot writes now fsync the temporary file and directory, with a private `.intent` recovery sidecar. A pending/uncertain commit blocks account writes while recognized read snapshots remain available. Do not delete recovery files or restart-and-retry mutations blindly. See `ACCOUNT-DURABILITY.md` for the single-writer assumptions, operator-only reconciliation and required runtime filesystem verification before any future live provider dispatch. Other file stores retain their existing durability semantics.
 
 The guarded release now tests file fsync, same-directory rename and directory fsync on the actual data bind volume using a restricted standalone container from the exact new image, before stopping the live API. It receives no environment file or network and touches only its unique private probe namespace. Unsupported primitives or cleanup failure abort without cutting over; success is not a hardware power-loss certification. See `ACCOUNT-DURABILITY.md`.
+
+
+### Initial native account release stays disabled
+
+Production `compose.yml` explicitly sets `NATIVE_AUTH_ENABLED: "false"`, taking precedence over the runtime `.env` file. The direct loopback candidate invocation in `deploy/release.sh` also sets `NATIVE_AUTH_ENABLED=false`. This makes the initial source integration safe even when the old runtime environment contains an unknown flag value. Existing Google web sign-in and its callback are unchanged.
+
+After the approved flag-off release, verify `/api/auth/native/config` returns `enabled:false` and normal web account/guest planning still works. Native enablement is a separate reviewed deployment change to these explicit controls, not a secret-file edit or automatic follow-up. Do not turn it on before the independent security review and coordinated device/browser acceptance plan. The same existing Google web credentials and callback are reused; no new credential, scope or public port is required. See [native account operations](../backend/docs/native-accounts.md).

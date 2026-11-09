@@ -8,7 +8,12 @@
     "lint": "node scripts/check-source.mjs",
     "test": "npm test --prefix backend && npm test --prefix frontend",
     "build": "npm run build --prefix frontend",
-    "start": "npm start --prefix backend"
+    "start": "npm start --prefix backend",
+    "mobile:setup": "npm ci --prefix mobile",
+    "mobile": "npm start --prefix mobile",
+    "mobile:check": "npm run check --prefix mobile"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

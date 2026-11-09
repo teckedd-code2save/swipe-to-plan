@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import {createHash,randomUUID} from 'node:crypto';
 import {dirname} from 'node:path';
 
-const empty=()=>({users:{},sessions:{},flows:{},circles:{}});
+const empty=()=>({users:{},sessions:{},flows:{},circles:{},nativeFlows:{},nativeSessions:{}});
 const digest=text=>createHash('sha256').update(text).digest('hex');
 const blocked=()=>Object.assign(new Error('Account saving is unavailable until a storage issue is reconciled. The last change may already be saved. Refresh to check your current account state; do not repeat the change blindly.'),{status:503,code:'account_commit_unknown'});
 
@@ -47,7 +47,7 @@ export function createAccountStore({file=null,now=Date.now,io=fs}={}){
     transact(fn){return serial(async()=>{
       await load();if(uncertain)throw blocked();
       const next=structuredClone(data);
-      for(const collection of ['flows','sessions'])for(const [id,value] of Object.entries(next[collection]))if(value.expiresAt<=now())delete next[collection][id];
+      for(const collection of ['flows','sessions','nativeFlows','nativeSessions'])for(const [id,value] of Object.entries(next[collection]||{}))if(value.expiresAt<=now())delete next[collection][id];
       const result=structuredClone(await fn(next));
       if(!file){data=next;return result;}
       const raw=JSON.stringify(next),temp=`${file}.${randomUUID()}.tmp`;

@@ -126,3 +126,15 @@ test('failed aware container confirmed absent still invalidates grants before le
 test('failed quiescence prevents epoch rotation and legacy fallback',async t=>{
  const r=await release(t,'rollback_stop_fail',{next:'1'});assert.equal(r.status,1);assert.equal((r.events.match(/docker compose/g)||[]).length,1);assert.doesNotMatch(r.events,/invitation-epoch.js rotate/);
 });
+
+
+test('initial native release explicitly overrides runtime flags in production and preflight candidate',async()=>{
+ const compose=await fs.readFile(new URL('../../compose.yml',import.meta.url),'utf8');
+ const script=await fs.readFile(new URL('../../deploy/release.sh',import.meta.url),'utf8');
+ assert.match(compose,/    env_file:\n      - \/opt\/unstressed\/.env/);
+ assert.match(compose,/    environment:\n      NATIVE_AUTH_ENABLED: "false"\n/);
+ assert.doesNotMatch(compose,/NATIVE_AUTH_ENABLED:.*\$\{/,'Do not inherit or interpolate an unknown runtime flag.');
+ const candidate=script.slice(script.indexOf('docker run -d --name "$candidate"'),script.indexOf('healthy()'));
+ assert.match(candidate,/--env-file \.env -e NATIVE_AUTH_ENABLED=false/);
+ assert.doesNotMatch(compose,/GOOGLE_OAUTH_CLIENT_(?:ID|SECRET):/,'Existing Google web auth configuration remains untouched.');
+});

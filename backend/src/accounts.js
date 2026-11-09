@@ -1,3 +1,4 @@
+import {createNativeAuth} from './native-auth.js';
 import {createExecutionProtocol,invalidateExecution,executionCapabilities} from './execution-ledger.js';
 import {bookingOperation,invalidateBookings} from './booking-actions.js';
 import {sendCircleMail} from './circle-mail.js';
@@ -17,25 +18,30 @@ const profile=(value,id)=>({...parseItinerary({party:{adults:1},people:[value]})
 const safeUser=user=>({id:user.id,email:user.email,profile:user.profile,planningLocation:user.planningLocation||null,planningLocations:user.planningLocations||[user.planningLocation].filter(Boolean)});
 const cookie=(req,name)=>(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith(`${name}=`))?.slice(name.length+1);
 
-export function createAccounts({store=createAccountStore(),now=Date.now,invitationEpoch=null,origin=process.env.APP_ORIGIN||'http://127.0.0.1:5173',clientId=process.env.GOOGLE_OAUTH_CLIENT_ID,clientSecret=process.env.GOOGLE_OAUTH_CLIENT_SECRET,adminEmails=(process.env.ADMIN_EMAILS||'').split(',').map(e=>e.trim().toLowerCase()).filter(Boolean),oauthFactory}={}){
+export function createAccounts({store=createAccountStore(),now=Date.now,invitationEpoch=null,origin=process.env.APP_ORIGIN||'http://127.0.0.1:5173',clientId=process.env.GOOGLE_OAUTH_CLIENT_ID,clientSecret=process.env.GOOGLE_OAUTH_CLIENT_SECRET,adminEmails=(process.env.ADMIN_EMAILS||'').split(',').map(e=>e.trim().toLowerCase()).filter(Boolean),oauthFactory,nativeAuthEnabled=process.env.NATIVE_AUTH_ENABLED==='true'}={}){
   const executionProtocol=createExecutionProtocol({now});
   const planInvitations=createPlanInvitations({now,epoch:invitationEpoch});
   origin=new URL(origin).origin;
   const secure=origin.startsWith('https://');
   const isAdmin=user=>!!user&&adminEmails.includes(user.email.toLowerCase());
   const enabled=!!(clientId&&clientSecret&&(secure||process.env.NODE_ENV!=='production'));
+  const native=createNativeAuth({store,now,origin,enabled:enabled&&nativeAuthEnabled});
+  // Use the selected Express route, not the caller's spelling. Before routing
+  // (usage middleware), mirror Express's case-insensitive optional-slash match.
+  const nativePlanning=req=>!!req.get?.('authorization')&&(req.route?.path!==undefined?['/api/agent','/api/itineraries'].includes(req.route.path):/^\/api\/(?:agent|itineraries)\/?$/i.test((req.originalUrl||req.path||'').split('?')[0]));
+  const requestSession=req=>nativePlanning(req)?native.credential(req):cookie(req,sessionName);
   const redirectUri=`${origin}/api/auth/google/callback`;
   const oauth=()=>oauthFactory?oauthFactory():new OAuth2Client({clientId,clientSecret,redirectUri,transporterOptions:{timeout:15000,retry:false}});
   function checkOrigin(req){if(req.get('origin')!==origin||!req.is('application/json'))throw fail('Please make this change from Unstressed.');}
   const settings={httpOnly:true,secure,sameSite:'lax',path:'/'};
   const sessionName=secure?'__Host-outing-session':'outing-session';
   const bindingName=secure?'__Host-outing-signin':'outing-signin';
-  const resolve=(data,session)=>{const record=data.sessions[hash(session)];return record&&record.expiresAt>now()?data.users[record.userId]:null;};
+  const resolve=(data,session)=>{if(session&&typeof session==='object')return native.resolve(data,session);const record=data.sessions[hash(session)];return record&&record.expiresAt>now()?data.users[record.userId]:null;};
   const requireUser=(data,session)=>{const user=resolve(data,session);if(!user)throw fail('Sign in to keep your tastes and circles.',401);return user;};
   const invitationUser=(data,session)=>{const user=requireUser(data,session);planInvitations.assertEnabled();return user;};
   const circleView=(data,circle,user)=>({id:circle.id,name:circle.name,owner:circle.ownerId===user.id,people:circle.members.map(m=>m.userId?data.users[m.userId].profile:m.profile),accountIds:circle.members.flatMap(m=>m.userId?[m.userId]:[]),...(circle.ownerId===user.id?{inviteToken:circle.inviteToken}:{})});
   const myCircles=(data,user)=>Object.values(data.circles).filter(c=>c.members.some(m=>m.userId===user.id)).map(c=>circleView(data,c,user));
-  function returnPath(raw){if(raw==='/'||raw===undefined)return '/';if(typeof raw==='string'&&(/^\/#\/(?:day|circle)\/[a-zA-Z0-9_-]{1,64}\?(?:key|invite)=[a-zA-Z0-9_-]{20,64}$/.test(raw)||/^\/#\/plan\/[a-zA-Z0-9_-]{1,64}$/.test(raw)))return raw;throw new InputError('Return to the planner after signing in.');}
+  function returnPath(raw){if(raw==='/'||raw===undefined)return '/';if(native.enabled&&typeof raw==='string'&&/^\/api\/auth\/native\/browser\?flow=[A-Za-z0-9_-]{43}$/.test(raw))return raw;if(typeof raw==='string'&&(/^\/#\/(?:day|circle)\/[a-zA-Z0-9_-]{1,64}\?(?:key|invite)=[a-zA-Z0-9_-]{20,64}$/.test(raw)||/^\/#\/plan\/[a-zA-Z0-9_-]{1,64}$/.test(raw)))return raw;throw new InputError('Return to the planner after signing in.');}
   const planSummary=entry=>({id:entry.id,revision:entry.revision,savedAt:entry.savedAt,title:entry.plan.request.title,date:entry.plan.request.date,area:entry.plan.request.area,budget:entry.plan.request.budget,currency:entry.plan.request.currency,...(entry.circleIds?.length?{circleIds:entry.circleIds}: {})});
   const savedPlan=(user,id)=>{if(!Object.hasOwn(user.savedPlans||{},id))throw fail('This saved day is not in your account.',404);return user.savedPlans[id];};
   const member=(circle,userId)=>!!circle?.members.some(m=>m.userId===userId);
@@ -47,11 +53,11 @@ export function createAccounts({store=createAccountStore(),now=Date.now,invitati
     enabled,origin,redirectUri,
     // Only server-generated plans enter this store; clients cannot upload venue/evidence snapshots.
     async planTarget(req,{shared=false}={}){
-      const user=await this.identity(req);if(!user)return null;
-      checkOrigin(req);
+      const user=await this.identity(req);if(!user){if(nativePlanning(req))throw fail('Sign in on this device.',401);return null;}
+      if(nativePlanning(req)){if(!req.is('application/json'))throw fail('Use JSON.',403);}else checkOrigin(req);
       const id=req.get('x-unstressed-plan-id')||randomUUID(),revision=Number(req.get('x-unstressed-plan-revision')||1);
       if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)||!Number.isSafeInteger(revision)||revision<1)throw new InputError('Please reopen the saved day before editing it.');
-      const session=cookie(req,sessionName);
+      const session=requestSession(req);
       // Reworking an archived shared-day snapshot starts a private copy. Live
       // participant updates must never overwrite that independent revision.
       if(!shared&&await store.read(data=>!!resolve(data,session)?.savedPlans?.[id]?.sourceDayId))return {session,id:randomUUID(),revision:1};
@@ -121,14 +127,14 @@ export function createAccounts({store=createAccountStore(),now=Date.now,invitati
     },
     async removePlan(session,id){await store.transact(data=>{const user=requireUser(data,session);const entry=savedPlan(user,id);if(entry.executionLedger?.records.some(r=>['submission_pending','submission_unknown','submitted_awaiting_response','provider_confirmed'].includes(r.status)))throw fail('Reconcile pending venue submissions before deleting this day.',409);delete user.savedPlans[id];planInvitations.remove(data,user,id);});},
     async current(session){return store.read(data=>{const user=resolve(data,session);return {configured:enabled,user:user?{...safeUser(user),admin:isAdmin(user)}:null,circles:user?myCircles(data,user):[],invitationAvailable:planInvitations.available,invitationUnreadCount:user?planInvitations.unreadCount(data,user):0};});},
-    async identity(req){return store.read(data=>{const user=resolve(data,cookie(req,sessionName));return user?{id:user.id,admin:isAdmin(user)}:null;});},
+    async identity(req){return store.read(data=>{const user=resolve(data,requestSession(req));return user?{id:user.id,admin:isAdmin(user)}:null;});},
     async adminUsers(req){return store.read(data=>{const user=requireUser(data,cookie(req,sessionName));if(!isAdmin(user))throw fail('This dashboard is private.');return Object.values(data.users).map(u=>({id:u.id,name:u.profile.name,email:u.email,createdAt:u.createdAt,lastSignedInAt:u.lastSignedInAt||null,circles:Object.values(data.circles).filter(c=>c.members.some(m=>m.userId===u.id)).length,hasTastes:!!(u.profile.artists.length||u.profile.vibes.length)}));});},
     async planningPeople(req){
-      const current=await this.current(cookie(req,sessionName));
+      const current=await this.current(requestSession(req));
       if(!current.user)return {peopleMode:'guest'};
       const circles=current.circles.map(c=>({id:c.id,name:c.name,people:c.people.filter(p=>c.accountIds.includes(p.id))}));
       const contacts=[...new Map([current.user.profile,...circles.flatMap(c=>c.people)].map(p=>[p.id,p])).values()].slice(0,72);
-      const planningMemory=await store.read(data=>{const user=resolve(data,cookie(req,sessionName));return Object.values(user?.savedPlans||{}).sort((a,b)=>b.savedAt.localeCompare(a.savedAt)).slice(0,3).map(entry=>({area:entry.plan.request.area,activities:entry.plan.request.activities}));});
+      const planningMemory=await store.read(data=>{const user=resolve(data,requestSession(req));return Object.values(user?.savedPlans||{}).sort((a,b)=>b.savedAt.localeCompare(a.savedAt)).slice(0,3).map(entry=>({area:entry.plan.request.area,activities:entry.plan.request.activities}));});
       return {peopleMode:'connected',circles,contacts,planningMemory};
     },
     async start(body){fields(body,['returnTo']);if(!enabled)throw fail('Google sign-in is being connected. Your day can continue as a guest.',503);const returnTo=returnPath(body.returnTo),state=opaque(),binding=opaque(),verifier=opaque(),nonce=opaque();await store.transact(data=>{data.flows[hash(state)]={binding:hash(binding),verifier,nonce,returnTo,expiresAt:now()+600000};});return {binding,url:oauth().generateAuthUrl({scope:['openid','email','profile'],state,nonce,prompt:'select_account',code_challenge:hash(verifier),code_challenge_method:CodeChallengeMethod.S256,access_type:'online'})};},
@@ -225,8 +231,41 @@ export function createAccounts({store=createAccountStore(),now=Date.now,invitati
       });
     },
     async updateCirclePerson(session,id,memberId,body){fields(body,['name','artists','vibes','spending','context']);return store.transact(data=>{const user=requireUser(data,session),circle=data.circles[id];if(!circle||circle.ownerId!==user.id)throw fail('Only this circle’s organizer can edit an invited profile.');const member=circle.members.find(m=>!m.userId&&m.profile.id===memberId);if(!member)throw fail('Members who have joined manage their own account tastes.');member.profile=profile(body,memberId);return circleView(data,circle,user);});},
+    mountNative(app,{route,limit,resolveLocation,native}){
+      const register=(method,path,fn)=>app[method]('/api/native/account'+path,limit(45,'native-account'),route(async(req,res)=>{
+        const session=native.credential(req);
+        if(method!=='get'&&!req.is('application/json'))throw fail('Use JSON.',403);
+        const current=await this.current(session);if(!current.user)throw fail('Sign in on this device.',401);
+        res.set('Cache-Control','no-store');res.json(await fn(session,req));
+      }));
+      register('get','',s=>this.current(s));
+      register('patch','/profile',async(s,r)=>({user:await this.updateProfile(s,r.body)}));
+      register('patch','/planning-location',async(s,r)=>({user:await this.updatePlanningLocation(s,r.body,resolveLocation)}));
+      register('get','/plans',async s=>({plans:await this.listPlans(s)}));
+      register('get','/plans/:id',(s,r)=>this.getPlan(s,r.params.id));
+      register('patch','/plans/:id',(s,r)=>this.editSavedPlan(s,r.params.id,r.body));
+      register('delete','/plans/:id',async(s,r)=>{await this.removePlan(s,r.params.id);return {ok:true};});
+      register('post','/plans/:id/circles',(s,r)=>this.attachCircle(s,r.params.id,r.body));
+      register('get','/circle-plans',async s=>({plans:await this.listCirclePlans(s)}));
+      register('get','/circle-plans/:ownerId/:id',(s,r)=>this.getCirclePlan(s,r.params.ownerId,r.params.id));
+      register('post','/circles',(s,r)=>this.createCircle(s,r.body));
+      register('patch','/circles/:id',(s,r)=>this.renameCircle(s,r.params.id,r.body));
+      register('post','/circles/:id/join',(s,r)=>this.joinCircle(s,r.params.id,r.body));
+      register('delete','/circles/:id',async(s,r)=>{await this.removeCircle(s,r.params.id);return {ok:true};});
+      register('delete','/circles/:id/members/:memberId',(s,r)=>this.removeCircleMember(s,r.params.id,r.params.memberId));
+      register('patch','/circles/:id/members/:memberId',(s,r)=>this.updateCirclePerson(s,r.params.id,r.params.memberId,r.body));
+      register('get','/invitations',s=>this.invitationInbox(s));
+      register('get','/invitations/:id/plan',(s,r)=>this.invitedPlan(s,r.params.id));
+      register('patch','/invitations/:id',(s,r)=>this.updateInvitation(s,r.params.id,r.body));
+      register('patch','/invitation-settings',(s,r)=>this.invitationSettings(s,r.body));
+      register('get','/plans/:id/invitations',(s,r)=>this.listPlanInvitations(s,r.params.id));
+      register('post','/plans/:id/invitations',(s,r)=>this.inviteToPlan(s,r.params.id,r.body));
+      register('delete','/plans/:id/invitations/:invitationId',(s,r)=>{fields(r.body,[]);return this.withdrawPlanInvitation(s,r.params.id,r.params.invitationId);});
+    },
     mount(app,{route,limit,resolveLocation}){
       const session=req=>cookie(req,sessionName);
+      native.mount(app,{route,limit,accounts:this,browserSession:session,checkOrigin});
+      this.mountNative(app,{route,limit,resolveLocation,native});
       const mutation=(fn)=>route(async(req,res)=>{checkOrigin(req);await fn(req,res);});
       app.get('/api/account',route(async(req,res)=>res.json(await this.current(session(req)))));
       const invitationRead=fn=>route(async(req,res)=>{res.set('Cache-Control','no-store');res.json(await fn(req));});

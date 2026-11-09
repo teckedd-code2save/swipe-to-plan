@@ -6,6 +6,8 @@ on:
 permissions:
   contents: read
 jobs:
+  native-checks:
+    uses: ./.github/workflows/mobile-checks.yml
   checks:
     runs-on: ubuntu-latest
     steps:
