@@ -52,8 +52,10 @@ QUESTION_TOOL.function.parameters.required=['question','topic','outingRequested'
 const LOCATION_FIELDS = REVISION_FIELDS.filter(key=>key!=='area');
 // Venue selection can carry simultaneous day edits, but new geography still
 // uses location confirmation. Requested roles travel separately from evidence.
-const SELECTION_FIELDS=REVISION_FIELDS.filter(key=>!['area','title','activities','stopIntents'].includes(key));
-const SELECTION_CHANGES={type:'object',additionalProperties:false,properties:Object.fromEntries(SELECTION_FIELDS.map(key=>[key,PLAN_TOOL.function.parameters.properties[key]])),description:'Other requested edits to apply with these selected visits, including date, time, budget and experience. Omit unchanged details. Replace superseded search topics. Location changes use the location action.'};
+const SELECTION_FIELDS=REVISION_FIELDS.filter(key=>!['area','title'].includes(key));
+const SELECTION_CHANGES={type:['object','null'],additionalProperties:false,properties:Object.fromEntries(SELECTION_FIELDS.map(key=>[key,PLAN_TOOL.function.parameters.properties[key]])),description:'Other requested edits to apply with these selected visits, including date, time, budget and experience. Omit or use null when there are no simultaneous day edits. Omit unchanged details. Replace superseded search topics. Location changes use the location action. activities and stopIntents may restate the selected route, but must match it exactly; they never override visit roles. Use select_places.stopIntents or edit_stops.intent for requested roles. Do not copy area, title or people from the brief.'};
+SELECTION_CHANGES.properties.activities={...PLAN_TOOL.function.parameters.properties.activities,minItems:1,description:'Optional consistency check: exactly the unique categories of the resulting selected route, in any order. Never changes the selected visit roles.'};
+SELECTION_CHANGES.properties.stopIntents={...PLAN_TOOL.function.parameters.properties.stopIntents,description:'Optional consistency check: exactly the resulting selected route roles in visit order, including every repeated occurrence. Set requested roles through select_places.stopIntents or edit_stops.intent; this field cannot override them.'};
 const NEARBY_FIELD={type:'boolean',description:'True only when the user asks to plan near their current physical location. The app requests device permission and asks them to confirm a nearby area. Never invent coordinates or infer current whereabouts from a saved area.'};
 export const AUTOPILOT_TOOL = {type:'function',function:{name:'autopilot_day',description:'In Autopilot, compose a complete outing in one action using the current people and their saved tastes. Optionally bring one named saved circle and/or named saved contacts by exact ID. Apply all requested trip changes and explicit taste edits together. Existing participants and their current tastes take priority over saved copies. Do not invent people or tastes, increase the budget to accommodate them, or change saved account profiles. Missing location is confirmed by the app before discovery. Use empty changes to plan from the current brief.',parameters:{type:'object',additionalProperties:false,properties:{
   circleId:{type:'string'},personIds:strings(6),nearby:NEARBY_FIELD,
@@ -318,8 +320,11 @@ export function createAgent({fetchImpl=globalThis.fetch,getKey=()=>process.env.L
         const locationAction=(request,query,scope='plan')=>narrate({status:'action',action:'set_location',request,query:query||'',scope,model:getModel()});
         if(selecting){
           if(!brief)throw new InputError('Start an outing before choosing places.');
-          const changes=args.changes===undefined?{}:args.changes;
-          fields(changes,SELECTION_FIELDS,'selected day changes');
+          const changes=args.changes??{};
+          try{fields(changes,SELECTION_FIELDS,'selected day changes');}catch(error){
+            error.modelFeedback=(error.modelFeedback||'Use an object of named day edits, or null/omit changes when there are none. ')+' Selection changes must omit area, title and people. Preserve unchanged values by omitting them. A real location, naming or profile change needs its dedicated action; if it cannot be combined with the requested route, ask rather than dropping either request. Put complete visit roles in select_places.stopIntents, or the changed occurrence role in edit_stops.intent. Keep all requested date, time, headcount and experience edits.';
+            throw error;
+          }
           let route;
           if(tool.name==='edit_stops'){
             if(!Object.hasOwn(args,'intent'))throw new InputError('Specify the requested visit role, or null to preserve it.');
@@ -335,7 +340,18 @@ export function createAgent({fetchImpl=globalThis.fetch,getKey=()=>process.env.L
             }
             route=args.stopIntents===null?preservedVisitRoute(args.placeIds,currentPlan.stops,[...options.values()]):args.placeIds.map((placeId,index)=>({intent:args.stopIntents[index],placeId}));
           }
-          const revised={...brief,...changes,...(changes.experience?{experience:{...brief.experience,...changes.experience}}:{}),timing:{...brief.timing,...changes.timing},party:{...brief.party,...changes.party},...plannerTitle(brief,changes)};
+          // Optional composition restatements are assertions, not a second route.
+          // Validate before stripping them so no conflicting intent is lost and
+          // automatic title invalidation compares against the ORIGINAL brief.
+          const sequence=route.map(stop=>stop.intent),categories=[...new Set(sequence)];
+          const sameSequence=(value,expected)=>Array.isArray(value)&&value.length===expected.length&&value.every((item,index)=>item===expected[index]);
+          const sameCategories=value=>Array.isArray(value)&&value.length===categories.length&&new Set(value).size===value.length&&value.every(item=>categories.includes(item));
+          if((changes.stopIntents!==undefined&&!sameSequence(changes.stopIntents,sequence))||(changes.activities!==undefined&&!sameCategories(changes.activities))){
+            const error=new InputError('Selected visits conflict with the requested composition.');
+            error.modelFeedback='Make changes.stopIntents exactly match the complete selected route in count, roles and order, and changes.activities its unique categories, or omit these redundant fields. For select_places set one top-level stopIntents role per placeId. For edit_stops set intent for insert/replace and preserve all untouched occurrences. Do not discard contradictory requirements; ask if they cannot be represented together. Keep simultaneous day edits.';throw error;
+          }
+          const {activities:ignoredActivities,stopIntents:ignoredStopIntents,...dayChanges}=changes;
+          const revised={...brief,...dayChanges,...(changes.experience?{experience:{...brief.experience,...changes.experience}}:{}),timing:{...brief.timing,...changes.timing},party:{...brief.party,...changes.party},...plannerTitle(brief,changes)};
           if(changes.currency)revised.currencyMode='custom';
           const request=parseItinerary(withSelectedRoute(revised,route));
           // Only requested identity/roles cross this boundary. Selection is not

@@ -89,7 +89,7 @@ test('requested role cannot fabricate provider support or bypass current hard co
 for(const invalid of [
  {stopIntents:['coffee']},{stopIntents:['coffee','cafe']},{stopIntents:[]},{stopIntents:'coffee'},
  {placeIds:['qloo:d-cafe','invented']},{placeIds:Array(4).fill('qloo:vida'),stopIntents:Array(4).fill('coffee')},
- {changes:{area:'Osu'}},{changes:{title:'Invented rename'}},{changes:{people:[]}},{changes:{activities:['dinner']}},{changes:null},
+ {changes:{area:'Osu'}},{changes:{title:'Invented rename'}},{changes:{people:[]}},{changes:{activities:['dinner']}},{changes:[]},{changes:'unchanged'},
  {changes:{startTime:'12:00',endTime:'12:10'}},
 ])test(`invalid selected composition is rejected without a partial edit: ${JSON.stringify(invalid)}`,async()=>{
  const {plan}=await fixture(),before=JSON.stringify(plan);await assert.rejects(interpret(plan,selection(invalid)),e=>e.status===400);assert.equal(JSON.stringify(plan),before);
@@ -114,4 +114,65 @@ test('null role selection preserves every same-venue occurrence purpose rather t
  const {plan,engine}=await fixture();const selected=await interpret(plan,{placeIds:['qloo:vida','qloo:vida','qloo:vida'],stopIntents:['coffee','dinner','coffee']});
  const repeated=await buildItinerary(engine,selected.request);const ids=repeated.stops.map(stop=>stop.item.id);
  const unchanged=await interpret(repeated,{placeIds:ids,stopIntents:null});assert.deepEqual(unchanged.route,selected.route);assert.deepEqual(routeFromChoices(repeated,ids).route,selected.route);
+});
+
+// Live native QA on 2026-11-09 showed “Unsupported selected day changes.”
+// Its model arguments were unavailable. These are synthetic contract variants,
+// not a reconstruction of the production response.
+const liveEdit='Change this to exactly two cafe stops and no meal: first D Cafe (East Legon), then Vida e Caffe at Accra Mall, from the alternatives you just returned. Keep Tuesday 10 November, noon to 5pm, one person. Both stops must have the cafe role.';
+for(const mode of ['guided','autopilot'])test(`${mode} redundant selected composition preserves the complete exact correction`,async()=>{
+ const {plan,engine}=await fixture({date:'2026-11-10'}),before=JSON.stringify(plan);
+ const changes={activities:['coffee'],stopIntents:['coffee','coffee'],date:'2026-11-10',startTime:'12:00',endTime:'17:00',party:{adults:1,children:0},experience:{searchTags:['v-cafe'],notes:'Exactly two cafes and no meal.'}};
+ const action=await interpret(plan,selection({changes}),{mode,message:liveEdit});
+ assert.deepEqual(action.route,route);
+ const result=await buildItinerary(engine,action.request);
+ assert.deepEqual(result.stops.map(s=>s.item.id),route.map(s=>s.placeId));
+ assert.deepEqual(result.stops.map(s=>s.intent),['coffee','coffee']);assert.equal(result.request.title,'Cafés in East Legon');
+ for(const key of ['date','startTime','endTime','party','experience'])assert.deepEqual(result.request[key],changes[key]);
+ for(const key of ['area','people','budget','timing','excludeIds'])assert.deepEqual(result.request[key],plan.request[key]);
+ assert.equal(JSON.stringify(plan),before);
+});
+
+for(const name of ['select_places','edit_stops'])test(`${name} optional null and empty changes are equivalent to omission`,async()=>{
+ const {plan}=await fixture();
+ const args=name==='select_places'?selection():{operation:'replace',stopId:'stop-1',placeId:'qloo:vida',intent:'coffee'};
+ const expected=await interpret(plan,args,{name});
+ for(const changes of [null,{}])assert.deepEqual(await interpret(plan,{...args,changes},{name}),expected);
+ const spec=CHAT_TOOLS.find(t=>t.function.name===name).function.parameters.properties.changes;
+ assert.deepEqual(spec.type,['object','null']);assert.ok(spec.properties.activities);assert.ok(spec.properties.stopIntents);
+});
+
+test('composition assertions validate edit results without overwriting unchanged occurrences',async()=>{
+ const {plan}=await fixture();
+ const edit={operation:'replace',stopId:'stop-1',placeId:'qloo:vida',intent:'coffee',changes:{activities:['coffee'],stopIntents:['coffee','coffee'],budget:95}};
+ const action=await interpret(plan,edit,{name:'edit_stops'});assert.deepEqual(action.route,route);assert.equal(action.request.budget,95);
+ const mixed=await interpret(plan,{placeIds:['qloo:vida','qloo:vida','qloo:vida'],stopIntents:['coffee','dinner','coffee'],changes:{activities:['dinner','coffee'],stopIntents:['coffee','dinner','coffee']}});
+ assert.deepEqual(mixed.request.stopIntents,['coffee','dinner','coffee']);
+ const moved=await interpret(await buildItinerary(discovery(),mixed.request),{operation:'move',stopId:'stop-0',afterStopId:'stop-2',intent:null,changes:{activities:['coffee','dinner'],stopIntents:['dinner','coffee','coffee']}},{name:'edit_stops'});
+ assert.deepEqual(moved.route.map(s=>s.intent),['dinner','coffee','coffee']);
+});
+
+for(const changes of [
+ {activities:['coffee','dinner']},{activities:['coffee','coffee']},{activities:[]},{activities:null},{activities:'coffee'},
+ {stopIntents:['coffee']},{stopIntents:['dinner','coffee']},{stopIntents:['coffee','coffee','coffee']},{stopIntents:null},{stopIntents:'coffee'},
+])test(`contradictory composition is atomic and bounded: ${JSON.stringify(changes)}`,async()=>{
+ const {plan}=await fixture(),before=JSON.stringify(plan);let calls=0;
+ await assert.rejects(interpret(plan,selection({changes}),{fetchImpl:async()=>{calls++;return tool('select_places',selection({changes}));}}),/Selected visits conflict/);
+ assert.equal(calls,2);assert.equal(JSON.stringify(plan),before);
+});
+
+test('invalid changes receive actionable bounded repair preserving the simultaneous edit',async()=>{
+ const {plan}=await fixture();
+ for(const invalid of [[],false,'unchanged',{area:plan.request.area},{title:plan.request.title},{people:plan.request.people},{activities:['dinner']}]){
+  let calls=0,payload;
+  const action=await interpret(plan,undefined,{fetchImpl:async(_,options)=>{payload=JSON.parse(options.body);return tool('select_places',selection({changes:++calls===1?invalid:{activities:['coffee'],stopIntents:['coffee','coffee'],date:'2099-01-02',budget:90}}));}});
+  assert.equal(calls,2);assert.match(payload.messages[0].content,/Keep (all requested date|simultaneous day edits)/);
+  assert.equal(action.request.date,'2099-01-02');assert.equal(action.request.budget,90);assert.deepEqual(action.route,route);
+ }
+});
+
+test('nested roles cannot silently change the top-level selected route or an untouched edit occurrence',async()=>{
+ const {plan}=await fixture();
+ await assert.rejects(interpret(plan,selection({stopIntents:null,changes:{stopIntents:['coffee','coffee']}})),/Selected visits conflict/);
+ await assert.rejects(interpret(plan,{operation:'replace',stopId:'stop-1',placeId:'qloo:vida',intent:null,changes:{stopIntents:['coffee','coffee']}},{name:'edit_stops'}),/Selected visits conflict/);
 });
