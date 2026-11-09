@@ -18,14 +18,14 @@ const profile=(value,id)=>({...parseItinerary({party:{adults:1},people:[value]})
 const safeUser=user=>({id:user.id,email:user.email,profile:user.profile,planningLocation:user.planningLocation||null,planningLocations:user.planningLocations||[user.planningLocation].filter(Boolean)});
 const cookie=(req,name)=>(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith(`${name}=`))?.slice(name.length+1);
 
-export function createAccounts({store=createAccountStore(),now=Date.now,invitationEpoch=null,origin=process.env.APP_ORIGIN||'http://127.0.0.1:5173',clientId=process.env.GOOGLE_OAUTH_CLIENT_ID,clientSecret=process.env.GOOGLE_OAUTH_CLIENT_SECRET,adminEmails=(process.env.ADMIN_EMAILS||'').split(',').map(e=>e.trim().toLowerCase()).filter(Boolean),oauthFactory,nativeAuthEnabled=process.env.NATIVE_AUTH_ENABLED==='true'}={}){
+export function createAccounts({store=createAccountStore(),now=Date.now,invitationEpoch=null,origin=process.env.APP_ORIGIN||'http://127.0.0.1:5173',clientId=process.env.GOOGLE_OAUTH_CLIENT_ID,clientSecret=process.env.GOOGLE_OAUTH_CLIENT_SECRET,adminEmails=(process.env.ADMIN_EMAILS||'').split(',').map(e=>e.trim().toLowerCase()).filter(Boolean),oauthFactory,nativeAuthEnabled=process.env.NATIVE_AUTH_ENABLED==='true',readNativePilotPolicy}={}){
   const executionProtocol=createExecutionProtocol({now});
   const planInvitations=createPlanInvitations({now,epoch:invitationEpoch});
   origin=new URL(origin).origin;
   const secure=origin.startsWith('https://');
   const isAdmin=user=>!!user&&adminEmails.includes(user.email.toLowerCase());
   const enabled=!!(clientId&&clientSecret&&(secure||process.env.NODE_ENV!=='production'));
-  const native=createNativeAuth({store,now,origin,enabled:enabled&&nativeAuthEnabled});
+  const native=createNativeAuth({store,now,origin,enabled:enabled&&nativeAuthEnabled,readPilotPolicy:readNativePilotPolicy});
   // Use the selected Express route, not the caller's spelling. Before routing
   // (usage middleware), mirror Express's case-insensitive optional-slash match.
   const nativePlanning=req=>!!req.get?.('authorization')&&(req.route?.path!==undefined?['/api/agent','/api/itineraries'].includes(req.route.path):/^\/api\/(?:agent|itineraries)\/?$/i.test((req.originalUrl||req.path||'').split('?')[0]));
@@ -127,7 +127,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,invitati
     },
     async removePlan(session,id){await store.transact(data=>{const user=requireUser(data,session);const entry=savedPlan(user,id);if(entry.executionLedger?.records.some(r=>['submission_pending','submission_unknown','submitted_awaiting_response','provider_confirmed'].includes(r.status)))throw fail('Reconcile pending venue submissions before deleting this day.',409);delete user.savedPlans[id];planInvitations.remove(data,user,id);});},
     async current(session){return store.read(data=>{const user=resolve(data,session);return {configured:enabled,user:user?{...safeUser(user),admin:isAdmin(user)}:null,circles:user?myCircles(data,user):[],invitationAvailable:planInvitations.available,invitationUnreadCount:user?planInvitations.unreadCount(data,user):0};});},
-    async identity(req){return store.read(data=>{const user=resolve(data,requestSession(req));return user?{id:user.id,admin:isAdmin(user)}:null;});},
+    async identity(req){if(nativePlanning(req))await native.assertPlanning();return store.read(data=>{const user=resolve(data,requestSession(req));return user?{id:user.id,admin:isAdmin(user)}:null;});},
     async adminUsers(req){return store.read(data=>{const user=requireUser(data,cookie(req,sessionName));if(!isAdmin(user))throw fail('This dashboard is private.');return Object.values(data.users).map(u=>({id:u.id,name:u.profile.name,email:u.email,createdAt:u.createdAt,lastSignedInAt:u.lastSignedInAt||null,circles:Object.values(data.circles).filter(c=>c.members.some(m=>m.userId===u.id)).length,hasTastes:!!(u.profile.artists.length||u.profile.vibes.length)}));});},
     async planningPeople(req){
       const current=await this.current(requestSession(req));
@@ -137,16 +137,19 @@ export function createAccounts({store=createAccountStore(),now=Date.now,invitati
       const planningMemory=await store.read(data=>{const user=resolve(data,requestSession(req));return Object.values(user?.savedPlans||{}).sort((a,b)=>b.savedAt.localeCompare(a.savedAt)).slice(0,3).map(entry=>({area:entry.plan.request.area,activities:entry.plan.request.activities}));});
       return {peopleMode:'connected',circles,contacts,planningMemory};
     },
-    async start(body){fields(body,['returnTo']);if(!enabled)throw fail('Google sign-in is being connected. Your day can continue as a guest.',503);const returnTo=returnPath(body.returnTo),state=opaque(),binding=opaque(),verifier=opaque(),nonce=opaque();await store.transact(data=>{data.flows[hash(state)]={binding:hash(binding),verifier,nonce,returnTo,expiresAt:now()+600000};});return {binding,url:oauth().generateAuthUrl({scope:['openid','email','profile'],state,nonce,prompt:'select_account',code_challenge:hash(verifier),code_challenge_method:CodeChallengeMethod.S256,access_type:'online'})};},
-    async complete(query,binding,previousSession){
+    async start(body,onNativeFlow=()=>{}){fields(body,['returnTo']);if(!enabled)throw fail('Google sign-in is being connected. Your day can continue as a guest.',503);const returnTo=returnPath(body.returnTo),state=opaque(),binding=opaque(),verifier=opaque(),nonce=opaque();const nativeReturn=returnTo.startsWith('/api/auth/native/browser?');if(nativeReturn){onNativeFlow();await native.observe();}await store.transact(data=>{data.flows[hash(state)]={binding:hash(binding),verifier,nonce,returnTo,expiresAt:now()+600000,...(nativeReturn?{nativePilot:native.oauthBinding(data,returnTo)}:{})};});return {binding,url:oauth().generateAuthUrl({scope:['openid','email','profile'],state,nonce,prompt:'select_account',code_challenge:hash(verifier),code_challenge_method:CodeChallengeMethod.S256,access_type:'online'})};},
+    async complete(query,binding,previousSession,onNativeFlow=()=>{}){
       if(!enabled||typeof query.state!=='string'||!/^[-\w]{43}$/.test(query.state)||typeof binding!=='string'||!/^[-\w]{43}$/.test(binding))throw fail('Sign-in expired. Please try again.',401);
       const flow=await store.transact(data=>{const key=hash(query.state),value=data.flows[key];if(!value||value.binding!==hash(binding))throw fail('Sign-in expired. Please try again.',401);delete data.flows[key];return value;});
+      if(flow.returnTo.startsWith('/api/auth/native/browser?'))onNativeFlow();
       if(query.error)return {returnTo:flow.returnTo,cancelled:true};
       let identity;
       try{if(typeof query.code!=='string'||!query.code||query.code.length>4096)throw Error();const client=oauth(),{tokens}=await client.getToken({code:query.code,codeVerifier:flow.verifier});if(!tokens.id_token)throw Error();identity=(await client.verifyIdToken({idToken:tokens.id_token,audience:clientId})).getPayload();if(!identity?.sub||identity.email_verified!==true||identity.nonce!==flow.nonce)throw Error();}catch{throw fail('Google sign-in could not be verified. Please try again.',401);}
+      if(flow.returnTo.startsWith('/api/auth/native/browser?'))await native.observe();
       const session=opaque();
       await store.transact(data=>{
         let user=Object.values(data.users).find(u=>u.googleSubject===identity.sub);
+        if(flow.returnTo.startsWith('/api/auth/native/browser?'))native.authorizeGoogle(data,user,flow.nativePilot);
         if(!user){const id=randomUUID();user={id,googleSubject:identity.sub,email:identity.email||'',profile:{id,name:(identity.name?.trim()||'You').slice(0,24),artists:[],vibes:[]},createdAt:new Date(now()).toISOString()};data.users[id]=user;}
         user.email=identity.email||user.email;
         user.lastSignedInAt=new Date(now()).toISOString();
@@ -288,10 +291,10 @@ export function createAccounts({store=createAccountStore(),now=Date.now,invitati
       app.get('/api/account/plans/:id',route(async(req,res)=>res.json(await this.getPlan(session(req),req.params.id))));
       app.patch('/api/account/plans/:id',limit(45),mutation(async(req,res)=>res.json(await this.editSavedPlan(session(req),req.params.id,req.body))));
       app.delete('/api/account/plans/:id',limit(20),mutation(async(req,res)=>{await this.removePlan(session(req),req.params.id);res.json({ok:true});}));
-      app.post('/api/auth/google/start',limit(10),mutation(async(req,res)=>{const result=await this.start(req.body);res.cookie(bindingName,result.binding,{...settings,maxAge:600000});res.json({url:result.url});}));
+      app.post('/api/auth/google/start',limit(10),mutation(async(req,res)=>{const result=await this.start(req.body,()=>{req.nativePilotResponse=true;});res.cookie(bindingName,result.binding,{...settings,maxAge:600000});res.json({url:result.url});}));
       app.get('/api/auth/google/callback',limit(20),route(async(req,res)=>{
         res.set({'Referrer-Policy':'no-referrer','Cache-Control':'no-store'});
-        try{const result=await this.complete(req.query,cookie(req,bindingName),session(req));res.clearCookie(bindingName,settings);if(result.session)res.cookie(sessionName,result.session,{...settings,maxAge:30*86400000});const destination=new URL(result.returnTo,origin);destination.searchParams.set('signin',result.cancelled?'cancelled':'success');res.redirect(303,destination.href);}catch{res.clearCookie(bindingName,settings);res.redirect(303,`${origin}/?signin=failed`);}
+        try{const result=await this.complete(req.query,cookie(req,bindingName),session(req),()=>{req.nativePilotResponse=true;});res.clearCookie(bindingName,settings);if(result.session)res.cookie(sessionName,result.session,{...settings,maxAge:30*86400000});const destination=new URL(result.returnTo,origin);destination.searchParams.set('signin',result.cancelled?'cancelled':'success');res.redirect(303,destination.href);}catch{res.clearCookie(bindingName,settings);res.redirect(303,`${origin}/?signin=failed`);}
       }));
       app.post('/api/auth/logout',mutation(async(req,res)=>{await this.logout(session(req));res.clearCookie(sessionName,settings);res.json({ok:true});}));
       app.patch('/api/account/profile',limit(45),mutation(async(req,res)=>res.json({user:await this.updateProfile(session(req),req.body)})));

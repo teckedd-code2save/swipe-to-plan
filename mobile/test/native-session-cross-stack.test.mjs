@@ -9,13 +9,14 @@ import {createDemoProvider} from '../../backend/src/demo-provider.js';
 import {createAccountSession} from '../src/account-session.js';
 import {createApi} from '../src/transport.js';
 const hash=value=>createHash('sha256').update(value).digest('base64url');
-async function fixture(t){
+async function fixture(t,accessMode='account-sync'){
  const now=Date.now,store=createAccountStore({now}); // In memory; no real accounts or credentials.
  const sessions={alice:randomBytes(32).toString('base64url'),bob:randomBytes(32).toString('base64url')};
- await store.transact(data=>{for(const [id,session] of Object.entries(sessions)){data.users[id]={id,email:`${id}@example.test`,profile:{id,name:id,artists:[],vibes:[]}};data.sessions[hash(session)]={userId:id,expiresAt:now()+86400000};}});
+ await store.transact(data=>{for(const [id,session] of Object.entries(sessions)){data.users[id]={id,googleSubject:'verified-'+id,email:`${id}@example.test`,profile:{id,name:id,artists:[],vibes:[]}};data.sessions[hash(session)]={userId:id,expiresAt:now()+86400000};}});
  const outer=express(),server=outer.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)));
  const origin=`http://127.0.0.1:${server.address().port}`;
- const accounts=createAccounts({store,now,origin,clientId:'synthetic-client',clientSecret:'synthetic-secret',nativeAuthEnabled:true});
+ const pilot={version:1,epoch:1,origin,issuedAt:now()-1000,expiresAt:now()+12*3600000,accountIds:['alice','bob'],accessMode};
+ const accounts=createAccounts({store,now,origin,readNativePilotPolicy:()=>pilot,clientId:'synthetic-client',clientSecret:'synthetic-secret',nativeAuthEnabled:true});
  outer.use(createApp({accounts,provider:createDemoProvider(),rateLimit:true,now}));
  const browser=(path,{user,body}={})=>fetch(origin+path,{method:body?'POST':'GET',redirect:'error',headers:{...(user?{cookie:`outing-session=${sessions[user]}`} : {}),...(body?{origin,'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
  function client(user,approvalHook){
@@ -57,4 +58,18 @@ test('AccountScreen renders nonempty retry status in an accessible live region w
  // Source wiring regression only; does not replace native screen-reader acceptance.
  const source=await readFile(new URL('../src/components/AccountScreen.tsx',import.meta.url),'utf8');
  assert.match(source,/auth\.signingIn && !!auth\.signInStatus && <Text accessibilityLiveRegion="polite"[^>]*>\{auth\.signInStatus\}<\/Text>/);
+});
+
+test('actual mobile read-only pilot permits account reads and logout but no client mutation or planner request',async t=>{
+ const f=await fixture(t,'read-only'),a=f.client('alice');
+ assert.equal((await a.session.config()).accessMode,'read-only');await a.session.signIn();
+ assert.equal(a.session.getSnapshot().accessMode,'read-only');assert.equal((await a.session.account()).user.id,'alice');
+ const callsBefore=a.calls.length;
+ await assert.rejects(a.session.account('/profile',{method:'PATCH',body:{name:'Changed'}}),/read-only/);
+ let plannerCalls=0;const api=createApi({origin:f.origin,getAuthorization:a.session.getPlanningAuthorization,fetch:async()=>{plannerCalls++;throw new Error('Must not call planner');}});
+ await assert.rejects(api.itinerary({}),/read-only/);await assert.rejects(api.agent({}),/read-only/);
+ assert.equal(plannerCalls,0);assert.equal(a.calls.length,callsBefore);
+ const token=a.session.getAuthorization();
+ assert.equal((await fetch(f.origin+'/api/itineraries',{method:'POST',headers:{authorization:token,'content-type':'application/json'},body:'{}'})).status,403);
+ await a.session.logout();assert.equal(a.session.getSnapshot().accessMode,null);assert.equal(a.session.getPlanningAuthorization(),null);
 });

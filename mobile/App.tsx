@@ -27,7 +27,8 @@ import {
 import { StatusBar } from "expo-status-bar";
 import * as Crypto from "expo-crypto";
 import { NativeAccountScreen } from "./src/components/AccountScreen";
-import { createAccountSession } from "./src/account-session";
+import { ApiServerNotice } from "./src/components/ApiServerNotice";
+import { createAccountSession, isReadOnlySession, READ_ONLY_PILOT_MESSAGE } from "./src/account-session";
 import { createAccountWorkspace } from "./src/account-planning";
 import { SavedPlansScreen, CirclesScreen } from "./src/components/SavedLibrary";
 import { DayReadiness, VenueDetails } from "./src/components/DayDetails";
@@ -83,7 +84,7 @@ const accountSession = createAccountSession({
 const accountWorkspace = createAccountWorkspace();
 const api = createApi({
   origin, fetch: expoFetch,
-  getAuthorization: accountSession.getAuthorization,
+  getAuthorization: accountSession.getPlanningAuthorization,
   getPlanHeaders: accountWorkspace.headers,
   onUnauthorized: (header: string) => accountSession.invalidateAuthorization(header),
 });
@@ -788,6 +789,8 @@ function Planner() {
   const [section, setSection] = useState<"plan" | "saved" | "circles" | "account">("plan");
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [accountState, setAccountState] = useState(accountSession.getSnapshot());
+  const readOnly = isReadOnlySession(accountState);
+  const [readOnlyPlan, setReadOnlyPlan] = useState<Plan | null>(null);
   const [sheet, setSheet] = useState<"location" | "review" | "about" | null>(
       null,
     ),
@@ -857,6 +860,9 @@ function Planner() {
         if (mounted.current) setLoaded(true);
       });
     const subscription = AppState.addEventListener("change", (state) => {
+      // The OS can pause timers while backgrounded. Recheck the issued deadline
+      // before showing a private account snapshot again.
+      if (state === "active") accountSession.getSnapshot();
       if (state !== "active") {
         gate.current.invalidate();
         setBusy("");
@@ -876,9 +882,10 @@ function Planner() {
     setAccountState(next);
     if (guest || before !== accountWorkspace.isPrivate()) {
       gate.current.invalidate();
-      setBusy(""); setPreview(null); setUndo(null); setMessages([]); setText(""); setSelected(null); setSheet(null); setLocationQuery("");
+      setBusy(""); setPreview(null); setUndo(null); setMessages([]); setText(""); setSelected(null); setSheet(null); setLocationQuery(""); setReadOnlyPlan(null);
       if (guest) { current.current = guest as Draft; setDraft(guest as Draft); }
-      setNotice(next.signedIn ? "Account connected. Plans you make now are saved to your account. This working draft stays in memory." : "Signed out. Your device draft is back; account details are cleared.");
+      if (isReadOnlySession(next)) setSection("account");
+      setNotice(next.signedIn ? isReadOnlySession(next) ? "Read-only account pilot connected. Browse existing account plans; planning and account changes are unavailable." : "Account connected. Plans you make now are saved to your account. This working draft stays in memory." : "Signed out. Your device draft is back; account details are cleared.");
     }
   }), []);
   useEffect(() => {
@@ -919,6 +926,8 @@ function Planner() {
     );
   }
   async function build(brief: Brief) {
+    try { accountSession.getPlanningAuthorization(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : READ_ONLY_PILOT_MESSAGE); return; }
     if (!isBrief(brief)) {
       setError(
         "The proposed details are incomplete. Review your plan to continue.",
@@ -973,6 +982,9 @@ function Planner() {
     }
   }
   async function send() {
+    let startingAuthorization: string | null;
+    try { startingAuthorization = accountSession.getPlanningAuthorization(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : READ_ONLY_PILOT_MESSAGE); return; }
     const message = text.trim();
     if (!message || busy || !loaded) return;
     const previous = current.current,
@@ -1013,6 +1025,8 @@ function Planner() {
         if (!job.current()) return;
         savedCircles = connected.circles || [];
       }
+      if (accountSession.getPlanningAuthorization() !== startingAuthorization)
+        throw new Error("Your account session changed. Review the current account before continuing.");
       const result = await api.agent(
         {
           message,
@@ -1218,6 +1232,10 @@ function Planner() {
   function openAccountPlan(plan: Plan, options?: { editable?: boolean }) {
     requirePlan(plan);
     const opening = accountSession.getSnapshot();
+    if (isReadOnlySession(opening)) {
+      setReadOnlyPlan(plan); setSection("plan"); setSheet(null); setSelected(null);
+      return;
+    }
     Alert.alert("Open this account plan?", "This replaces the working draft. It stays in memory while signed in; your device draft is kept separately.", [
       { text: "Keep current draft", style: "cancel" },
       { text: "Open plan", onPress: () => {
@@ -1320,7 +1338,25 @@ function Planner() {
             <Icon name="ellipsis-horizontal" />
           </Pressable>
         </View>
-        {section === "plan" ? (
+        <ApiServerNotice origin={origin} nonProductionOnly />
+        {readOnly && section !== "account" ? (
+          <ScrollView style={styles.flex} contentContainerStyle={styles.content}>
+            <Text accessibilityRole="header" style={styles.dayTitle}>Read-only account pilot</Text>
+            <Text style={styles.body}>Browse an existing plan from Account. Planning, provider refreshes and account changes are unavailable in this session.</Text>
+            <Text style={styles.small}>Your device-only Saved outings, Circles and guest draft are unchanged. Sign out to return to them.</Text>
+            {readOnlyPlan ? <>
+              <Text style={styles.dayTitle}>{planTitle(readOnlyPlan.request)}</Text>
+              <Text style={styles.body}>{readOnlyPlan.request.area} · Revision {readOnlyPlan.savedPlan?.revision ?? 'not supplied'}</Text>
+              {readOnlyPlan.stops.map((stop, index) => <View key={`${stop.id}:${index}`} style={styles.noticeCard}>
+                <Text style={styles.body}>{index + 1}. {stop.item?.name || 'An open visit'}</Text>
+                <Text style={styles.small}>{stop.item?.address || 'Address not supplied'}</Text>
+                <Text style={styles.small}>{stop.start && stop.end ? `${stop.start}–${stop.end} · suggested` : 'Time to choose'}</Text>
+              </View>)}
+              <Text style={styles.small}>This is the saved account snapshot. Current hours and availability have not been checked.</Text>
+            </> : <Text style={styles.body}>No account plan opened in this session.</Text>}
+            <Button label="Browse account plans" onPress={() => navigateSection("account")} />
+          </ScrollView>
+        ) : section === "plan" ? (
           <>
             <Pressable
               accessibilityRole="button"
@@ -1701,7 +1737,7 @@ function Planner() {
                 { value: "circles", label: "Circles", icon: "people-outline" },
                 { value: "account", label: "Account", icon: accountState.signedIn ? "person-circle" : "person-circle-outline" },
               ] as const
-            ).map((item) => (
+            ).filter(item => !readOnly || item.value === "plan" || item.value === "account").map((item) => (
               <Pressable
                 key={item.value}
                 accessibilityRole="tab"
@@ -1756,6 +1792,7 @@ function Planner() {
       {sheet === "about" && (
         <Sheet title="A calmer way out" close={() => setSheet(null)}>
           <ScrollView contentContainerStyle={styles.sheetBody}>
+            <ApiServerNotice origin={origin} />
             <Text style={styles.body}>
               Plan real outings, save days and keep reusable circles on this
               device. Chat sends your draft and saved circle profiles to
@@ -1775,20 +1812,20 @@ function Planner() {
             <Button label="Open your account" icon="person-circle-outline" onPress={() => navigateSection("account")} />
             <Button
               quiet
-              label="Open account features on the web"
+              label="Open this server in browser"
               icon="open-outline"
               onPress={() =>
-                Linking.openURL("https://unstressed.serendepify.com").catch(
+                Linking.openURL(origin).catch(
                   () => setError("Could not open the web app."),
                 )
               }
             />
-            <Button
+            {!readOnly && <Button
               quiet
               label="Start a fresh outing"
               icon="refresh-outline"
               onPress={newOuting}
-            />
+            />}
           </ScrollView>
         </Sheet>
       )}

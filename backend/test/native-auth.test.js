@@ -11,8 +11,8 @@ const hash=s=>createHash('sha256').update(s).digest('base64url');
 const opaque=()=>randomBytes(32).toString('base64url');
 async function fixture(t,{enabled=true,rateLimit=false,storeFactory}={}){
  let clock=1000;const now=()=>clock,store=storeFactory?storeFactory(now):createAccountStore({now});const sessions={a:opaque(),b:opaque()};
- await store.transact(data=>{for(const id of ['a','b']){data.users[id]={id,email:`${id}@example.test`,profile:{id,name:id,artists:[],vibes:[]}};data.sessions[hash(sessions[id])]={userId:id,expiresAt:clock+86400000};}});
- const accounts=createAccounts({store,now,origin:'http://localhost:5173',clientId:'test',clientSecret:'test',nativeAuthEnabled:enabled,invitationEpoch:'4de508f0-6a1e-4cba-82f4-e3e8be297179'});
+ await store.transact(data=>{for(const id of ['a','b']){data.users[id]={id,googleSubject:`verified-${id}`,email:`${id}@example.test`,profile:{id,name:id,artists:[],vibes:[]}};data.sessions[hash(sessions[id])]={userId:id,expiresAt:clock+86400000};}});
+ const accounts=createAccounts({store,now,origin:'http://localhost:5173',clientId:'test',clientSecret:'test',nativeAuthEnabled:enabled,readNativePilotPolicy:()=>({version:1,epoch:1,origin:'http://localhost:5173',issuedAt:0,expiresAt:86400000,accountIds:['a','b'],accessMode:'account-sync'}),invitationEpoch:'4de508f0-6a1e-4cba-82f4-e3e8be297179'});
  const app=createApp({accounts,provider:createDemoProvider(),agent:{interpret:async()=>({status:'reply',message:'Test reply'})},rateLimit,now}),server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));t.after(()=>new Promise(r=>server.close(r)));const base=`http://127.0.0.1:${server.address().port}`;
  async function request(path,{method='GET',body,token,user,origin,headers={}}={}){const response=await fetch(base+path,{method,headers:{...(body!==undefined?{'Content-Type':'application/json'}:{}),...(token?{Authorization:`Bearer ${token}`} : {}),...(user?{Cookie:`outing-session=${sessions[user]}`} : {}),...(origin?{Origin:origin}:{}),...headers},...(body!==undefined?{body:JSON.stringify(body)}:{})});const text=await response.text();let data;try{data=JSON.parse(text);}catch{data=text;}return {status:response.status,data,headers:response.headers};}
  async function start(){const verifier=opaque(),result=await request('/api/auth/native/start',{method:'POST',body:{codeChallenge:hash(verifier),codeChallengeMethod:'S256'}});assert.equal(result.status,200);return {...result.data,verifier};}
@@ -75,7 +75,8 @@ test('native planning autosaves server output and uses live account context with
  const guest=await f.request('/api/itineraries',{method:'POST',body});assert.equal(guest.status,200);assert.equal(guest.data.savedPlan,undefined);
  const req={headers:{},path:'/api/agent',get:name=>name==='authorization'?`Bearer ${token}`:undefined};assert.equal((await f.accounts.planningPeople(req)).peopleMode,'connected');
  const flow=await f.start();await f.approve(flow);const results=await Promise.all([f.exchange(flow),f.exchange(flow)]);assert.deepEqual(results.map(r=>r.status).sort(),[200,401]);
- const signed=await f.accounts.start({returnTo:`/api/auth/native/browser?flow=${flow.flowId}`});assert.match(signed.url,/accounts.google.com/);
+ await assert.rejects(f.accounts.start({returnTo:`/api/auth/native/browser?flow=${flow.flowId}`}));
+ const fresh=await f.start();const signed=await f.accounts.start({returnTo:`/api/auth/native/browser?flow=${fresh.flowId}`});assert.match(signed.url,/accounts.google.com/);
  await assert.rejects(f.accounts.start({returnTo:'/api/auth/native/browser?flow='+flow.flowId+'&next=https://evil.test'}));
 });
 

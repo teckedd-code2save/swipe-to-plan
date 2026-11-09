@@ -147,7 +147,8 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   app.post("/api/agent", limit(10), route(async(req,res)=>{
     strictFields(req.body,['message','context','history','circles','contacts','planContext','locationContext','mode','task']);
     if(!agent)throw new AgentError('agent_not_configured');
-    const [target,audienceCatalog,planningPeople]=await Promise.all([accounts.planTarget(req),provider.audienceCatalog?provider.audienceCatalog().catch(()=>[]):Promise.resolve([]),accounts.planningPeople(req)]);
+    const target=await accounts.planTarget(req);
+    const [audienceCatalog,planningPeople]=await Promise.all([provider.audienceCatalog?provider.audienceCatalog().catch(()=>[]):Promise.resolve([]),accounts.planningPeople(req)]);
     let interpretation=await agent.interpret({...req.body,...planningPeople,audienceCatalog});
     if(agent.auditContext)interpretation=await agent.auditContext(interpretation,{...req.body,...planningPeople,audienceCatalog});
     if(['needs_input','action','show_ui','reply','autopilot'].includes(interpretation.status))return res.json(interpretation);
