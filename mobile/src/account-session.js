@@ -1,5 +1,8 @@
 import { apiOrigin } from './transport.js';
 
+export const READ_ONLY_PILOT_MESSAGE = 'This account session is read-only. Planning and account changes are unavailable.';
+export const isReadOnlySession = snapshot => snapshot.signedIn && snapshot.accessMode !== 'account-sync';
+
 export function signInRetryDelay(retryAfter, attempt, now) {
   const fallback = Math.min(60000, 5000 * (2 ** Math.min(attempt, 4)));
   if (typeof retryAfter !== 'string' || !retryAfter.trim()) return fallback;
@@ -18,13 +21,29 @@ function waitForPoll(ms, signal) {
 }
 
 // Tokens and PKCE secrets exist only in this closure. Never persist or log this object.
-export function createAccountSession({ origin, development = false, fetch, randomBytes, sha256, openBrowser, now = Date.now, timeout = 15000, wait = waitForPoll }) {
+export function createAccountSession({ origin, development = false, fetch, randomBytes, sha256, openBrowser, now = Date.now, timeout = 15000, wait = waitForPoll, schedule = setTimeout, cancelSchedule = clearTimeout }) {
   const trustedOrigin = apiOrigin(origin, development);
-  let token = null, expiresAt = 0, epoch = 0, pending = null, userId = null;
-  let snapshot = { signedIn: false, signingIn: false, userId: null, sessionEpoch: 0, userCode: null, signInStatus: null };
+  let token = null, expiresAt = 0, epoch = 0, pending = null, userId = null, accessMode = null, expiryTimer = null;
+  let snapshot = { signedIn: false, signingIn: false, userId: null, sessionEpoch: 0, userCode: null, signInStatus: null, accessMode: null };
   const listeners = new Set();
-  const emit = () => { snapshot = { signedIn: !!token, signingIn: !!pending, userId, sessionEpoch: epoch, userCode: pending?.userCode || null, signInStatus: pending?.status || null }; listeners.forEach(fn => fn(snapshot)); };
-  const reset = () => { epoch++; token = null; userId = null; expiresAt = 0; pending?.controller.abort(); pending = null; emit(); };
+  const emit = () => { snapshot = { signedIn: !!token, signingIn: !!pending, userId, sessionEpoch: epoch, userCode: pending?.userCode || null, signInStatus: pending?.status || null, accessMode }; listeners.forEach(fn => fn(snapshot)); };
+  const reset = () => { epoch++; if (expiryTimer !== null) cancelSchedule(expiryTimer); expiryTimer = null; token = null; userId = null; accessMode = null; expiresAt = 0; pending?.controller.abort(); pending = null; emit(); };
+  function scheduleExpiry() {
+    if (expiryTimer !== null) cancelSchedule(expiryTimer);
+    expiryTimer = null;
+    if (!token) return;
+    if (expiresAt <= now()) { reset(); return; }
+    const scheduledEpoch = epoch;
+    expiryTimer = schedule(() => {
+      if (scheduledEpoch !== epoch) return;
+      expiryTimer = null;
+      if (expiresAt <= now()) reset();
+      else scheduleExpiry();
+    }, Math.min(expiresAt - now(), 2147483647));
+    // Node tests should not be kept alive by the real deadline. Native timers
+    // have no unref; foreground validation below remains necessary after sleep.
+    expiryTimer?.unref?.();
+  }
   const authorization = () => { if (token && expiresAt <= now()) reset(); return token ? { authorization: `Bearer ${token}` } : {}; };
   async function request(path, { method = 'GET', body, signal, authenticated = false, headers, deadline } = {}) {
     const auth = authenticated ? authorization() : {};
@@ -48,6 +67,7 @@ export function createAccountSession({ origin, development = false, fetch, rando
   }
   const account = async (path = '', options = {}) => {
     if (!/^\/(?:plans|circles|invitations|invitation-settings|profile|circle-plans)(?:\/[A-Za-z0-9_-]+)*$/.test(path) && path !== '') throw new Error('Unsupported account request.');
+    if (String(options.method || 'GET').toUpperCase() !== 'GET' && accessMode !== 'account-sync') throw new Error(READ_ONLY_PILOT_MESSAGE);
     return (await request(`/api/native/account${path}`, { ...options, authenticated: true })).data;
   };
   async function cancelSignIn() {
@@ -93,7 +113,20 @@ export function createAccountSession({ origin, development = false, fetch, rando
           const expiry = typeof result.data.expiresAt === 'number' ? result.data.expiresAt : Date.parse(result.data.expiresAt);
           if (typeof result.data.accessToken !== 'string' || !/^ust_native_[A-Za-z0-9_-]+$/.test(result.data.accessToken) || !Number.isFinite(expiry) || expiry <= now()) throw new Error('The app session response was invalid.');
           token = result.data.accessToken; expiresAt = expiry;
-          try { const profile = await account('', { signal: controller.signal }); if (!profile.user?.id) throw new Error('Account identity unavailable.'); userId = profile.user.id; } catch (error) { reset(); throw error; }
+          // Capability is bound to this issued token, never upgraded by public config.
+          accessMode = result.data.accessMode === 'account-sync' ? 'account-sync' : 'read-only';
+          scheduleExpiry();
+          try {
+            const profile = await account('', { signal: controller.signal });
+            if (version !== epoch || controller.signal.aborted) throw new Error('Sign-in cancelled.');
+            if (!profile.user?.id) throw new Error('Account identity unavailable.');
+            userId = profile.user.id;
+          } catch (error) {
+            // A cancelled attempt may finish after a newer sign-in. It owns no
+            // part of that newer session, including its token or expiry timer.
+            if (version === epoch) reset();
+            throw error;
+          }
           pending = null; emit(); return;
         }
         if (result.status !== 202 || result.data.status !== 'pending') throw new Error('The sign-in response was invalid.');
@@ -106,6 +139,13 @@ export function createAccountSession({ origin, development = false, fetch, rando
     origin: trustedOrigin, account, signIn, cancelSignIn,
     config: async () => { try { return (await request('/api/auth/native/config')).data; } catch (error) { if (error.status === 404) return { enabled: false, available: false }; throw error; } },
     getAuthorization: () => { const expired = token && expiresAt <= now(); const header = authorization().authorization || null; if (expired) throw new Error('Your account session expired. Sign in again before continuing.'); return header; },
+    getPlanningAuthorization: () => {
+      const expired = token && expiresAt <= now(), header = authorization().authorization || null;
+      if (expired) throw new Error('Your account session expired. Sign in again before continuing.');
+      if (header && (pending || !userId)) throw new Error('Sign-in is still finishing. Wait for your account before planning.');
+      if (header && accessMode !== 'account-sync') throw new Error(READ_ONLY_PILOT_MESSAGE);
+      return header;
+    },
     invalidateAuthorization: captured => { if (captured && captured === authorization().authorization) reset(); },
     getSnapshot: () => { authorization(); return snapshot; },
     subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; },

@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { connectedPeople } from '../account-session';
+import { connectedPeople, isReadOnlySession } from '../account-session';
+import { ApiServerNotice } from './ApiServerNotice';
 import type { Person, Plan } from '../types';
 
 type Session = {
-  getSnapshot: () => { signedIn: boolean; signingIn: boolean; userCode?: string | null; signInStatus?: string | null; userId?: string | null; sessionEpoch?: number };
-  subscribe: (listener: (state: { signedIn: boolean; signingIn: boolean; userCode?: string | null; signInStatus?: string | null; userId?: string | null; sessionEpoch?: number }) => void) => () => unknown;
+  origin: string;
+  getSnapshot: () => { signedIn: boolean; signingIn: boolean; userCode?: string | null; signInStatus?: string | null; userId?: string | null; sessionEpoch?: number; accessMode?: string | null };
+  subscribe: (listener: (state: { signedIn: boolean; signingIn: boolean; userCode?: string | null; signInStatus?: string | null; userId?: string | null; sessionEpoch?: number; accessMode?: string | null }) => void) => () => unknown;
   config: () => Promise<any>; signIn: () => Promise<void>; cancelSignIn: () => Promise<void>; logout: () => Promise<void>;
   account: (path?: string, options?: { method?: string; body?: unknown; signal?: AbortSignal }) => Promise<any>;
 };
@@ -22,6 +24,7 @@ export function NativeAccountScreen({ session, onOpenPlan, onImportCircle }: {
   session: Session; onOpenPlan: (plan: Plan, options: { editable: boolean }) => void; onImportCircle: (circle: Circle) => void;
 }) {
   const [auth, setAuth] = useState(session.getSnapshot()), [enabled, setEnabled] = useState<boolean | null>(null);
+  const readOnly = isReadOnlySession(auth);
   const [account, setAccount] = useState<any>(null), [plans, setPlans] = useState<any[]>([]), [inbox, setInbox] = useState<any[]>([]);
   const [circlePlans, setCirclePlans] = useState<any[]>([]), [profileEdit, setProfileEdit] = useState<{ name: string; artists: string; vibes: string } | null>(null);
   const [invitationError, setInvitationError] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState('');
@@ -133,23 +136,25 @@ export function NativeAccountScreen({ session, onOpenPlan, onImportCircle }: {
   return <ScrollView style={s.root} contentContainerStyle={s.content}>
     <Text style={s.eyebrow}>YOUR ACCOUNT</Text><Text style={s.title}>{account?.user ? `Hello, ${account.user.profile?.name || 'you'}.` : 'A little more you.'}</Text>
     <Text style={s.body}>Account plans, circles and invitations live here. Saved and Circles tabs keep separate copies on this device.</Text>
+    <ApiServerNotice origin={session.origin} />
+    {readOnly && <View style={s.card}><Text accessibilityRole="header" style={s.heading}>Read-only account pilot</Text><Text style={s.body}>Browse existing account plans and circles. Planning, profile changes and invitation actions are disabled for this session.</Text><Text style={s.caption}>Device-only Saved outings, Circles and your guest draft are unchanged. Sign out to return to them. Planning requires an approved account-sync session.</Text></View>}
     {!!error && <Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!notice && <Text accessibilityLiveRegion="polite" style={s.body}>{notice}</Text>}
     {!!busy && <ActivityIndicator color={c.ink} accessibilityLabel="Updating account" />}
     {!auth.signedIn ? <View style={s.card}>
       <Text style={s.heading}>{auth.signingIn ? 'Approve in your browser' : 'Keep your people close.'}</Text>
-      <Text style={s.body}>{auth.signingIn ? 'Check that the approval code below matches the browser, then sign in and approve this app. Return here afterward. Never approve a code from someone else.' : enabled === false ? 'Native account access is not enabled on this server. You can keep planning as a guest.' : 'Sign in through the Unstressed website in your system browser. This app session is temporary and is not saved on this device.'}</Text>
+      <Text style={s.body}>{auth.signingIn ? 'Check that the approval code below matches the browser, then sign in and approve this app. Return here afterward. Never approve a code from someone else.' : enabled === false ? 'Native account access is not enabled on this server. Your device-only saved outings and circles are still available.' : enabled === null ? 'Check account availability before signing in to the server shown above.' : 'Sign in to the server shown above in your system browser. This app session is temporary and is not saved on this device.'}</Text>
       {auth.signingIn && !!auth.signInStatus && <Text accessibilityLiveRegion="polite" style={s.body}>{auth.signInStatus}</Text>}
       {auth.signingIn && !!auth.userCode && <Text selectable style={s.heading}>Approval code: {auth.userCode}</Text>}
       {auth.signingIn ? <Button label="Cancel sign-in" quiet onPress={() => void session.cancelSignIn().catch(e => setError(message(e)))} /> : <Button label="Continue in browser" disabled={enabled !== true || busy} onPress={() => void run(async () => { try { await session.signIn(); if (alive.current && session.getSnapshot().signedIn) await refresh(control.current.signal); } catch (cause) { if (alive.current) setError(message(cause)); } })} />}
-      {enabled === null && <Button label="Check account availability" quiet disabled={busy} onPress={() => void run(async () => { const config = await session.config(); setEnabled(config.enabled === true); })} />}
+      {!auth.signingIn && <Button label="Check account availability" quiet disabled={busy} onPress={() => void run(async () => { setEnabled(null); const config = await session.config(); setEnabled(config.enabled === true); })} />}
     </View> : <>
       <View style={s.card}><Text style={s.heading}>{account?.user?.email || 'Your signed-in account'}</Text>
         <Text style={s.body}>Tastes: {(account?.user?.profile?.artists || []).join(', ') || 'None saved'}</Text>
         <Text style={s.caption}>Signing out removes this app session, not your cloud account, cloud invitations or device library.</Text>
-        <Button label="Edit account name and tastes" quiet disabled={busy || !account?.user} onPress={() => setProfileEdit({ name: account.user.profile.name, artists: (account.user.profile.artists || []).join(', '), vibes: (account.user.profile.vibes || []).join(', ') })} />
+        <Button label="Edit account name and tastes" quiet disabled={busy || readOnly || !account?.user} onPress={() => setProfileEdit({ name: account.user.profile.name, artists: (account.user.profile.artists || []).join(', '), vibes: (account.user.profile.vibes || []).join(', ') })} />
         {profileEdit && <View style={s.section}><Text style={s.caption}>Separate entries with commas. Existing spending preferences are kept.</Text>
           {(['name', 'artists', 'vibes'] as const).map(field => <View key={field} style={s.section}><Text style={s.body}>{field === 'name' ? 'Your name' : field === 'artists' ? 'Artists' : 'Vibes'}</Text><TextInput accessibilityLabel={`Account ${field}`} editable={!busy} value={profileEdit[field]} maxLength={field === 'name' ? 80 : 600} style={s.input} onChangeText={value => setProfileEdit({ ...profileEdit, [field]: value })} /></View>)}
-          <Button label="Save account profile" disabled={busy || !profileEdit.name.trim()} onPress={saveProfile} /><Button label="Cancel profile edit" quiet disabled={busy} onPress={() => setProfileEdit(null)} />
+          <Button label="Save account profile" disabled={busy || readOnly || !profileEdit.name.trim()} onPress={saveProfile} /><Button label="Cancel profile edit" quiet disabled={busy} onPress={() => setProfileEdit(null)} />
         </View>}
         <Button label="Refresh account" quiet disabled={busy} onPress={() => void run(refresh)} />
         <Button label="Sign out of this app" quiet onPress={() => { void session.logout().catch(e => setError(message(e))); }} />
@@ -157,27 +162,27 @@ export function NativeAccountScreen({ session, onOpenPlan, onImportCircle }: {
       <Text style={s.heading}>Cloud saved plans</Text><Text style={s.caption}>Open the server-saved revision. Hours and availability may have changed.</Text>
       {!plans.length && <Text style={s.body}>No account plans yet.</Text>}
       {plans.map(plan => <View key={plan.id} style={s.card}><Text style={s.heading}>{plan.title || 'Your outing'}</Text><Text style={s.body}>{plan.area} · {plan.date || 'Date not set'} · Revision {plan.revision}</Text>
-        <Button label="Open account plan" disabled={busy} onPress={() => void run(async signal => { const full = await session.account(`/plans/${encodeURIComponent(plan.id)}`, { signal }); if (!signal.aborted) onOpenPlan(full, { editable: true }); })} />
-        <Button label="Invite connected people" quiet disabled={busy || !!invitationError} onPress={() => manage(plan)} />
+        <Button label={readOnly ? "Open read-only plan" : "Open account plan"} disabled={busy} onPress={() => void run(async signal => { const full = await session.account(`/plans/${encodeURIComponent(plan.id)}`, { signal }); if (!signal.aborted) onOpenPlan(full, { editable: true }); })} />
+        <Button label="Invite connected people" quiet disabled={busy || readOnly || !!invitationError} onPress={() => manage(plan)} />
       </View>)}
       {manager && <View style={s.card}><Text style={s.heading}>Invite to {manager.plan.title || 'your plan'}</Text><Text style={s.caption}>In-app invitations only. Adding a person to a draft never sends an invitation. Existing circle access is separate.</Text>
         {!connectedPeople(account).length && <Text style={s.body}>No connected account people yet. Device-only names cannot receive invitations.</Text>}
-        {connectedPeople(account).map((person: Person) => { const row = manager.invitations?.find((r: any) => r.recipientId === person.id), update = row && (row.revision !== manager.revision || row.status === 'unavailable'); return <View key={person.id} style={s.section}><Text style={s.body}>{person.name} · {row?.status || 'Not invited'}{row ? ` · Revision ${row.revision}` : ''}</Text>{row?.status !== 'disconnected' && (!row || update) && <Button label={update ? `Send update to ${person.name}` : `Invite ${person.name}`} disabled={busy || manager.revision !== manager.plan.revision} onPress={() => send(person, row)} />}{row && ['pending', 'interested', 'going'].includes(row.status) && <Button label={`Withdraw invitation for ${person.name}`} quiet disabled={busy} onPress={() => withdraw(row)} />}</View>; })}
-        {(manager.invitations || []).filter((row: any) => !connectedPeople(account).some((p: Person) => p.id === row.recipientId)).map((row: any) => <View key={row.id} style={s.section}><Text style={s.body}>{row.recipientName || 'Previous recipient'} · {row.status}</Text>{['pending', 'interested', 'going'].includes(row.status) && <Button label="Withdraw previous invitation" quiet disabled={busy} onPress={() => withdraw(row)} />}</View>)}
+        {connectedPeople(account).map((person: Person) => { const row = manager.invitations?.find((r: any) => r.recipientId === person.id), update = row && (row.revision !== manager.revision || row.status === 'unavailable'); return <View key={person.id} style={s.section}><Text style={s.body}>{person.name} · {row?.status || 'Not invited'}{row ? ` · Revision ${row.revision}` : ''}</Text>{row?.status !== 'disconnected' && (!row || update) && <Button label={update ? `Send update to ${person.name}` : `Invite ${person.name}`} disabled={busy || readOnly || manager.revision !== manager.plan.revision} onPress={() => send(person, row)} />}{row && ['pending', 'interested', 'going'].includes(row.status) && <Button label={`Withdraw invitation for ${person.name}`} quiet disabled={busy || readOnly} onPress={() => withdraw(row)} />}</View>; })}
+        {(manager.invitations || []).filter((row: any) => !connectedPeople(account).some((p: Person) => p.id === row.recipientId)).map((row: any) => <View key={row.id} style={s.section}><Text style={s.body}>{row.recipientName || 'Previous recipient'} · {row.status}</Text>{['pending', 'interested', 'going'].includes(row.status) && <Button label="Withdraw previous invitation" quiet disabled={busy || readOnly} onPress={() => withdraw(row)} />}</View>)}
         <Button label="Close invitations" quiet onPress={() => setManager(null)} />
       </View>}
-      <Text style={s.heading}>Plans shared by your circles</Text><Text style={s.caption}>Open as an independent outing. Editing will not change the owner's plan.</Text>
+      <Text style={s.heading}>Plans shared by your circles</Text><Text style={s.caption}>{readOnly ? 'Open the saved read-only snapshot.' : "Open as an independent outing. Editing will not change the owner's plan."}</Text>
       {!circlePlans.length && <Text style={s.body}>No circle-shared plans yet.</Text>}
-      {circlePlans.map(plan => <View key={`${plan.ownerId}:${plan.id}`} style={s.card}><Text style={s.heading}>{plan.title || 'Circle outing'}</Text><Text style={s.body}>{plan.circleName} · {plan.area} · Revision {plan.revision}</Text><Button label="Open independent outing" quiet disabled={busy} onPress={() => void run(async signal => { const full = await session.account(`/circle-plans/${encodeURIComponent(plan.ownerId)}/${encodeURIComponent(plan.id)}`, { signal }); if (!signal.aborted) onOpenPlan(full, { editable: false }); })} /></View>)}
+      {circlePlans.map(plan => <View key={`${plan.ownerId}:${plan.id}`} style={s.card}><Text style={s.heading}>{plan.title || 'Circle outing'}</Text><Text style={s.body}>{plan.circleName} · {plan.area} · Revision {plan.revision}</Text><Button label={readOnly ? "Open read-only circle plan" : "Open independent outing"} quiet disabled={busy} onPress={() => void run(async signal => { const full = await session.account(`/circle-plans/${encodeURIComponent(plan.ownerId)}/${encodeURIComponent(plan.id)}`, { signal }); if (!signal.aborted) onOpenPlan(full, { editable: false }); })} /></View>)}
       <Text style={s.heading}>Account circles</Text><Text style={s.caption}>Nothing is copied to your device automatically.</Text>
       {(account?.circles || []).map((circle: Circle) => <View key={circle.id} style={s.card}><Text style={s.heading}>{circle.name}</Text><Text style={s.body}>{circle.people.map(person => person.name).join(', ')}</Text>
-        <Button label="Use circle in this outing" quiet disabled={busy} onPress={() => useCircle(circle)} />
+        <Button label="Use circle in this outing" quiet disabled={busy || readOnly} onPress={() => useCircle(circle)} />
       </View>)}
       {!account?.circles?.length && <Text style={s.body}>No account circles yet.</Text>}
       <Text style={s.heading}>Invitation inbox</Text><Text style={s.caption}>Interested and Going unlock a read-only itinerary. Declining does not remove separate circle access.</Text>
       {!!invitationError && <Text style={s.error}>{invitationError}</Text>}{!inbox.length && !invitationError && <Text style={s.body}>No invitations yet.</Text>}
       {inbox.map(row => <View style={s.card} key={row.id}><Text style={s.heading}>{row.title || 'An outing'}</Text><Text style={s.body}>From {row.organizerName} · {row.date || 'Date not set'} · Revision {row.revision}</Text><Text style={s.caption}>{row.status}{row.previousResponse ? ` · Previously ${row.previousResponse.status}; updated plans need a new response.` : ''}</Text>
-        {['pending', 'interested', 'going'].includes(row.status) && <><Button label="Interested" quiet disabled={busy} onPress={() => respond(row, 'interested')} /><Button label="Going" quiet disabled={busy} onPress={() => respond(row, 'going')} /><Button label={row.status === 'pending' ? 'Decline' : 'Leave invitation'} quiet disabled={busy} onPress={() => respond(row, row.status === 'pending' ? 'decline' : 'leave')} /></>}
+        {['pending', 'interested', 'going'].includes(row.status) && <><Button label="Interested" quiet disabled={busy || readOnly} onPress={() => respond(row, 'interested')} /><Button label="Going" quiet disabled={busy || readOnly} onPress={() => respond(row, 'going')} /><Button label={row.status === 'pending' ? 'Decline' : 'Leave invitation'} quiet disabled={busy || readOnly} onPress={() => respond(row, row.status === 'pending' ? 'decline' : 'leave')} /></>}
         {['interested', 'going'].includes(row.status) && <Button label="View read-only itinerary" disabled={busy} onPress={() => void run(async signal => { setInvited(null); const result = await session.account(`/invitations/${encodeURIComponent(row.id)}/plan`, { signal }); if (!signal.aborted) { if (result.revision !== row.revision) throw new Error('This invitation changed. Refresh and review it again.'); setInvited({ ...result, invitationId: row.id }); } })} />}
       </View>)}
       {invited && <View style={s.card}><Text style={s.heading}>{invited.title}</Text><Text style={s.caption}>Read-only · Revision {invited.revision}. Refresh to check whether access or the plan changed.</Text>{(invited.stops || []).map((stop: any, index: number) => <View style={s.section} key={`${stop.id}:${index}`}><Text style={s.heading}>{stop.name}</Text><Text style={s.body}>{stop.intent} · {stop.start && stop.end ? `${stop.start}–${stop.end}` : 'Time to choose'}{stop.address ? `\n${stop.address}` : ''}</Text></View>)}<Button label="Close itinerary" quiet onPress={() => setInvited(null)} /></View>}

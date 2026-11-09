@@ -20,7 +20,11 @@ test('real native client and API agree through browser OAuth approval, saved pla
   const {default:express}=await import('../../backend/node_modules/express/index.js');
   const outer=express(),server=outer.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
   t.after(()=>new Promise(r=>server.close(r)));origin=`http://127.0.0.1:${server.address().port}`;
-  const accounts=createAccounts({store,now,origin,clientId:'synthetic-client',clientSecret:'synthetic-secret',nativeAuthEnabled:true,
+  // The pilot admits pre-existing Google-linked identities only. All are synthetic.
+  const aliceId='11111111-1111-4111-8111-111111111111',bobId='22222222-2222-4222-8222-222222222222';
+  await store.transact(data=>{for(const [id,name] of [[aliceId,'Alice'],[bobId,'Bob']])data.users[id]={id,googleSubject:name,email:`${name}@example.test`,profile:{id,name,artists:[],vibes:[]}};});
+  const pilot={version:1,epoch:1,origin,issuedAt:clock-1000,expiresAt:clock+12*3600000,accountIds:[aliceId,bobId],accessMode:'account-sync'};
+  const accounts=createAccounts({store,now,origin,readNativePilotPolicy:()=>pilot,clientId:'synthetic-client',clientSecret:'synthetic-secret',nativeAuthEnabled:true,
     invitationEpoch:'4de508f0-6a1e-4cba-82f4-e3e8be297179',oauthFactory:()=>({
       generateAuthUrl(args){authorization=args;return `https://accounts.google.com/authorize?state=${args.state}`;},
       async getToken({code,codeVerifier}){assert.ok(codeVerifier);return {tokens:{id_token:code}};},

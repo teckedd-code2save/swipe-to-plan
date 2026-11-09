@@ -1,7 +1,9 @@
 // Public endpoints remain guest-only. Only planning calls may use the separate
 // native account session; never borrow cookies, forge Origin or use shared-day keys.
+export const PRODUCTION_API_ORIGIN = "https://unstressed.serendepify.com";
+
 export function apiOrigin(value, development = false) {
-  const url = new URL(value || "https://unstressed.serendepify.com");
+  const url = new URL(value || PRODUCTION_API_ORIGIN);
   const local =
     /^(localhost|127\.0\.0\.1|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})$/.test(
       url.hostname,
@@ -20,6 +22,13 @@ export function apiOrigin(value, development = false) {
     );
   }
   return url.origin;
+}
+
+// Compare the complete normalized origin, never a hostname suffix or display name.
+// This is a destination label, not evidence that a server is available or isolated.
+export function apiServerInfo(value, development = false) {
+  const origin = apiOrigin(value, development);
+  return { origin, isProduction: origin === PRODUCTION_API_ORIGIN };
 }
 
 export async function readPlanStream(response, onDiscovery) {

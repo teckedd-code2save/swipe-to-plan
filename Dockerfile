@@ -17,6 +17,7 @@ COPY backend/src ./src
 COPY backend/test ./test
 # Release guard tests run against the actual script with isolated command mocks.
 COPY compose.yml /build/compose.yml
+COPY deploy/native-pilot /build/deploy/native-pilot
 COPY deploy/release.sh /build/deploy/release.sh
 COPY deploy/smoke-invitation-epoch.sh /build/deploy/smoke-invitation-epoch.sh
 COPY .github/workflows/deploy.yml /build/.github/workflows/deploy.yml
@@ -33,6 +34,7 @@ LABEL org.opencontainers.image.source="https://github.com/teckedd-code2save/swip
 LABEL org.opencontainers.image.title="Unstressed"
 LABEL io.unstressed.account-durability="1"
 LABEL io.unstressed.plan-invitations="1"
+LABEL io.unstressed.native-pilot="1"
 LABEL org.opencontainers.image.licenses="MIT"
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /data && chown node:node /data

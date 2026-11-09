@@ -50,7 +50,7 @@ test('logout clears local session even when revocation fails', async () => {
   // A separate fixture exercises a failing logout without exposing session internals.
   const g = fixture({ fetch: async (url) => {
     if (url.endsWith('/start')) return response({ flowId: 'flow', browserUrl: `${origin}/api/auth/native/browser?flow=flow`, userCode: 'ABCD1234', expiresAt: Date.now()+60000 });
-    if (url.endsWith('/exchange')) return response({ accessToken: token, expiresAt: Date.now()+60000 });
+    if (url.endsWith('/exchange')) return response({ accessToken: token, expiresAt: Date.now()+60000, accessMode: 'account-sync' });
     if (url.endsWith('/account')) return response({ user: { id: 'owner' } });
     throw new Error('offline');
   } });
@@ -82,7 +82,7 @@ test('a stale account read cannot return after logout, and 401 clears the curren
   const started = new Promise(resolve => { readStarted = resolve; });
   const f = fixture({ fetch: async url => {
     if (url.endsWith('/start')) return response({ flowId: 'flow', browserUrl: `${origin}/api/auth/native/browser?flow=flow`, userCode: 'Q_-Z1234', expiresAt: Date.now()+60000 });
-    if (url.endsWith('/exchange')) return response({ accessToken: token, expiresAt: Date.now()+60000 });
+    if (url.endsWith('/exchange')) return response({ accessToken: token, expiresAt: Date.now()+60000, accessMode: 'account-sync' });
     if (url.endsWith('/account') && reads++ === 0) return response({ user: { id: 'owner' } });
     if (url.endsWith('/plans')) { readStarted(); return new Promise(resolve => { release = resolve; }); }
     return response({ ok: true });
@@ -90,7 +90,7 @@ test('a stale account read cannot return after logout, and 401 clears the curren
   await f.session.signIn(); const request = f.session.account('/plans'); await started; await f.session.logout(); release(response({ plans: [{ title: 'Private' }] })); await assert.rejects(request, /cancelled/);
   const g = fixture({ fetch: async url => {
     if (url.endsWith('/start')) return response({ flowId: 'flow', browserUrl: `${origin}/api/auth/native/browser?flow=flow`, userCode: 'ABCD1234', expiresAt: Date.now()+60000 });
-    if (url.endsWith('/exchange')) return response({ accessToken: token, expiresAt: Date.now()+60000 });
+    if (url.endsWith('/exchange')) return response({ accessToken: token, expiresAt: Date.now()+60000, accessMode: 'account-sync' });
     if (url.endsWith('/account')) return response({ user: { id: 'owner' } });
     return response({ error: 'Session expired' }, 401);
   } });
@@ -166,7 +166,7 @@ test('429 does not retry start or account mutations', async () => {
   let mutations = 0;
   const g = fixture({ fetch: async url => {
     if (url.endsWith('/start')) return response({ flowId: 'flow', browserUrl: `${origin}/api/auth/native/browser?flow=flow`, userCode: 'ABCD1234', expiresAt: Date.now()+60000 });
-    if (url.endsWith('/exchange')) return response({ accessToken: token, expiresAt: Date.now()+60000 });
+    if (url.endsWith('/exchange')) return response({ accessToken: token, expiresAt: Date.now()+60000, accessMode: 'account-sync' });
     if (url.endsWith('/account')) return response({ user: { id: 'owner' } });
     mutations++; return response({}, 429);
   } });
