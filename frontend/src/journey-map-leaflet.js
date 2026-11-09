@@ -1,7 +1,7 @@
 import L from 'leaflet';
 import {markerGroups} from './journey-map.js';
 
-export function createJourneyMap(container,points,{onSelectStop,onSelectStart,onTileError,onTileReady,geometry=null}) {
+export function createJourneyMap(container,points,{onSelectStop,onSelectStart,onSelectGroup,onTileError,onTileReady,geometry=null}) {
   const map=L.map(container,{scrollWheelZoom:false,attributionControl:true,zoomControl:true,zoomAnimation:false,fadeAnimation:false});
   const located=points.filter(point=>point.coordinates);
   const routePoints=geometry?.type==='LineString'?geometry.coordinates.map(([lng,lat])=>[lat,lng]):[];
@@ -37,7 +37,15 @@ export function createJourneyMap(container,points,{onSelectStop,onSelectStart,on
     // adds 46px horizontally and 48px vertically (margins, wrapper and tip).
     const left=Math.max(32,map.zoomControl.getContainer().offsetWidth)+20;
     const bottom=Math.max(20,map.attributionControl.getContainer().offsetHeight)+12;
-    return {maxWidth:Math.max(80,Math.min(300,size.x-left-12-48)),maxHeight:Math.max(48,Math.min(240,size.y-12-bottom-52)),autoPanPaddingTopLeft:[left,12],autoPanPaddingBottomRight:[12,bottom],keepInView:true};
+    const width=Math.max(80,Math.min(300,size.x-left-12-48));
+    // Grid content can otherwise shrink to its min-content width during Leaflet
+    // measurement. Reserve the bounded available width for the legacy chooser.
+    return {minWidth:width,maxWidth:width,maxHeight:Math.max(48,Math.min(240,size.y-12-bottom-52)),autoPanPaddingTopLeft:[left,12],autoPanPaddingBottomRight:[12,bottom],keepInView:true};
+  }
+  function action(marker,choose){
+    const activate=()=>{marker.getElement()?.focus({preventScroll:true});choose();};
+    marker.on('click',activate);
+    marker.on('keydown',event=>{const key=event.originalEvent;if(key&&!key.repeat&&['Enter',' '].includes(key.key)){L.DomEvent.preventDefault(key);activate();}});
   }
   for(const group of markerGroups(points)){
     const badge=document.createElement('span');badge.className='journey-map-pin';
@@ -49,9 +57,10 @@ export function createJourneyMap(container,points,{onSelectStop,onSelectStart,on
     // A unique marker opens the visit directly. Co-located visits keep an explicit chooser.
     if(group.points.length===1){
       const point=group.points[0];
-      marker.on('click',()=>point.isOrigin?onSelectStart?.():onSelectStop?.(point.stopId));
+      action(marker,()=>point.isOrigin?onSelectStart?.():onSelectStop?.(point.stopId));
       continue;
     }
+    if(onSelectGroup){action(marker,()=>onSelectGroup(group.points));continue;}
     const popup=document.createElement('div');popup.className='journey-map-popup';
     for(const point of group.points){
       const node=document.createElement('button');node.textContent=`${point.badge} · ${point.label}${point.approximate?' (approximate area)':''}`;

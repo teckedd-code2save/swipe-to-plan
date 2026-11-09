@@ -24,5 +24,5 @@ export const checkedVisit = (checks,stop) => checks?.data?.stops.find(report=>re
 
 // Commentary belongs to this exact ordered itinerary, not just its unique places.
 export function comparisonKey(plan,shown){
-  return JSON.stringify([shown.map(stop=>stop.item.id),plan.request,plan.stops.map(stop=>({stopId:stop.id,intent:stop.intent,itemId:stop.item?.id,entityId:stop.item?.entityId,start:stop.start,end:stop.end}))]);
+  return JSON.stringify([plan.provenance?.retrievedAt||null,shown.map(stop=>stop.item.id),plan.request,plan.stops.map(stop=>({stopId:stop.id,intent:stop.intent,itemId:stop.item?.id,entityId:stop.item?.entityId,start:stop.start,end:stop.end,timeStatus:stop.timeStatus,reason:stop.reason,selectionEvidence:stop.selectionEvidence}))]);
 }

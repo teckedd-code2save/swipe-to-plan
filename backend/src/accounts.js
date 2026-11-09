@@ -3,6 +3,7 @@ import {bookingOperation,invalidateBookings} from './booking-actions.js';
 import {sendCircleMail} from './circle-mail.js';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {createAccountStore} from './account-store.js';
+import {createPlanInvitations} from './plan-invitations.js';
 export {createAccountStore} from './account-store.js';
 import {OAuth2Client,CodeChallengeMethod} from 'google-auth-library';
 import {InputError} from './contract.js';
@@ -16,8 +17,9 @@ const profile=(value,id)=>({...parseItinerary({party:{adults:1},people:[value]})
 const safeUser=user=>({id:user.id,email:user.email,profile:user.profile,planningLocation:user.planningLocation||null,planningLocations:user.planningLocations||[user.planningLocation].filter(Boolean)});
 const cookie=(req,name)=>(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith(`${name}=`))?.slice(name.length+1);
 
-export function createAccounts({store=createAccountStore(),now=Date.now,origin=process.env.APP_ORIGIN||'http://127.0.0.1:5173',clientId=process.env.GOOGLE_OAUTH_CLIENT_ID,clientSecret=process.env.GOOGLE_OAUTH_CLIENT_SECRET,adminEmails=(process.env.ADMIN_EMAILS||'').split(',').map(e=>e.trim().toLowerCase()).filter(Boolean),oauthFactory}={}){
+export function createAccounts({store=createAccountStore(),now=Date.now,invitationEpoch=null,origin=process.env.APP_ORIGIN||'http://127.0.0.1:5173',clientId=process.env.GOOGLE_OAUTH_CLIENT_ID,clientSecret=process.env.GOOGLE_OAUTH_CLIENT_SECRET,adminEmails=(process.env.ADMIN_EMAILS||'').split(',').map(e=>e.trim().toLowerCase()).filter(Boolean),oauthFactory}={}){
   const executionProtocol=createExecutionProtocol({now});
+  const planInvitations=createPlanInvitations({now,epoch:invitationEpoch});
   origin=new URL(origin).origin;
   const secure=origin.startsWith('https://');
   const isAdmin=user=>!!user&&adminEmails.includes(user.email.toLowerCase());
@@ -30,6 +32,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
   const bindingName=secure?'__Host-outing-signin':'outing-signin';
   const resolve=(data,session)=>{const record=data.sessions[hash(session)];return record&&record.expiresAt>now()?data.users[record.userId]:null;};
   const requireUser=(data,session)=>{const user=resolve(data,session);if(!user)throw fail('Sign in to keep your tastes and circles.',401);return user;};
+  const invitationUser=(data,session)=>{const user=requireUser(data,session);planInvitations.assertEnabled();return user;};
   const circleView=(data,circle,user)=>({id:circle.id,name:circle.name,owner:circle.ownerId===user.id,people:circle.members.map(m=>m.userId?data.users[m.userId].profile:m.profile),accountIds:circle.members.flatMap(m=>m.userId?[m.userId]:[]),...(circle.ownerId===user.id?{inviteToken:circle.inviteToken}:{})});
   const myCircles=(data,user)=>Object.values(data.circles).filter(c=>c.members.some(m=>m.userId===user.id)).map(c=>circleView(data,c,user));
   function returnPath(raw){if(raw==='/'||raw===undefined)return '/';if(typeof raw==='string'&&(/^\/#\/(?:day|circle)\/[a-zA-Z0-9_-]{1,64}\?(?:key|invite)=[a-zA-Z0-9_-]{20,64}$/.test(raw)||/^\/#\/plan\/[a-zA-Z0-9_-]{1,64}$/.test(raw)))return raw;throw new InputError('Return to the planner after signing in.');}
@@ -70,6 +73,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
           delete entry.plan.savedPlan;delete entry.plan.saveError;
           if(previous?.executionLedger){entry.executionLedger=previous.executionLedger;invalidateExecution(entry);}
           if(previous?.bookingActions){entry.bookingActions=previous.bookingActions;invalidateBookings(entry);}
+          if(previous?.planInvitationGeneration)entry.planInvitationGeneration=previous.planInvitationGeneration;
           entries[entry.id]=entry;user.savedPlans=entries;return planSummary(entry);
         });
         return {...plan,savedPlan:saved};
@@ -86,6 +90,13 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       const apply=data=>{const user=resolve(data,session);if(!user||!Object.hasOwn(user.savedPlans||{},id))throw Object.assign(new Error('Booking not found.'),{status:404,code:'booking_conflict'});return bookingOperation(user.savedPlans[id],operation,body,bookingId,{now});};
       return operation==='list'?store.read(apply):store.transact(apply);
     },
+    async listPlanInvitations(session,id){return store.read(data=>planInvitations.list(data,invitationUser(data,session),id));},
+    async inviteToPlan(session,id,body){return store.transact(data=>planInvitations.invite(data,invitationUser(data,session),id,body));},
+    async withdrawPlanInvitation(session,id,invitationId){return store.transact(data=>planInvitations.withdraw(data,invitationUser(data,session),id,invitationId));},
+    async invitationInbox(session){return store.read(data=>planInvitations.inbox(data,invitationUser(data,session)));},
+    async updateInvitation(session,id,body){return store.transact(data=>planInvitations.update(data,invitationUser(data,session),id,body));},
+    async invitedPlan(session,id){return store.read(data=>planInvitations.plan(data,invitationUser(data,session),id));},
+    async invitationSettings(session,body){return store.transact(data=>planInvitations.settings(data,invitationUser(data,session),body));},
     async listPlans(session){return store.read(data=>Object.values(requireUser(data,session).savedPlans||{}).sort((a,b)=>b.savedAt.localeCompare(a.savedAt)).map(planSummary));},
     async getPlan(session,id){return store.read(data=>{const entry=savedPlan(requireUser(data,session),id);return {...entry.plan,savedPlan:planSummary(entry)};});},
     async listCirclePlans(session){return store.read(data=>{const user=requireUser(data,session);return sharedPlans(data,user).map(({ownerId,entry,circle,circles})=>({...planSummary(entry),circleIds:circles.map(c=>c.id),ownerId,circleName:circle.name})).sort((a,b)=>b.savedAt.localeCompare(a.savedAt));});},
@@ -96,7 +107,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       return store.transact(data=>{
         const user=requireUser(data,session);let entry=savedPlan(user,id);
         if(body.revision!==entry.revision)throw fail('This day changed elsewhere. Reopen it from Saved days before editing.',409);
-        if(entry.sourceDayId){if(Object.keys(user.savedPlans).length>=100)throw fail('Remove an old saved day to make room for this private copy.',409);entry=structuredClone(entry);entry.id=randomUUID();delete entry.sourceDayId;delete entry.bookingActions;delete entry.executionLedger;user.savedPlans[entry.id]=entry;}
+        if(entry.sourceDayId){if(Object.keys(user.savedPlans).length>=100)throw fail('Remove an old saved day to make room for this private copy.',409);entry=structuredClone(entry);entry.id=randomUUID();delete entry.sourceDayId;delete entry.bookingActions;delete entry.executionLedger;delete entry.planInvitationGeneration;user.savedPlans[entry.id]=entry;}
         if(body.restoreRevision!==undefined){
           if(!entry.previous||body.restoreRevision!==entry.previous.revision||body.pins!==undefined)throw fail('That earlier version is no longer available.',409);
           const current={plan:entry.plan,revision:entry.revision};entry.plan=entry.previous.plan;entry.previous=current;
@@ -108,8 +119,8 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
         invalidateExecution(entry);invalidateBookings(entry);entry.revision++;entry.savedAt=new Date(now()).toISOString();return {...entry.plan,savedPlan:planSummary(entry)};
       });
     },
-    async removePlan(session,id){await store.transact(data=>{const user=requireUser(data,session);const entry=savedPlan(user,id);if(entry.executionLedger?.records.some(r=>['submission_pending','submission_unknown','submitted_awaiting_response','provider_confirmed'].includes(r.status)))throw fail('Reconcile pending venue submissions before deleting this day.',409);delete user.savedPlans[id];});},
-    async current(session){return store.read(data=>{const user=resolve(data,session);return {configured:enabled,user:user?{...safeUser(user),admin:isAdmin(user)}:null,circles:user?myCircles(data,user):[]};});},
+    async removePlan(session,id){await store.transact(data=>{const user=requireUser(data,session);const entry=savedPlan(user,id);if(entry.executionLedger?.records.some(r=>['submission_pending','submission_unknown','submitted_awaiting_response','provider_confirmed'].includes(r.status)))throw fail('Reconcile pending venue submissions before deleting this day.',409);delete user.savedPlans[id];planInvitations.remove(data,user,id);});},
+    async current(session){return store.read(data=>{const user=resolve(data,session);return {configured:enabled,user:user?{...safeUser(user),admin:isAdmin(user)}:null,circles:user?myCircles(data,user):[],invitationAvailable:planInvitations.available,invitationUnreadCount:user?planInvitations.unreadCount(data,user):0};});},
     async identity(req){return store.read(data=>{const user=resolve(data,cookie(req,sessionName));return user?{id:user.id,admin:isAdmin(user)}:null;});},
     async adminUsers(req){return store.read(data=>{const user=requireUser(data,cookie(req,sessionName));if(!isAdmin(user))throw fail('This dashboard is private.');return Object.values(data.users).map(u=>({id:u.id,name:u.profile.name,email:u.email,createdAt:u.createdAt,lastSignedInAt:u.lastSignedInAt||null,circles:Object.values(data.circles).filter(c=>c.members.some(m=>m.userId===u.id)).length,hasTastes:!!(u.profile.artists.length||u.profile.vibes.length)}));});},
     async planningPeople(req){
@@ -200,7 +211,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       if(index>=0)circle.members[index]={userId:user.id};else{if(circle.members.length>=6)throw new InputError('This circle is full. Choose your existing name or ask the organizer to make room.');circle.members.push({userId:user.id});}
       return circleView(data,circle,user);
     });},
-    async removeCircle(session,id){await store.transact(data=>{const user=requireUser(data,session),circle=data.circles[id];if(!circle||!circle.members.some(m=>m.userId===user.id))throw fail('Circle not found.',404);if(circle.ownerId===user.id)delete data.circles[id];else circle.members=circle.members.filter(m=>m.userId!==user.id);});},
+    async removeCircle(session,id){await store.transact(data=>{const user=requireUser(data,session),circle=data.circles[id];if(!circle||!circle.members.some(m=>m.userId===user.id))throw fail('Circle not found.',404);if(circle.ownerId===user.id)delete data.circles[id];else circle.members=circle.members.filter(m=>m.userId!==user.id);planInvitations.disconnect(data);});},
     async removeCircleMember(session,id,memberId){
       return store.transact(data=>{
         const user=requireUser(data,session),circle=data.circles[id];
@@ -209,6 +220,7 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
         const index=circle.members.findIndex(m=>m.userId===memberId||(!m.userId&&m.profile?.id===memberId));
         if(index<0)throw fail('Circle member not found.',404);
         circle.members.splice(index,1);
+        planInvitations.disconnect(data);
         return circleView(data,circle,user);
       });
     },
@@ -217,6 +229,15 @@ export function createAccounts({store=createAccountStore(),now=Date.now,origin=p
       const session=req=>cookie(req,sessionName);
       const mutation=(fn)=>route(async(req,res)=>{checkOrigin(req);await fn(req,res);});
       app.get('/api/account',route(async(req,res)=>res.json(await this.current(session(req)))));
+      const invitationRead=fn=>route(async(req,res)=>{res.set('Cache-Control','no-store');res.json(await fn(req));});
+      const invitationChange=fn=>mutation(async(req,res)=>{res.set('Cache-Control','no-store');res.json(await fn(req));});
+      app.get('/api/account/invitations',limit(60,'invitation-read'),invitationRead(req=>this.invitationInbox(session(req))));
+      app.get('/api/account/invitations/:id/plan',limit(60,'invitation-read'),invitationRead(req=>this.invitedPlan(session(req),req.params.id)));
+      app.patch('/api/account/invitations/:id',limit(45,'invitation-change'),invitationChange(req=>this.updateInvitation(session(req),req.params.id,req.body)));
+      app.patch('/api/account/invitation-settings',limit(20,'invitation-change'),invitationChange(req=>this.invitationSettings(session(req),req.body)));
+      app.get('/api/account/plans/:id/invitations',limit(60,'invitation-read'),invitationRead(req=>this.listPlanInvitations(session(req),req.params.id)));
+      app.post('/api/account/plans/:id/invitations',limit(20,'invitation-change'),invitationChange(req=>this.inviteToPlan(session(req),req.params.id,req.body)));
+      app.delete('/api/account/plans/:id/invitations/:invitationId',limit(20,'invitation-change'),invitationChange(req=>{fields(req.body,[]);return this.withdrawPlanInvitation(session(req),req.params.id,req.params.invitationId);}));
       app.get('/api/account/plans/:id/bookings',limit(60,'booking-read'),route(async(req,res)=>{res.set('Cache-Control','no-store');res.json(await this.bookings(session(req),req.params.id));}));
       app.post('/api/account/plans/:id/bookings',limit(30,'booking-mutation'),mutation(async(req,res)=>res.json(await this.bookings(session(req),req.params.id,'create',req.body))));
       app.patch('/api/account/plans/:id/bookings/:bookingId',limit(30,'booking-mutation'),mutation(async(req,res)=>res.json(await this.bookings(session(req),req.params.id,'patch',req.body,req.params.bookingId))));

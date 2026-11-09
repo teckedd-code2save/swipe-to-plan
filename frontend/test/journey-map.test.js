@@ -134,11 +134,13 @@ test('coincident 1 and 3 popup keeps each occurrence selectable and constrains l
     for(const button of choices){assert.equal(button.type,'button');button.focus();assert.equal(document.activeElement,button);button.click();}
     assert.deepEqual(selected,['visit-one','visit-three']);
     assert.equal(popup.options.keepInView,true);assert.ok(popup.options.maxWidth<=300);
+    assert.equal(popup.options.minWidth,popup.options.maxWidth,'Legacy choices reserve their available width instead of shrinking to min-content');
     Object.defineProperty(leafletMap.zoomControl.getContainer(),'offsetWidth',{value:40});
     Object.defineProperty(leafletMap.attributionControl.getContainer(),'offsetHeight',{value:36});
     width=280;height=230;resize();
     assert.equal(document.activeElement,choices[1],'Resizing must retain focused occurrence controls');
     assert.ok(popup.options.maxWidth+48+popup.options.autoPanPaddingTopLeft[0]+popup.options.autoPanPaddingBottomRight[0]<=width);
+    assert.equal(popup.options.minWidth,popup.options.maxWidth,'The usable minimum width follows viewport changes');
     assert.ok(popup.options.maxHeight+52+popup.options.autoPanPaddingTopLeft[1]+popup.options.autoPanPaddingBottomRight[1]<=height);
     assert.equal(popup.options.autoPanPaddingTopLeft[0],60,'Keep popup clear of the measured zoom control');
     assert.equal(popup.options.autoPanPaddingBottomRight[1],48,'Keep popup clear of wrapped attribution');
@@ -154,6 +156,28 @@ test('coincident 1 and 3 popup keeps each occurrence selectable and constrains l
     adapter?.destroy();L.map=originalMap;if(originalObserver===undefined)delete globalThis.ResizeObserver;else globalThis.ResizeObserver=originalObserver;node.remove();
   }
   assert.equal(disconnected,true);
+});
+test('group callback replaces popup with exact start/occurrence choices for pointer and keyboard activation',async()=>{
+  const {createJourneyMap}=await import('../src/journey-map-leaflet.js');const L=(await import('leaflet')).default,originalMap=L.map;let instance,adapter;
+  L.map=(...args)=>(instance=originalMap(...args));
+  const node=document.createElement('div');document.body.append(node);Object.defineProperty(node,'clientWidth',{value:297});Object.defineProperty(node,'clientHeight',{value:176});
+  const groups=[],selected=[],origin={kind:'area',label:'Synthetic start',coordinates:{lat:0,lng:0}};
+  try{
+    adapter=createJourneyMap(node,journeyPoints(plan,origin),{onSelectGroup:points=>groups.push(points),onSelectStop:id=>selected.push(id),onTileReady(){},onTileError(){}});
+    const markers=[];instance.eachLayer(layer=>{if(layer instanceof L.Marker)markers.push(layer);});assert.equal(markers.length,1);
+    const marker=markers[0],element=marker.getElement();assert.equal(marker.getPopup(),undefined);assert.equal(element.getAttribute('role'),'button');
+    element.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true}));assert.equal(groups.length,1);assert.equal(document.activeElement,element);
+    element.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));assert.equal(groups.length,2);
+    element.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:' ',bubbles:true,cancelable:true}));assert.equal(groups.length,3);
+    assert.deepEqual(groups[0].map(point=>point.isOrigin?'origin':point.stopId),['origin','first','repeat']);assert.deepEqual(groups[0].map(point=>point.badge),['S','1','2']);assert.equal(groups[0][0].approximate,true);assert.deepEqual(selected,[]);assert.equal(node.querySelector('.leaflet-popup'),null);
+  }finally{adapter?.destroy();L.map=originalMap;node.remove();}
+});
+test('group delegation follows current callbacks, rejects old maps and keeps a legacy fallback',async()=>{
+  const handlers=[],groups=[];const loadMapLibrary=async()=>({createJourneyMap:(_node,_points,events)=>{handlers.push(events);return {destroy(){}};}});
+  const props={plan,loadMapLibrary,routeScope:'first',onSelectGroup:points=>groups.push(['first',points])};await render(props);assert.equal(typeof handlers[0].onSelectGroup,'function');
+  await render({...props,onSelectGroup:points=>groups.push(['latest',points])});assert.equal(handlers.length,1);await act(async()=>handlers[0].onSelectGroup(['current']));assert.deepEqual(groups,[['latest',['current']]]);
+  await render({...props,routeScope:'other-account'});await act(async()=>handlers[0].onSelectGroup(['stale']));assert.equal(groups.length,1);
+  await render({...props,onSelectGroup:undefined});assert.equal(handlers.at(-1).onSelectGroup,undefined,'No callback means the adapter must retain its ordinary popup');
 });
 test('loaded map updates origin and stops automatically, while old callbacks are ignored',async()=>{
   let loads=0,destroys=0,selected;const handlers=[],seen=[];

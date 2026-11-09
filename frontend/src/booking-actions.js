@@ -8,7 +8,7 @@ export function bookingScope(account,shared,plan,owner=true) {
 }
 export function bookingSnapshot(plan,stop,place=stop.item) {
   const contactEvidence=contactForItem(place),website=contactEvidence.website.url,phone=contactEvidence.phone.dialUrl;
-  return {stopId:stop.id,itemId:stop.item.id,entityId:stop.item.entityId,name:stop.item.name,date:plan.request.timing?.dateConfirmed===true?plan.request.date||null:null,localTime:plan.request.timing?.timeConfirmed===true?stop.start||null:null,timeZone:plan.timeZone||null,party:plan.request.party,contacts:{website,phone},contactEvidence};
+  return {stopId:stop.id,intent:stop.intent??null,orderedStops:plan.stops.map(s=>({stopId:s.id,intent:s.intent??null,itemId:s.item?.id??null,entityId:s.item?.entityId??null})),itemId:stop.item.id,entityId:stop.item.entityId,name:stop.item.name,date:plan.request.timing?.dateConfirmed===true?plan.request.date||null:null,localTime:plan.request.timing?.timeConfirmed===true?stop.start||null:null,timeZone:plan.timeZone||null,party:plan.request.party,contacts:{website,phone},contactEvidence};
 }
 export function bookingMessage(snapshot) {
   const timed=snapshot.date&&snapshot.localTime&&snapshot.timeZone;

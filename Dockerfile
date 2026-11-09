@@ -17,7 +17,11 @@ COPY backend/src ./src
 COPY backend/test ./test
 # Release guard tests run against the actual script with isolated command mocks.
 COPY deploy/release.sh /build/deploy/release.sh
+COPY deploy/smoke-invitation-epoch.sh /build/deploy/smoke-invitation-epoch.sh
 COPY .github/workflows/deploy.yml /build/.github/workflows/deploy.yml
+COPY .github/workflows/ci.yml /build/.github/workflows/ci.yml
+COPY Dockerfile /build/Dockerfile
+COPY .dockerignore /build/.dockerignore
 # Backend regression tests reuse browser-independent planning helpers.
 COPY frontend/src /build/frontend/src
 COPY shared /build/shared
@@ -27,6 +31,7 @@ FROM node:22-bookworm-slim AS runner
 LABEL org.opencontainers.image.source="https://github.com/teckedd-code2save/swipe-to-plan"
 LABEL org.opencontainers.image.title="Unstressed"
 LABEL io.unstressed.account-durability="1"
+LABEL io.unstressed.plan-invitations="1"
 LABEL org.opencontainers.image.licenses="MIT"
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /data && chown node:node /data

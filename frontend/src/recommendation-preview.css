@@ -1,0 +1,52 @@
+/* Compact conversation results. Controls stay optional; evidence stays intact. */
+.chat-studio .cs-recommendation-preview{border:1px solid #c8d6bd;border-radius:16px;background:linear-gradient(150deg,#f1f6e9,#fffefb 70%);padding:16px;box-shadow:0 6px 18px #3f57380a;overflow-wrap:anywhere}
+.cs-preview-heading{display:flex;align-items:center;gap:8px;color:#3c5635;font-size:15px}
+.cs-preview-heading>svg{flex-shrink:0}.cs-preview-heading>strong{flex:1}.cs-preview-heading>span{font-size:10px;font-weight:600;border:1px solid #ccd9c2;border-radius:20px;padding:3px 7px}
+.cs-preview-count{font-size:11px;color:#66735f;margin:6px 0 12px}
+.chat-studio .cs-preview-lead .agent-reply p{font-size:13px;line-height:1.6;margin:10px 0;color:#3c4e33}
+.cs-preview-places{list-style:none;padding:0;margin:12px 0;display:grid;gap:8px}
+.cs-preview-places li{min-width:0}
+.chat-studio .cs-preview-places li>button,.cs-preview-unfilled{display:flex;align-items:center;gap:11px;padding:9px;width:100%;text-align:left;border:1px solid #e0e7d9;border-radius:11px;background:#fffefb}
+.chat-studio .cs-preview-places li>button:hover{border-color:#9faf91;background:#f5f8f0}
+.cs-preview-image{display:grid;place-items:center;flex:0 0 46px;width:46px;height:46px;border-radius:9px;overflow:hidden;background:#edf1e5;color:#70845f}
+.cs-preview-image img{width:100%;height:100%;object-fit:cover}
+.cs-preview-place-copy{display:block;min-width:0;flex:1}
+.cs-preview-place-copy small{display:block;font-size:10px;color:#67745e}
+.cs-preview-place-copy strong{display:block;font-size:13px;line-height:1.4;margin:2px 0}
+.cs-preview-place-copy>span{display:block;font-size:11px;line-height:1.5;color:#6f7569}
+.cs-preview-places li>button>svg{flex-shrink:0}.cs-preview-unfilled{border-style:dashed;color:#7c603b}
+.cs-preview-caution{font-size:12px;line-height:1.5;margin:9px 0;color:#7a5935}
+.cs-preview-limits{font-size:11px;line-height:1.5;color:#6f7569;margin:10px 0}
+.chat-studio .cs-preview-more{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;min-height:44px;padding:10px 12px;border-radius:10px;background:#405936;color:#fff;font-size:12px;font-weight:650}
+.chat-studio .cs-preview-more:hover{background:#344b2d}
+.chat-studio .cs-action-drawer{margin:0 0 5px}
+.chat-studio .cs-action-toggle{display:flex;align-items:center;gap:7px;font-size:12px;min-height:44px;padding:5px 8px;color:#5a6e4f;border-radius:8px}
+.chat-studio .cs-action-toggle:hover{background:#edf2e7}
+.chat-studio .cs-action-content{max-height:min(30dvh,260px);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;padding:8px 10px 12px;border:1px solid #dce4d3;border-radius:12px;margin:0 0 8px;background:#f5f7f0}
+.chat-studio .cs-action-content .cs-quick-actions{margin:0;gap:8px}
+.chat-studio .cs-action-content .cs-quick-actions button,.chat-studio .cs-compose-area .cs-action-content .cs-next-buttons button{min-height:44px!important;white-space:normal!important;flex:0 1 auto}
+.chat-studio .cs-action-content .cs-quick-actions button>span{max-width:none;white-space:normal}
+.chat-studio .cs-action-content .cs-next-steps{margin-top:10px}
+.chat-studio .cs-action-content .cs-next-note{display:flex}
+.chat-studio .cs-compose-area .cs-action-content .cs-next-buttons{flex-wrap:wrap;overflow:visible;margin-top:8px}
+.chat-studio .cs-compose-area .cs-action-content .cs-next-buttons button>svg:last-child{display:block}
+.cs-plan-attention{display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.5;margin:0 0 7px;color:#7c5932}
+.cs-plan-attention>svg{flex-shrink:0;margin-top:2px}
+.cs-result-reasoning,.cs-earlier-result{margin:0 0 14px;border:1px solid #dce4d3;border-radius:10px;padding:4px 12px;background:#f7f9f2}
+.cs-result-reasoning summary,.cs-earlier-result summary{cursor:pointer;min-height:44px;align-content:center;font-size:12px;font-weight:650;color:#506547}
+.chat-studio .cs-result-reasoning button,.chat-studio .cs-earlier-result>button{min-height:44px;display:inline-flex;align-items:center;gap:8px;font-size:12px;color:#405936}
+.chat-studio .cs-recommendation-preview button:focus-visible,.chat-studio .cs-action-drawer button:focus-visible,.cs-result-reasoning summary:focus-visible,.cs-earlier-result summary:focus-visible{outline:2px solid #98723f;outline-offset:3px}
+.chat-studio .cs-result-toast{position:fixed;top:78px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;max-width:calc(100% - 28px);padding:10px 14px;border:1px solid #d3dfc8;border-radius:12px;background:#f4f8ef;color:#37522f;font-size:12px;line-height:1.5;box-shadow:0 5px 20px #33472515;z-index:90;pointer-events:none}
+.cs-result-toast svg{flex-shrink:0}
+.chat-studio .cs-view-day>.cs-result-sparkles{position:absolute;inset:-7px;pointer-events:none;overflow:visible}
+.chat-studio .cs-view-day .cs-result-sparkles i{position:absolute;bottom:4px;left:10%;width:5px;height:5px;border:1px solid #91aa77;border-radius:50%;background:#dfead5;opacity:0;animation:cs-result-bubble 1.6s ease-out both}
+.chat-studio .cs-view-day .cs-result-sparkles i:nth-child(2){left:50%;animation-delay:.15s;width:7px;height:7px}
+.chat-studio .cs-view-day .cs-result-sparkles i:nth-child(3){left:84%;animation-delay:.3s}
+.cs-result-sparkles b{position:absolute;top:1px;left:6%;font-size:16px;line-height:1;color:#b38c47;opacity:0;animation:cs-result-glint 1.6s ease-out both}
+.cs-result-sparkles b:last-child{left:auto;right:1%;top:2px;font-size:12px;animation-delay:.2s}
+@keyframes cs-result-bubble{0%{opacity:0;transform:translateY(0) scale(.7)}25%{opacity:.8}100%{opacity:0;transform:translateY(-30px) scale(1.1)}}
+@keyframes cs-result-glint{0%{opacity:0;transform:scale(.7) rotate(-12deg)}30%{opacity:.8}100%{opacity:0;transform:scale(1.1) rotate(12deg)}}
+@media(max-width:600px){.chat-studio .cs-recommendation-preview{padding:12px}.cs-preview-heading{font-size:14px}.chat-studio .cs-result-toast{top:70px}.cs-preview-image{flex-basis:40px;width:40px;height:40px}.chat-studio .cs-action-content{max-height:28dvh}.cs-preview-places{gap:6px}}
+@media(max-height:450px){.chat-studio .cs-action-content{max-height:22dvh}.chat-studio .cs-action-toggle{min-height:44px}.chat-studio .cs-result-toast{top:auto;bottom:8px}}
+@media(prefers-reduced-motion:reduce){.chat-studio .cs-result-sparkles{display:none}.chat-studio .cs-result-sparkles *{animation:none!important}.chat-studio .cs-result-toast{animation:none!important;transition:none!important}}
+@media print{.cs-result-toast,.cs-result-sparkles{display:none!important}}

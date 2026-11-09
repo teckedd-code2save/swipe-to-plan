@@ -3,6 +3,7 @@
 !.github/workflows/
 .github/workflows/*
 !.github/workflows/deploy.yml
+!.github/workflows/ci.yml
 **/node_modules
 **/dist
 **/.env

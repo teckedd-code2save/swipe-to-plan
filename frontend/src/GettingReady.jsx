@@ -10,6 +10,7 @@ import {checkedVisit,reportedPrice} from './decision-evidence.js';
 import {startingLocation} from './route-start.js';
 import {routeLink} from './route-links.js';
 import {needsTiming} from './timing.js';
+import {journeyPoints} from './journey-map.js';
 import {safeContactWebsite} from '../../shared/venue-contact.js';
 
 const tone=report=>['outside_reported_hours','reported_closed'].includes(report?.hours?.status)?'attention':report?.hours?.status==='fits_reported_hours'?'found':'unknown';
@@ -35,12 +36,17 @@ function ReadyExperience({plan,checks,route,routeScope,bookingScope,onApplyTimin
   function next(nextView){setTrail(previous=>[...previous,{view:nextView}]);}
   function close(){route.cancelPending();setTrail([]);}
   function openStop(id){route.selectStop(id);open('stop');}
+  function openGroup(points){setViewScope(contextKey);setTrail([{view:'group',coordinates:points[0]?.coordinates}]);}
+  // Resolve choices from current data, not a stale marker snapshot. In
+  // particular, editing a co-located start must remove its old choice on Back.
+  const pin=trail.find(entry=>entry.view==='group')?.coordinates;
+  const pinChoices=pin?journeyPoints(plan,route.origin).filter(point=>point.coordinates?.[0]===pin[0]&&point.coordinates?.[1]===pin[1]):[];
   const startLabel=typeof route.origin==='string'?(route.origin.trim()||'Choose start'):route.origin?.label||'Choose start';
   const timeLabel=pendingTime?'Choose time':`${dateLabel(plan.request.date)} · ${plan.request.startTime}`;
   const stopNumber=stop=>plan.stops.findIndex(item=>item.id===stop.id)+1;
   const selectedIndex=stopNumber(selected);
-  const title=({start:'Your starting point',timing:'When to go',contacts:place.name,booking:'Prepare an enquiry',journey:'Getting there',contactList:'Contact your stops',stop:place.name})[view];
-  const subtitle=['stop','contacts','booking','journey'].includes(view)?`Stop ${selectedIndex} · ${visitTime(selected)}`:view==='start'?'THIS JOURNEY ONLY':view==='contactList'?'NOTHING SENT OR BOOKED':'YOUR OUTING';
+  const title=({group:'At this map pin',start:'Your starting point',timing:'When to go',contacts:place.name,booking:'Prepare an enquiry',journey:'Getting there',contactList:'Contact your stops',stop:place.name})[view];
+  const subtitle=['stop','contacts','booking','journey'].includes(view)?`Stop ${selectedIndex} · ${visitTime(selected)}`:view==='group'?(pinChoices.some(point=>point.isOrigin)?'START & VISITS':'CHOOSE A VISIT'):view==='start'?'THIS JOURNEY ONLY':view==='contactList'?'NOTHING SENT OR BOOKED':'YOUR OUTING';
   let primary;
   if(pendingTime&&onApplyTiming)primary=<button className="pl-button" onClick={()=>open('timing')}>Choose a time<Icon name="clock" size={17}/></button>;
   else if(!hasStart)primary=<button className="pl-button" onClick={()=>open('start')}>Choose your starting point<Icon name="pin" size={17}/></button>;
@@ -52,13 +58,14 @@ function ReadyExperience({plan,checks,route,routeScope,bookingScope,onApplyTimin
       <button type="button" onClick={()=>open('start')}><Icon name="pin" size={17}/><span><small>Start</small><strong>{startLabel}</strong></span><Icon name="edit" size={12}/></button>
       <button type="button" onClick={()=>open('contactList')}><Icon name="people" size={17}/><span><small>Contact</small><strong>{filled.length} {filled.length===1?'stop':'stops'}</strong></span><Icon name="arrow" size={12}/></button>
     </div>
-    <JourneyMap {...route.mapProps} showKey={false} loadMapLibrary={loadMapLibrary} onSelectStart={()=>open('start')} onSelectStop={openStop}/>
+    <JourneyMap {...route.mapProps} showKey={false} loadMapLibrary={loadMapLibrary} onSelectStart={()=>open('start')} onSelectStop={openStop} onSelectGroup={openGroup}/>
     <div className="gr-itinerary-heading"><h3>Your stops</h3><button type="button" onClick={()=>open('journey')} className="gr-text-button">{modeLabel(route.mode)}<Icon name="edit" size={13}/></button></div>
     {checks.status==='error'&&<p className="gr-inline-notice" role="alert">Place details couldn’t load. <button type="button" onClick={checks.refresh}>Retry</button></p>}
     <ol className="gr-stops">{plan.stops.map((stop,index)=>{if(!stop.item)return <li className="gr-unfilled" key={stop.id}><span className="gr-stop-number">{index+1}</span><span><strong>Place still to find</strong><small>This visit stays in your outing.</small></span></li>;const visit=checkedVisit(checks,stop);return <li key={stop.id}><button type="button" className={`gr-stop ${stop.id===selected.id?'selected':''}`} aria-label={`Stop ${index+1}: ${stop.item.name}, ${visitTime(stop)}. ${hoursLabel(visit)}`} onClick={()=>openStop(stop.id)}><span className="gr-stop-number">{index+1}</span><span className="gr-stop-copy"><small>{visitTime(stop)}</small><strong>{stop.item.name}</strong><span className={`gr-status ${tone(visit)}`}>{checks.status==='loading'?'Checking hours…':hoursLabel(visit)}</span></span><Icon name="arrow" size={17}/></button></li>;})}</ol>
     {plan.stops.length>filled.length&&<p className="gr-inline-notice">{plan.stops.length-filled.length} {plan.stops.length-filled.length===1?'stop still needs':'stops still need'} a place. Your chosen visits are shown here.</p>}
     <div className="gr-next"><span>{pendingTime?'Set the timing, then check each visit.':!hasStart?'An area or landmark is enough.':flagged?'One or more visits may not fit reported hours.':`Next: ${selected.item.name}`}</span>{primary}</div>
     {current&&<ReadySheet dismissRef={dismiss} returnFocusRef={hub} canRestoreFocus={()=>focusContext.current===contextKey} title={title} subtitle={subtitle} viewKey={`${view}:${selected.id}`} onClose={close} onBack={trail.length>1?()=>setTrail(previous=>previous.slice(0,-1)):undefined} footer={view==='start'?({dismiss})=><button className="pl-button" onClick={dismiss}>Back to map<Icon name="check" size={16}/></button>:view==='stop'?<button className="pl-button" onClick={()=>next('journey')}>Directions to this stop<Icon name="arrow" size={16}/></button>:null}>
+      {view==='group'&&<div className="gr-pin-choices">{pinChoices.map(point=><button className="gr-action-row" key={point.key} type="button" onClick={()=>{if(point.isOrigin)next('start');else{route.selectStop(point.stopId);next('stop');}}}><span className="gr-stop-number">{point.badge}</span><span><strong>{point.label}</strong><small>{point.isOrigin?`Starting point${point.approximate?' · Approximate area':''}`:`Stop ${point.badge} · ${visitTime(plan.stops.find(stop=>stop.id===point.stopId))}`}</small></span><Icon name="arrow" size={17}/></button>)}</div>}
       {view==='start'&&route.startControl}
       {view==='timing'&&(onApplyTiming?<TimingAction embedded brief={timingBrief||plan.request} history={timingHistory} timeZone={plan.timeZone} onClose={close} onApply={async request=>{await new Promise(resolve=>dismiss.current?dismiss.current(resolve):(close(),resolve()));await onApplyTiming(request);}}/>:<p>{timeLabel}. Only the outing owner can change its timing.</p>)}
       {view==='stop'&&<>

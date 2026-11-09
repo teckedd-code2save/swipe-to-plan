@@ -4,13 +4,14 @@ import {journeyPoints,journeyRouteGeometry} from './journey-map.js';
 const loadMap=()=>import('./journey-map-leaflet.js');
 
 // CSS lives in journey-map.css; import once from the app stylesheet/entrypoint.
-export default function JourneyMap({plan,origin,selectedStopId,onSelectStop,routeScope='',routeEstimate=null,loadMapLibrary=loadMap,showKey=true,onSelectStart}) {
+export default function JourneyMap({plan,origin,selectedStopId,onSelectStop,routeScope='',routeEstimate=null,loadMapLibrary=loadMap,showKey=true,onSelectStart,onSelectGroup}) {
   const points=journeyPoints(plan,origin),signature=JSON.stringify(points),scope=routeScope;
   const geometry=journeyRouteGeometry(routeEstimate,points,selectedStopId),geometrySignature=JSON.stringify(geometry);
   const [status,setStatus]=useState('loading'),[attempt,setAttempt]=useState(0);
-  const container=useRef(null),instance=useRef(null),select=useRef(onSelectStop),selectStart=useRef(onSelectStart),selected=useRef(selectedStopId),current=useRef('');
-  const generation=JSON.stringify([scope,signature,attempt,geometrySignature]);current.current=generation;
-  selected.current=selectedStopId;select.current=onSelectStop;selectStart.current=onSelectStart;
+  const container=useRef(null),instance=useRef(null),select=useRef(onSelectStop),selectStart=useRef(onSelectStart),selectGroup=useRef(onSelectGroup),selected=useRef(selectedStopId),current=useRef('');
+  const delegatesGroups=typeof onSelectGroup==='function';
+  const generation=JSON.stringify([scope,signature,attempt,geometrySignature,delegatesGroups]);current.current=generation;
+  selected.current=selectedStopId;select.current=onSelectStop;selectStart.current=onSelectStart;selectGroup.current=onSelectGroup;
   const located=points.filter(point=>point.coordinates),missing=points.filter(point=>!point.isOrigin&&!point.coordinates);
   // Remove prior geometry before a changed leg/scope can paint.
   useLayoutEffect(()=>{instance.current?.clearRoute?.();},[generation]);
@@ -20,7 +21,7 @@ export default function JourneyMap({plan,origin,selectedStopId,onSelectStop,rout
     const timeout=setTimeout(()=>{if(isCurrent())setStatus(value=>value==='loading'?'tiles-error':value);},12000);
     loadMapLibrary().then(({createJourneyMap})=>{
       if(!isCurrent())return;
-      created=createJourneyMap(container.current,JSON.parse(signature),{geometry:JSON.parse(geometrySignature),onSelectStop:id=>{if(isCurrent())select.current?.(id);},onSelectStart:()=>{if(isCurrent())selectStart.current?.();},onTileError:()=>{if(isCurrent())setStatus('tiles-error');},onTileReady:()=>{if(isCurrent()){clearTimeout(timeout);setStatus('ready');}}});
+      created=createJourneyMap(container.current,JSON.parse(signature),{geometry:JSON.parse(geometrySignature),onSelectStop:id=>{if(isCurrent())select.current?.(id);},onSelectStart:()=>{if(isCurrent())selectStart.current?.();},onSelectGroup:delegatesGroups?points=>{if(isCurrent())selectGroup.current?.(points);}:undefined,onTileError:()=>{if(isCurrent())setStatus('tiles-error');},onTileReady:()=>{if(isCurrent()){clearTimeout(timeout);setStatus('ready');}}});
       instance.current=created;created.select?.(selected.current);
     }).catch(()=>{if(isCurrent())setStatus('error');});
     return()=>{live=false;clearTimeout(timeout);created?.destroy();instance.current=null;};

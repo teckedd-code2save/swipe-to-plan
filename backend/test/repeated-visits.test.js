@@ -22,7 +22,7 @@ const insert={operation:'insert',placeId:'qloo:baker',afterStopId:'stop-1'};
 test('exact return-visit journey preserves both existing occurrences and grounded evidence through agent, UI and planner',async()=>{
  const current=await initial();current.request.pins={}; // The rendered suggestions need not already have manual keep pins.
  const planContext=agentPlanContext(current),before=JSON.stringify(current);let payload;
- const agent=createAgent({getKey:()=> 'synthetic',fetchImpl:async(_,options)=>{payload=JSON.parse(options.body);return {ok:true,json:async()=>({choices:[{message:{tool_calls:[{function:{name:'edit_stops',arguments:JSON.stringify({...insert,message:'Cafe A is now added again.'})}}]}}]})};}});
+ const agent=createAgent({getKey:()=> 'synthetic',fetchImpl:async(_,options)=>{payload=JSON.parse(options.body);return {ok:true,json:async()=>({choices:[{message:{tool_calls:[{function:{name:'edit_stops',arguments:JSON.stringify({...insert,intent:'coffee',message:'Cafe A is now added again.'})}}]}}]})};}});
  const action=await agent.interpret({message:'Add Cafe A again after dinner as a third stop, keeping the first two stops.',mode:'autopilot',context:current.request,planContext,locationContext:{confirmed:true}});
  assert.equal(action.action,'select_places');assert.equal(action.assistantMessage,undefined);
  assert.ok(payload.tools.some(t=>t.function.name==='edit_stops'));
