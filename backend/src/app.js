@@ -129,7 +129,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     const target=await accounts.planTarget(req);
     const request=parseItinerary(req.body);
     if(req.get('accept')?.includes('application/x-ndjson')){
-      res.status(200).set({'Content-Type':'application/x-ndjson','Cache-Control':'no-cache','X-Accel-Buffering':'no'});res.flushHeaders();
+      res.status(200).set({'Content-Type':'application/x-ndjson','Cache-Control':'no-store','X-Accel-Buffering':'no'});res.flushHeaders();
       let previewSent=false;
       try{
         const early=await buildItinerary({...discovery,reviewCandidates:undefined},{...request,timing:{...request.timing,dateConfirmed:false,timeConfirmed:false}},{deferNearby:true});

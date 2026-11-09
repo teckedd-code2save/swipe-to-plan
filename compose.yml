@@ -12,6 +12,10 @@ services:
     init: true
     env_file:
       - /opt/unstressed/.env
+    # Initial native release is deliberately disabled, even if .env says true.
+    # Enable only through a separately reviewed explicit deployment change.
+    environment:
+      NATIVE_AUTH_ENABLED: "false"
     ports:
       - "127.0.0.1:13000:4000"
     volumes:

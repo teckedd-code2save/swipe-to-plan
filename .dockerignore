@@ -22,3 +22,6 @@
 artifacts
 screenshots
 backups
+
+# The native app is built separately from the production web/API image.
+mobile/

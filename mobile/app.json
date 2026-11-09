@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "Unstressed",
+    "slug": "unstressed",
+    "scheme": "unstressed",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.serendepify.unstressed"
+    },
+    "android": {
+      "softwareKeyboardLayoutMode": "resize",
+      "blockedPermissions": ["android.permission.ACCESS_BACKGROUND_LOCATION"],
+      "package": "com.serendepify.unstressed",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/brand/unstressed-adaptive-foreground.png",
+        "backgroundColor": "#183B35"
+      }
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Find nearby planning areas only when you tap Use my location. Rounded coordinates are sent to Unstressed and its location provider. No background tracking.",
+          "isAndroidBackgroundLocationEnabled": false,
+          "isAndroidForegroundServiceEnabled": false
+        }
+      ],
+      "expo-status-bar",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F7F5EF",
+          "image": "./assets/brand/unstressed-mark.png",
+          "imageWidth": 96
+        }
+      ]
+    ],
+    "experiments": {
+      "tsconfigPaths": true
+    },
+    "icon": "./assets/brand/unstressed-app-icon.png"
+  }
+}

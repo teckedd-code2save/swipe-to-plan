@@ -96,7 +96,7 @@ probe="unstressed-fsync-probe-${image##*:}"
 epoch="unstressed-invitation-epoch-${image##*:}"
 trap 'docker rm -f "$candidate" "$probe" "$epoch" >/dev/null 2>&1 || true' EXIT
 docker run -d --name "$candidate" --network unstressed --init --read-only --cap-drop ALL --security-opt no-new-privileges:true \
-  --memory 640m --pids-limit 100 --env-file .env \
+  --memory 640m --pids-limit 100 --env-file .env -e NATIVE_AUTH_ENABLED=false \
   --tmpfs /tmp:size=32m,mode=1777 --tmpfs /data:size=16m,uid=1000,gid=1000,mode=0700 \
   -p 127.0.0.1:13001:4000 "$image" >/dev/null
 healthy() {
