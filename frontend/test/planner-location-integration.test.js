@@ -223,7 +223,7 @@ test('saved-day reload preserves its area and currency instead of adopting the d
 for (const signedIn of [false, true]) {
   test(`${signedIn ? 'account' : 'guest'}: saving a usual area only changes the next outing`, async () => {
     if (signedIn) account(london); else guestDefault(london);
-    await mount(); await click('Add usual areas'); await click('Search areas');
+    await mount(); await click('Add to the conversation'); await click('Personalize'); await click('Add usual areas'); await click('Search areas');
     await input('input[role="combobox"]', paris.name);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 450)); });
     const option = [...document.querySelectorAll('button[role="option"]')].find(node => node.textContent.includes(paris.label));
@@ -389,7 +389,7 @@ for(const signedIn of [false,true])test(`${signedIn?'account':'guest'}: current-
   if(signedIn)account(london);else guestDefault(london);
   let gpsCalls=0;const lookup=[];Object.defineProperty(navigator,'geolocation',{configurable:true,value:{getCurrentPosition(success){gpsCalls++;success({coords:{latitude:48.856789,longitude:2.352345,accuracy:2000},timestamp:Date.now()});}}});
   const original=globalThis.fetch;globalThis.fetch=async(url,options)=>{if(url==='/api/locations/nearby'){lookup.push(JSON.parse(options.body));return new Response(JSON.stringify({locations:[paris]}));}return original(url,options);};
-  await mount();await click('Add usual areas');assert.equal(gpsCalls,0);await click('Use current location');assert.equal(gpsCalls,1);assert.deepEqual(lookup,[{latitude:48.86,longitude:2.35,radiusKm:20}]);
+  await mount();await click('Add to the conversation');await click('Personalize');await click('Add usual areas');assert.equal(gpsCalls,0);await click('Use current location');assert.equal(gpsCalls,1);assert.deepEqual(lookup,[{latitude:48.86,longitude:2.35,radiusKm:20}]);
   const option=[...document.querySelectorAll('button[role="option"]')].find(node=>node.textContent.includes(paris.label));assert.ok(option);await act(async()=>option.click());assert.equal(state.writes,0);await click('Save area');await click('Done');assert.equal(area(),`Planning area: ${london.label}`);
   for(const key of Object.keys(localStorage))assert.doesNotMatch(localStorage.getItem(key),/48\.856789|2\.352345|accuracy/);
   await click('New day');assert.equal(area(),`Planning area: ${paris.label}`);await mount();assert.equal(area(),`Planning area: ${paris.label}`);assert.equal(gpsCalls,1);
