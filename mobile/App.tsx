@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
+  BackHandler,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -52,6 +53,7 @@ import {
   planTitle,
   personWithId,
 } from "./src/planning";
+import { appendConversation, conversationHistory, reviewPersonId, prepareReviewResponse, applyArtistInputs, completedOutingCopy, unfilledVisitMessage } from "./src/plan-flow";
 import { isBrief, requirePlan, requireAreas } from "./src/validation";
 import { createDraftStore, createRequestGate } from "./src/lifecycle";
 import type {
@@ -90,6 +92,8 @@ const api = createApi({
 });
 const disk = createDraftStore(AsyncStorage);
 const library = createLibraryStore(AsyncStorage);
+type PlanMessage = Message & { resultCard?: boolean };
+type ReviewContext = { panel?: "all" | "tastes" | "budget" | "timing"; personId?: string; cardIds?: string[] };
 type IconName = React.ComponentProps<typeof Ionicons>["name"];
 const icons: Record<Intent, IconName> = {
   coffee: "cafe-outline",
@@ -193,10 +197,12 @@ function Sheet({
   title,
   children,
   close,
+  back,
 }: {
   title: string;
   children: React.ReactNode;
   close: () => void;
+  back?: () => void;
 }) {
   return (
     <Modal animationType="slide" transparent onRequestClose={close}>
@@ -212,6 +218,7 @@ function Sheet({
         <SafeAreaView edges={["bottom", "top"]} style={styles.sheet}>
           <View style={styles.handle} />
           <View style={styles.sheetHeader}>
+            {!!back && <Pressable accessibilityRole="button" accessibilityLabel="Back to outing" onPress={back} style={styles.iconButton}><Icon name="arrow-back" /></Pressable>}
             <Text accessibilityRole="header" style={styles.sheetTitle}>
               {title}
             </Text>
@@ -413,10 +420,12 @@ function ReviewSheet({
   draft,
   close,
   apply,
+  context = {},
 }: {
   draft: Draft;
   close: () => void;
   apply: (brief: Brief) => void;
+  context?: ReviewContext;
 }) {
   const [brief, setBrief] = useState<Brief>(draft.brief),
     [budget, setBudget] = useState(draft.brief.budget?.toString() || ""),
@@ -424,9 +433,12 @@ function ReviewSheet({
       draft.brief.timing.dateConfirmed ? draft.brief.date : "",
     ),
     [error, setError] = useState("");
-  const [artists, setArtists] = useState(
-    draft.brief.people[0].artists.join(", "),
-  );
+  const [personId, setPersonId] = useState(() => reviewPersonId(draft.brief, context.personId));
+  const [artistInputs, setArtistInputs] = useState<Record<string, string>>({});
+  const [focus, setFocus] = useState(context.panel || "all");
+  const person = brief.people.find(value => value.id === personId)!;
+  const possessive = person.name === "You" ? "Your" : `${person.name}’s`;
+  const show = (panel: ReviewContext["panel"]) => focus === "all" || focus === panel;
   const [deck, setDeck] = useState<
     { id: string; label: string; kind: string }[]
   >([]);
@@ -449,6 +461,7 @@ function ReviewSheet({
     setBrief((current) => ({ ...current, ...patch }));
   function submit() {
     if (!brief.activities.length) {
+      setFocus("all");
       setError("Choose at least one kind of stop.");
       return;
     }
@@ -483,31 +496,19 @@ function ReviewSheet({
       );
       return;
     }
-    const names = [
-      ...new Set(
-        artists
-          .split(",")
-          .map((name) => name.trim())
-          .filter(Boolean),
-      ),
-    ];
-    if (names.length > 6 || names.some((name) => name.length > 160)) {
-      setError("Use up to six artists, each under 160 characters.");
-      return;
-    }
-    apply({
-      ...brief,
-      budget: budget ? Number(budget) : null,
-      date: date || brief.date,
-      timing: { ...brief.timing, dateConfirmed: !!date },
-      people: [
-        { ...brief.people[0], artists: names },
-        ...brief.people.slice(1),
-      ],
-    });
+    try {
+      apply({
+        ...brief,
+        budget: budget ? Number(budget) : null,
+        date: date || brief.date,
+        timing: { ...brief.timing, dateConfirmed: !!date },
+        people: applyArtistInputs(brief.people, artistInputs),
+      });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Check the tastes and try again."); }
+
   }
   return (
-    <Sheet title="A little shape to your day" close={close}>
+    <Sheet title={focus === "tastes" ? `${possessive} tastes` : focus === "budget" ? "A comfortable allowance" : focus === "timing" ? "Make time for your day" : "A little shape to your day"} close={close}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.sheetBody}
@@ -515,6 +516,7 @@ function ReviewSheet({
         <Text style={styles.eyebrow}>
           {brief.area || "Choose an area next"}
         </Text>
+        {focus === "all" && <>
         <Text style={styles.label}>What sounds good?</Text>
         <View style={styles.wrap}>
           {(Object.keys(activityLabels) as Intent[]).map((intent) => (
@@ -585,38 +587,36 @@ function ReviewSheet({
           Solo by default. Extra guests have no invented taste profiles. Chat
           can add named people or children.
         </Text>
+        </>}
+        {show("tastes") && <>
+        <Text style={styles.label}>Whose tastes?</Text>
+        <View style={styles.wrap}>{brief.people.map(value => <Chip key={value.id} label={value.name} selected={value.id === personId} onPress={() => { setPersonId(value.id); setError(""); }} />)}</View>
         <Field
-          label="Your artists (optional, separated by commas)"
-          value={artists}
-          onChangeText={setArtists}
+          label={`${possessive} artists (optional, separated by commas)`}
+          value={artistInputs[personId] ?? person.artists.join(", ")}
+          onChangeText={value => setArtistInputs(previous => ({ ...previous, [personId]: value }))}
           placeholder="Amaarae, Sade"
         />
         {deck.length > 0 && (
           <>
-            <Text style={styles.label}>Your tastes, if you like</Text>
+            <Text style={styles.label}>{possessive} tastes, if you like</Text>
             <View style={styles.wrap}>
-              {deck.slice(0, 18).map((card) => (
+              {deck.filter(card => !context.cardIds?.length || focus !== "tastes" || context.cardIds.includes(card.id)).slice(0, 18).map((card) => (
                 <Chip
                   key={card.id}
                   label={card.label}
-                  selected={brief.people[0].vibes.includes(card.id)}
+                  selected={person.vibes.includes(card.id)}
                   onPress={() => {
-                    const person = brief.people[0],
-                      selected = person.vibes.includes(card.id);
+                    const selected = person.vibes.includes(card.id);
                     if (!selected && person.vibes.length >= 18) {
                       setError("Choose up to eighteen tastes.");
                       return;
                     }
                     update({
-                      people: [
-                        {
-                          ...person,
-                          vibes: selected
-                            ? person.vibes.filter((id) => id !== card.id)
-                            : [...person.vibes, card.id],
-                        },
-                        ...brief.people.slice(1),
-                      ],
+                      people: brief.people.map(value => value.id !== personId ? value : {
+                        ...value,
+                        vibes: selected ? value.vibes.filter(id => id !== card.id) : [...value.vibes, card.id],
+                      }),
                     });
                   }}
                 />
@@ -624,6 +624,8 @@ function ReviewSheet({
             </View>
           </>
         )}
+        </>}
+        {show("budget") && <>
         <Field
           label="Total allowance for everyone (optional)"
           value={budget}
@@ -644,6 +646,8 @@ function ReviewSheet({
         <Text style={styles.small}>
           An allowance, not a venue price or a currency conversion.
         </Text>
+        </>}
+        {show("timing") && <>
         <Field
           label="Date (optional)"
           value={date}
@@ -690,7 +694,8 @@ function ReviewSheet({
             />
           </>
         )}
-        <View style={styles.wrap}>
+        </>}
+        {focus === "all" && <View style={styles.wrap}>
           <Chip
             label="Take it easy"
             selected={brief.pace === "easy"}
@@ -701,7 +706,8 @@ function ReviewSheet({
             selected={brief.pace === "balanced"}
             onPress={() => update({ pace: "balanced" })}
           />
-        </View>
+        </View>}
+        {focus !== "all" && <Button quiet label="Review all details" onPress={() => setFocus("all")} />}
         {!!error && <Note text={error} error />}
         <Button
           label={draft.confirmed ? "Find my places" : "Choose an area"}
@@ -765,8 +771,7 @@ function StopCard({
         {stop.item?.address ||
           (stop.item
             ? "Address not supplied"
-            : stop.unfilledReason ||
-              "No qualifying place returned for this visit.")}
+            : unfilledVisitMessage(stop))}
       </Text>
       <View style={styles.cardFooter}>
         <Text style={styles.small}>
@@ -783,15 +788,17 @@ function StopCard({
 function Planner() {
   const [draft, setDraft] = useState<Draft>(initial),
     [loaded, setLoaded] = useState(false),
-    [messages, setMessages] = useState<Message[]>([]),
-    [text, setText] = useState(""),
-    [tab, setTab] = useState<"chat" | "day" | "ready">("chat");
+    [messages, setMessages] = useState<PlanMessage[]>([]),
+    [text, setText] = useState("");
+  const [reviewContext, setReviewContext] = useState<ReviewContext>({});
+  const [savingCopy, setSavingCopy] = useState(false);
+  const saveLock = useRef(false);
   const [section, setSection] = useState<"plan" | "saved" | "circles" | "account">("plan");
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [accountState, setAccountState] = useState(accountSession.getSnapshot());
   const readOnly = isReadOnlySession(accountState);
   const [readOnlyPlan, setReadOnlyPlan] = useState<Plan | null>(null);
-  const [sheet, setSheet] = useState<"location" | "review" | "about" | null>(
+  const [sheet, setSheet] = useState<"location" | "review" | "about" | "outing" | "ready" | null>(
       null,
     ),
     [locationQuery, setLocationQuery] = useState(""),
@@ -805,17 +812,16 @@ function Planner() {
   const gate = useRef(createRequestGate()),
     current = useRef(draft),
     scroll = useRef<React.ComponentRef<typeof ScrollView>>(null),
+    composer = useRef<React.ComponentRef<typeof TextInput>>(null),
     mounted = useRef(true),
     restored = useRef(false);
   current.current = draft;
-  function append(message: string, role: Message["role"] = "assistant") {
+  function append(message: string, role: Message["role"] = "assistant", resultCard = false) {
     if (typeof message !== "string" || message.length > 10000)
       throw new Error(
         "The chat response is incomplete. Please retry or use Review plan.",
       );
-    setMessages((previous) =>
-      [...previous, { role, text: message }].slice(-40),
-    );
+    setMessages(previous => appendConversation(previous, { role, text: message, resultCard }));
   }
   function cancel(showNotice = true) {
     gate.current.invalidate();
@@ -916,13 +922,14 @@ function Planner() {
     current.current = next;
     setDraft(next);
     setPreview(null);
-    setTab("day");
+
     if (plan.saveError) setNotice(plan.saveError);
     else if (plan.savedPlan) setNotice("Saved to your account. Account drafts stay in memory; Save copy creates a separate device copy.");
     append(
       plan.status === "partial"
         ? "Here’s what I found. Any unfilled visits stay visible, without substituting places."
         : "Your places are here. Take a look, then make the day your own.",
+      "assistant", true,
     );
   }
   async function build(brief: Brief) {
@@ -941,7 +948,7 @@ function Planner() {
       return;
     }
     if (!brief.activities.length) {
-      setSheet("review");
+      setReviewContext({}); setSheet("review");
       return;
     }
     const previous = current.current;
@@ -952,7 +959,7 @@ function Planner() {
     setNotice("");
     setBusy("Finding places");
     setPreview(null);
-    setTab("day");
+
     // Save the requested brief even if the network is interrupted, while keeping
     // the old result separately. It is visibly marked as an older snapshot.
     current.current = { ...previous, brief };
@@ -989,9 +996,7 @@ function Planner() {
     if (!message || busy || !loaded) return;
     const previous = current.current,
       job = gate.current.begin();
-    const history = messages
-      .slice(-8)
-      .map((value) => ({ ...value, text: value.text.slice(0, 1600) }));
+    const history = conversationHistory(messages);
     append(message, "user");
     setText("");
     setError("");
@@ -1084,7 +1089,7 @@ function Planner() {
           await build(groundedRoute(previous.plan, result) as Brief);
         else if (["choose_activities", "set_timing"].includes(result.action)) {
           updateDraft({ ...previous, brief: result.request });
-          setSheet("review");
+          setReviewContext({}); setSheet("review");
           append("Review these details before finding your places.");
         } else if (
           ["add_person", "update_person", "remove_person"].includes(
@@ -1119,32 +1124,37 @@ function Planner() {
           append(
             "The people in your draft are updated. Review the plan to find places with these tastes.",
           );
-          setSheet("review");
+          setReviewContext({}); setSheet("review");
         } else
           append(
             "Device groups are in Circles. Open Account for cloud circles, saved plans and invitations.",
           );
       } else if (result.status === "show_ui") {
-        if (result.request) updateDraft({ ...previous, brief: result.request });
+        // Validate the exact editor target before updateDraft invalidates this request.
+        const review = ["tastes", "budget", "timing", "review"].includes(result.panel)
+          ? prepareReviewResponse(result, previous) : null;
+        if (result.request) updateDraft(review ? review.draft : { ...previous, brief: result.request });
         if (result.panel === "location") {
           setLocationQuery("");
           setSheet("location");
         } else if (
           ["tastes", "budget", "timing", "review"].includes(result.panel)
-        )
+        ) {
+          setReviewContext(review!.context);
           setSheet("review");
+        }
         else if (result.panel === "circles" || result.panel === "people") {
           setSection(accountSession.getSnapshot().signedIn ? "account" : "circles");
           append("Your circles are here. Account circles and device circles are kept separately.");
         } else if (
           ["checks", "routes", "menus", "bookings"].includes(result.panel)
         ) {
-          setTab("ready");
+          if (current.current.plan) setSheet("ready");
           append(
             "Get ready has reported-hours checks, journey links and venue enquiry preparation. Choose a place to see its evidence and contact options.",
           );
         } else if (["itinerary", "compare"].includes(result.panel)) {
-          setTab("day");
+          if (current.current.plan) setSheet("outing");
           append(
             "Open a visit for its evidence, alternatives and Maps link. Prices, current hours and availability still need confirmation.",
           );
@@ -1209,7 +1219,7 @@ function Planner() {
             setSelected(null);
             setSheet(null);
             setSection("plan");
-            setTab(saved.plan ? "day" : "chat");
+
             setNotice(
               "Saved outing opened. Places are a snapshot; check details before you go.",
             );
@@ -1221,7 +1231,7 @@ function Planner() {
   function applyCircle(brief: Brief) {
     updateDraft({ ...current.current, brief });
     setSection("plan");
-    setTab("chat");
+
     append(
       "Your circle is in this draft. Review the people and tastes, then find places when you’re ready.",
     );
@@ -1243,7 +1253,7 @@ function Planner() {
         if (!active.signedIn || active.userId !== opening.userId || active.sessionEpoch !== opening.sessionEpoch) return;
         cancel(false); accountWorkspace.remember(plan, options?.editable !== false);
         updateDraft({ brief: plan.request, confirmed: true, plan, planningTimeZone: plan.timeZone });
-        setUndo(null); setMessages([]); setText(""); setSection("plan"); setTab("day");
+        setUndo(null); setMessages([]); setText(""); setSection("plan");
         setNotice(options?.editable === false ? "Circle plan opened as a read-only snapshot. Replanning creates a new private copy in your account." : "Account plan opened. Edits save a new revision; newer server changes are protected.");
       } },
     ]);
@@ -1269,6 +1279,31 @@ function Planner() {
       hide.remove();
     };
   }, []);
+  useEffect(() => {
+    const listener = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (section !== "plan") { navigateSection("plan"); return true; }
+      return false;
+    });
+    return () => listener.remove();
+  }, [section, busy]);
+  async function saveCurrentCopy() {
+    if (saveLock.current || !current.current.plan || readOnly) return;
+    const shownDraft = current.current;
+    const live = accountSession.getSnapshot();
+    if (live.signedIn !== accountState.signedIn || live.userId !== accountState.userId || live.sessionEpoch !== accountState.sessionEpoch || current.current !== shownDraft || isReadOnlySession(live)) {
+      setError("Your account session changed. Review the current outing before saving a device copy.");
+      return;
+    }
+    saveLock.current = true; setSavingCopy(true); setError("");
+    const identity = live.sessionEpoch;
+    try {
+      await library.addPlan(completedOutingCopy(shownDraft));
+      if (mounted.current && accountSession.getSnapshot().sessionEpoch === identity) setNotice("Saved this completed outing on this device. Find it in Saved; future edits will not change it.");
+    } catch (cause) {
+      if (mounted.current && accountSession.getSnapshot().sessionEpoch === identity) setError(cause instanceof Error ? cause.message : "This copy could not be saved.");
+    } finally { saveLock.current = false; if (mounted.current) setSavingCopy(false); }
+  }
+  function openReview(context: ReviewContext = {}) { setReviewContext(context); setSheet("review"); }
   function newOuting() {
     Alert.alert(
       "Start a fresh outing?",
@@ -1285,7 +1320,7 @@ function Planner() {
             setText("");
             setSelected(null);
             setSection("plan");
-            setTab("chat");
+        
             setSheet(null);
             const next = {
               brief: newBrief() as Brief,
@@ -1306,6 +1341,19 @@ function Planner() {
     !!draft.plan &&
     JSON.stringify(draft.brief) !== JSON.stringify(draft.plan.request);
   const stop = selected === null ? null : draft.plan?.stops[selected];
+  function renderPlanCard() {
+    if (!plan) return null;
+    return <View style={styles.resultCard}>
+      <View style={styles.row}><View style={styles.stopNumber}><Icon name="trail-sign-outline" size={18} /></View><Text style={[styles.eyebrow, styles.flex]}>{preview ? "CHECKING YOUR PLACES" : dirty ? "PREVIOUS OUTING · DRAFT CHANGED" : "YOUR OUTING"}</Text></View>
+      <Text accessibilityRole="header" style={styles.stopTitle}>{planTitle(plan.request)}</Text>
+      <Text style={styles.small}>{plan.request.area} · {plan.stops.filter(visit => visit.item).length} {plan.stops.filter(visit => visit.item).length === 1 ? "place" : "places"} · {plan.request.timing.dateConfirmed ? plan.request.date : "Date open"}</Text>
+      {plan.stops.map((visit, index) => <View key={`${visit.id}:${index}`} style={styles.resultVisit}><Text style={styles.resultIndex}>{String(index + 1).padStart(2, "0")}</Text><View style={styles.flex}><Text style={styles.label}>{visit.item?.name || "A visit still to fill"}</Text>{!visit.item && <Text style={styles.small}>{unfilledVisitMessage(visit)}</Text>}</View></View>)}
+      {dirty && <Text style={styles.small}>Your draft has changed. These places stay here until you search again.</Text>}
+      <Button label={preview ? "Checking places…" : "View your outing"} icon="arrow-forward" disabled={!!busy || !!preview} onPress={() => { Keyboard.dismiss(); setSheet("outing"); }} />
+      {!preview && <View style={styles.wrap}><Chip label="Edit details" icon="options-outline" disabled={!!busy} onPress={() => openReview()} /><Chip label={savingCopy ? "Saving…" : "Save a copy"} icon="bookmark-outline" disabled={!!busy || savingCopy} onPress={() => void saveCurrentCopy()} /></View>}
+      {!preview && <Text style={styles.small}>Save keeps a separate, unencrypted copy on this device.</Text>}
+    </View>;
+  }
   if (!loaded)
     return (
       <SafeAreaView style={styles.screen}>
@@ -1378,48 +1426,18 @@ function Planner() {
               </Text>
               <Icon name="chevron-down" size={17} />
             </Pressable>
-            <View style={styles.tabs}>
-              {(["chat", "day", "ready"] as const).map((value) => (
-                <Pressable
-                  key={value}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: tab === value }}
-                  onPress={() => setTab(value)}
-                  style={[styles.tab, tab === value && styles.tabActive]}
-                >
-                  <Icon
-                    name={
-                      value === "chat"
-                        ? "chatbubble-ellipses-outline"
-                        : value === "day"
-                          ? "trail-sign-outline"
-                          : "checkmark-circle-outline"
-                    }
-                    size={18}
-                  />
-                  <Text style={styles.tabLabel}>
-                    {value === "chat"
-                      ? "Let’s plan"
-                      : value === "ready"
-                        ? "Get ready"
-                        : `Your day${plan ? ` · ${plan.stops.filter((stop) => stop.item).length}` : ""}`}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
             <ScrollView
               ref={scroll}
               style={styles.flex}
               contentContainerStyle={styles.content}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
               onContentSizeChange={() => {
-                if (tab === "chat" && messages.length)
-                  scroll.current?.scrollToEnd({ animated: true });
+                if (messages.length) scroll.current?.scrollToEnd({ animated: true });
               }}
             >
-              {tab === "chat" ? (
-                <>
-                  {!messages.length && (
+              {!!plan && !messages.some(message => message.resultCard) && renderPlanCard()}
+                  {!messages.length && !plan && (
                     <View style={styles.hero}>
                       <View style={styles.heroSun}>
                         <BrandMark size={60} />
@@ -1455,8 +1473,7 @@ function Planner() {
                     </View>
                   )}
                   {messages.map((message, index) => (
-                    <View
-                      key={index}
+                    <React.Fragment key={index}><View
                       style={[
                         styles.message,
                         message.role === "user"
@@ -1479,62 +1496,126 @@ function Planner() {
                       >
                         {message.text}
                       </Text>
-                    </View>
+                    </View>{message.resultCard && plan && renderPlanCard()}</React.Fragment>
                   ))}
-                  {draft.plan && (
-                    <Button
-                      quiet
-                      icon="trail-sign-outline"
-                      label="See your places"
-                      onPress={() => setTab("day")}
-                    />
-                  )}
-                </>
-              ) : tab === "ready" ? (
-                plan && !preview ? (
-                  <>
-                    {dirty && (
-                      <Note text="These details belong to your previous result. Find places again to apply the current draft." />
-                    )}
-                    <DayReadiness
-                      key={JSON.stringify([
-                        plan.request,
-                        plan.stops.map((visit) => [visit.id, visit.item?.id]),
-                      ])}
-                      plan={plan}
-                      onError={setError}
-                      onOpenStop={
-                        !dirty && !busy
-                          ? (visit) => {
-                              const index = draft.plan!.stops.indexOf(visit);
-                              if (index >= 0) setSelected(index);
-                            }
-                          : undefined
-                      }
-                    />
-                  </>
-                ) : (
-                  <View style={styles.empty}>
-                    <Text style={styles.dayTitle}>
-                      A little preparation. A better day.
-                    </Text>
-                    <Text style={styles.heroText}>
-                      Once your places are ready, check reported hours, plan the
-                      journey and prepare venue enquiries here.
-                    </Text>
-                    <Button
-                      label="Plan an outing"
-                      onPress={() => {
-                        setTab("chat");
-                        if (!busy) setSheet("review");
-                      }}
-                    />
-                  </View>
-                )
-              ) : (
-                <>
-                  {plan ? (
-                    <>
+              {!!preview && !draft.plan && <View style={styles.noticeCard}><Text style={styles.label}>Your first places are coming together</Text><Text style={styles.small}>Checking the details before your outing is ready.</Text></View>}
+              {!!notice && <Note text={notice} />}
+              {!!saveError && <Note text={saveError} error />}
+              {!!error && (
+                <View style={styles.errorBox}>
+                  <Note text={error} error />
+                  <Text style={styles.small}>
+                    Your draft and last completed places are kept. You can retry
+                    or use Review plan.
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+            <View style={styles.composerDock}>
+              {!!busy && (
+                <View style={styles.busyRow}>
+                  <ActivityIndicator size="small" color={palette.ink} />
+                  <Text
+                    accessibilityLiveRegion="polite"
+                    style={[styles.small, styles.flex]}
+                  >
+                    {busy}…
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => cancel()}
+                    style={styles.cancel}
+                  >
+                    <Text style={styles.linkText}>Stop</Text>
+                  </Pressable>
+                </View>
+              )}
+              <View style={styles.toolbar}>
+                <Chip
+                  label="Review plan"
+                  icon="options-outline"
+                  disabled={!!busy}
+                  onPress={() => openReview()}
+                />
+                <Text
+                  style={[styles.small, styles.flex, { textAlign: "right" }]}
+                >
+                  {accountState.signedIn ? "Chat uses your account circles" : "Chat uses your draft & saved circles"}
+                </Text>
+              </View>
+              <View style={styles.composer}>
+                <TextInput
+                  ref={composer}
+                  accessibilityLabel="Message Unstressed"
+                  value={text}
+                  onChangeText={setText}
+                  placeholder="What would make a good day?"
+                  placeholderTextColor={palette.muted}
+                  multiline
+                  maxLength={1600}
+                  editable={!busy}
+                  style={styles.messageInput}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Send message"
+                  accessibilityState={{ disabled: !!busy || !text.trim() }}
+                  disabled={!!busy || !text.trim()}
+                  onPress={send}
+                  style={[
+                    styles.sendButton,
+                    (!!busy || !text.trim()) && styles.disabled,
+                  ]}
+                >
+                  <Icon name="arrow-up" color={palette.white} size={22} />
+                </Pressable>
+              </View>
+            </View>
+          </>
+        ) : section === "saved" ? (
+          <SavedPlansScreen currentDraft={draft} onOpen={openSavedOuting} />
+        ) : section === "circles" ? (
+          <CirclesScreen currentDraft={draft} onApply={applyCircle} />
+        ) : (
+          <NativeAccountScreen session={accountSession} onOpenPlan={openAccountPlan} onNavigate={navigateSection}
+            onImportCircle={(circle) => applyCircle(applyCircleToBrief(current.current.brief, circle) as Brief)} />
+        )}
+        {!keyboardVisible && (
+          <View style={styles.mainNav}>
+            {(
+              [
+                { value: "plan", label: "Plan", icon: "sparkles-outline" },
+                { value: "saved", label: "Saved", icon: "bookmark-outline" },
+                { value: "circles", label: "Circles", icon: "people-outline" },
+                { value: "account", label: "Account", icon: accountState.signedIn ? "person-circle" : "person-circle-outline" },
+              ] as const
+            ).filter(item => !readOnly || item.value === "plan" || item.value === "account").map((item) => (
+              <Pressable
+                key={item.value}
+                accessibilityRole="tab"
+                accessibilityLabel={item.label}
+                accessibilityState={{
+                  selected: section === item.value,
+                  disabled: !!busy,
+                }}
+                disabled={!!busy}
+                onPress={() => navigateSection(item.value)}
+                style={[
+                  styles.mainNavItem,
+                  section === item.value && styles.mainNavActive,
+                  !!busy && styles.disabled,
+                ]}
+              >
+                <Icon name={item.icon} size={21} />
+                <Text style={styles.mainNavLabel}>{item.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </KeyboardAvoidingView>
+      {sheet === "outing" && plan && selected === null && (
+        <Sheet title="Your outing" close={() => setSheet(null)}>
+          <ScrollView contentContainerStyle={styles.sheetBody}>
                       <View style={styles.dayHeading}>
                         <Text style={styles.eyebrow}>
                           {preview
@@ -1576,6 +1657,13 @@ function Planner() {
                           />
                         </View>
                       )}
+                      <View style={styles.wrap}>
+                        <Chip label="Edit details" icon="options-outline" disabled={!!busy} onPress={() => openReview()} />
+                        <Chip label="Adjust in chat" icon="chatbubble-outline" disabled={!!busy} onPress={() => { setSheet(null); composer.current?.focus(); }} />
+                        <Chip label={savingCopy ? "Saving…" : "Save a copy"} icon="bookmark-outline" disabled={!!busy || !!preview || savingCopy} onPress={() => void saveCurrentCopy()} />
+                      </View>
+                      <Text style={styles.small}>Saved copies stay on this device and are not encrypted by the app.</Text>
+                      {!!notice && <Note text={notice} />}{!!error && <Note text={error} error />}
                       {plan.stops.map((stop, index) => (
                         <StopCard
                           key={`${stop.id || index}-${index}`}
@@ -1585,12 +1673,13 @@ function Planner() {
                           edit={() => setSelected(index)}
                         />
                       ))}
-                      {!preview && (
+                      {!preview && !dirty && (
                         <Button
                           quiet
                           icon="checkmark-circle-outline"
                           label="Get ready for this outing"
-                          onPress={() => setTab("ready")}
+                          disabled={!!busy}
+                          onPress={() => setSheet("ready")}
                         />
                       )}
                       <View style={styles.evidence}>
@@ -1627,140 +1716,20 @@ function Planner() {
                           onPress={() => build(draft.brief)}
                         />
                       )}
-                    </>
-                  ) : (
-                    <View style={styles.empty}>
-                      <View style={styles.heroSun}>
-                        <Icon name="trail-sign-outline" size={32} />
-                      </View>
-                      <Text style={styles.dayTitle}>
-                        A day with possibilities.
-                      </Text>
-                      <Text style={styles.heroText}>
-                        Tell me what you have in mind, or shape a simple plan
-                        below. Real places appear here when the search returns.
-                      </Text>
-                      <Button
-                        label="Shape my day"
-                        onPress={() => setSheet("review")}
-                      />
-                    </View>
-                  )}
-                </>
-              )}
-              {!!notice && <Note text={notice} />}
-              {!!saveError && <Note text={saveError} error />}
-              {!!error && (
-                <View style={styles.errorBox}>
-                  <Note text={error} error />
-                  <Text style={styles.small}>
-                    Your draft and last completed places are kept. You can retry
-                    or use Review plan.
-                  </Text>
-                </View>
-              )}
-            </ScrollView>
-            <View style={styles.composerDock}>
-              {!!busy && (
-                <View style={styles.busyRow}>
-                  <ActivityIndicator size="small" color={palette.ink} />
-                  <Text
-                    accessibilityLiveRegion="polite"
-                    style={[styles.small, styles.flex]}
-                  >
-                    {busy}…
-                  </Text>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => cancel()}
-                    style={styles.cancel}
-                  >
-                    <Text style={styles.linkText}>Stop</Text>
-                  </Pressable>
-                </View>
-              )}
-              <View style={styles.toolbar}>
-                <Chip
-                  label="Review plan"
-                  icon="options-outline"
-                  disabled={!!busy}
-                  onPress={() => setSheet("review")}
-                />
-                <Text
-                  style={[styles.small, styles.flex, { textAlign: "right" }]}
-                >
-                  {accountState.signedIn ? "Chat uses your account circles" : "Chat uses your draft & saved circles"}
-                </Text>
-              </View>
-              <View style={styles.composer}>
-                <TextInput
-                  accessibilityLabel="Message Unstressed"
-                  value={text}
-                  onChangeText={setText}
-                  placeholder="What would make a good day?"
-                  placeholderTextColor={palette.muted}
-                  multiline
-                  maxLength={1600}
-                  editable={!busy}
-                  style={styles.messageInput}
-                />
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Send message"
-                  accessibilityState={{ disabled: !!busy || !text.trim() }}
-                  disabled={!!busy || !text.trim()}
-                  onPress={send}
-                  style={[
-                    styles.sendButton,
-                    (!!busy || !text.trim()) && styles.disabled,
-                  ]}
-                >
-                  <Icon name="arrow-up" color={palette.white} size={22} />
-                </Pressable>
-              </View>
-            </View>
-          </>
-        ) : section === "saved" ? (
-          <SavedPlansScreen currentDraft={draft} onOpen={openSavedOuting} />
-        ) : section === "circles" ? (
-          <CirclesScreen currentDraft={draft} onApply={applyCircle} />
-        ) : (
-          <NativeAccountScreen session={accountSession} onOpenPlan={openAccountPlan}
-            onImportCircle={(circle) => applyCircle(applyCircleToBrief(current.current.brief, circle) as Brief)} />
-        )}
-        {!keyboardVisible && (
-          <View style={styles.mainNav}>
-            {(
-              [
-                { value: "plan", label: "Plan", icon: "sparkles-outline" },
-                { value: "saved", label: "Saved", icon: "bookmark-outline" },
-                { value: "circles", label: "Circles", icon: "people-outline" },
-                { value: "account", label: "Account", icon: accountState.signedIn ? "person-circle" : "person-circle-outline" },
-              ] as const
-            ).filter(item => !readOnly || item.value === "plan" || item.value === "account").map((item) => (
-              <Pressable
-                key={item.value}
-                accessibilityRole="tab"
-                accessibilityLabel={item.label}
-                accessibilityState={{
-                  selected: section === item.value,
-                  disabled: !!busy,
-                }}
-                disabled={!!busy}
-                onPress={() => navigateSection(item.value)}
-                style={[
-                  styles.mainNavItem,
-                  section === item.value && styles.mainNavActive,
-                  !!busy && styles.disabled,
-                ]}
-              >
-                <Icon name={item.icon} size={21} />
-                <Text style={styles.mainNavLabel}>{item.label}</Text>
-              </Pressable>
-            ))}
-          </View>
-        )}
-      </KeyboardAvoidingView>
+          </ScrollView>
+        </Sheet>
+      )}
+      {sheet === "ready" && plan && !preview && selected === null && (
+        <Sheet title="Get ready" close={() => setSheet(null)} back={() => setSheet("outing")}>
+          <ScrollView contentContainerStyle={styles.sheetBody}>
+            {dirty && <Note text="These details belong to your previous result. Edit the draft and find places again to apply changes." />}
+            <DayReadiness key={JSON.stringify([plan.request, plan.stops.map(visit => [visit.id, visit.item?.id])])}
+              plan={plan} onError={setError}
+              onEditTiming={!busy ? () => openReview({ panel: "timing" }) : undefined}
+              onOpenStop={!dirty && !busy ? visit => { const index = draft.plan!.stops.indexOf(visit); if (index >= 0) setSelected(index); } : undefined} />
+          </ScrollView>
+        </Sheet>
+      )}
       {sheet === "location" && (
         <LocationSheet
           query={locationQuery}
@@ -1775,7 +1744,7 @@ function Planner() {
               planningTimeZone: area.timeZone,
             });
             setSheet(null);
-            setTab("chat");
+        
             append(
               `${area.label} is set for this outing.${before.budget !== null && next.budget === null ? " The allowance is cleared so you can review it in the local currency." : ""} Review the details when you’re ready to find places.${!area.currency ? " Local currency was not supplied; check it in Review plan." : ""}`,
             );
@@ -1785,6 +1754,7 @@ function Planner() {
       {sheet === "review" && (
         <ReviewSheet
           draft={draft}
+          context={reviewContext}
           close={() => setSheet(null)}
           apply={(brief) => build(brief)}
         />
@@ -2014,35 +1984,8 @@ const styles = StyleSheet.create({
     color: palette.ink,
     lineHeight: 20,
   },
-  tabs: {
-    flexDirection: "row",
-    marginHorizontal: 20,
-    marginTop: 14,
-    marginBottom: 3,
-    backgroundColor: palette.paper,
-    borderRadius: 15,
-    padding: 4,
-  },
-  tab: {
-    borderBottomWidth: 2,
-    borderBottomColor: "transparent",
-    flex: 1,
-    minHeight: 48,
-    gap: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 12,
-  },
-  tabActive: { backgroundColor: palette.paper, borderBottomColor: palette.ink },
-  tabLabel: {
-    fontFamily: "Manrope_600SemiBold",
-    fontSize: 15,
-    color: palette.ink,
-    lineHeight: 20,
-  },
   content: { padding: 20, gap: 14, paddingBottom: 28 },
-  hero: { paddingTop: 16, gap: 15 },
+  hero: { paddingTop: 8, gap: 14 },
   heroSun: {
     width: 76,
     height: 76,
@@ -2236,6 +2179,9 @@ const styles = StyleSheet.create({
     color: palette.ink,
     letterSpacing: -0.8,
   },
+  resultCard: { borderRadius: 24, backgroundColor: palette.white, borderWidth: 1, borderColor: palette.line, padding: 19, gap: 14 },
+  resultVisit: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
+  resultIndex: { fontFamily: "Manrope_700Bold", fontSize: 12, color: palette.muted, lineHeight: 20, width: 22 },
   stopCard: {
     borderRadius: 23,
     borderWidth: 1,

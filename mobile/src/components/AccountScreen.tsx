@@ -20,11 +20,13 @@ function Button({ label, onPress, disabled = false, quiet = false }: { label: st
 const message = (e: unknown) => e instanceof Error ? e.message : 'This account request could not be completed.';
 
 /** Account data is deliberately memory-only, separate from the device library. */
-export function NativeAccountScreen({ session, onOpenPlan, onImportCircle }: {
+export function NativeAccountScreen({ session, onOpenPlan, onImportCircle, onNavigate }: {
+  onNavigate: (section: "plan" | "saved" | "circles" | "account") => void;
   session: Session; onOpenPlan: (plan: Plan, options: { editable: boolean }) => void; onImportCircle: (circle: Circle) => void;
 }) {
   const [auth, setAuth] = useState(session.getSnapshot()), [enabled, setEnabled] = useState<boolean | null>(null);
   const readOnly = isReadOnlySession(auth);
+  const [checkingAvailability, setCheckingAvailability] = useState(true);
   const [account, setAccount] = useState<any>(null), [plans, setPlans] = useState<any[]>([]), [inbox, setInbox] = useState<any[]>([]);
   const [circlePlans, setCirclePlans] = useState<any[]>([]), [profileEdit, setProfileEdit] = useState<{ name: string; artists: string; vibes: string } | null>(null);
   const [invitationError, setInvitationError] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState('');
@@ -53,7 +55,7 @@ export function NativeAccountScreen({ session, onOpenPlan, onImportCircle }: {
       if (!next.signedIn && previousAuth.current) { generation.current++; control.current.abort(); control.current = new AbortController(); clear(); }
       previousAuth.current = next.signedIn;
     });
-    void session.config().then(config => { if (alive.current) setEnabled(config.enabled === true); }).catch(e => { if (alive.current) setError(message(e)); });
+    void session.config().then(config => { if (alive.current) setEnabled(config.enabled === true); }).catch(e => { if (alive.current) setError(message(e)); }).finally(() => { if (alive.current) setCheckingAvailability(false); });
     return () => { alive.current = false; generation.current++; control.current.abort(); unsubscribe(); };
   }, [session]);
   useEffect(() => { if (auth.signedIn) void run(refresh); }, [auth.signedIn]);
@@ -134,19 +136,21 @@ export function NativeAccountScreen({ session, onOpenPlan, onImportCircle }: {
     ]);
   };
   return <ScrollView style={s.root} contentContainerStyle={s.content}>
-    <Text style={s.eyebrow}>YOUR ACCOUNT</Text><Text style={s.title}>{account?.user ? `Hello, ${account.user.profile?.name || 'you'}.` : 'A little more you.'}</Text>
-    <Text style={s.body}>Account plans, circles and invitations live here. Saved and Circles tabs keep separate copies on this device.</Text>
+    <Text style={s.eyebrow}>YOUR ACCOUNT</Text><Text style={s.title}>{account?.user ? `Hello, ${account.user.profile?.name || 'you'}.` : 'Your space, your pace.'}</Text>
+    <Text style={s.body}>{auth.signedIn ? "Your cloud plans, people and invitations. Device copies stay separate in Saved and Circles." : "Your device library is ready to use. Cloud sign-in has a separate availability check."}</Text>
     <ApiServerNotice origin={session.origin} />
     {readOnly && <View style={s.card}><Text accessibilityRole="header" style={s.heading}>Read-only account pilot</Text><Text style={s.body}>Browse existing account plans and circles. Planning, profile changes and invitation actions are disabled for this session.</Text><Text style={s.caption}>Device-only Saved outings, Circles and your guest draft are unchanged. Sign out to return to them. Planning requires an approved account-sync session.</Text></View>}
     {!!error && <Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!notice && <Text accessibilityLiveRegion="polite" style={s.body}>{notice}</Text>}
     {!!busy && <ActivityIndicator color={c.ink} accessibilityLabel="Updating account" />}
     {!auth.signedIn ? <View style={s.card}>
-      <Text style={s.heading}>{auth.signingIn ? 'Approve in your browser' : 'Keep your people close.'}</Text>
-      <Text style={s.body}>{auth.signingIn ? 'Check that the approval code below matches the browser, then sign in and approve this app. Return here afterward. Never approve a code from someone else.' : enabled === false ? 'Native account access is not enabled on this server. Your device-only saved outings and circles are still available.' : enabled === null ? 'Check account availability before signing in to the server shown above.' : 'Sign in to the server shown above in your system browser. This app session is temporary and is not saved on this device.'}</Text>
+      <Text style={s.heading}>{auth.signingIn ? 'Approve in your browser' : enabled === false ? 'Native sign-in is not available yet' : enabled === null ? checkingAvailability ? 'Checking account availability…' : 'Account availability unconfirmed' : 'Connect your account'}</Text>
+      <Text style={s.body}>{auth.signingIn ? 'Check that the approval code below matches the browser, then sign in and approve this app. Return here afterward. Never approve a code from someone else.' : enabled === false ? 'This server has native account access switched off. Cloud plans, account circles and invitations cannot sync in this preview. This is not a problem with your Google account.' : enabled === null ? 'Cloud access has not been confirmed. Check availability below; no browser will open until you choose to sign in.' : 'Sign in to the server shown above in your system browser. This app session is temporary and is not saved on this device.'}</Text>
       {auth.signingIn && !!auth.signInStatus && <Text accessibilityLiveRegion="polite" style={s.body}>{auth.signInStatus}</Text>}
       {auth.signingIn && !!auth.userCode && <Text selectable style={s.heading}>Approval code: {auth.userCode}</Text>}
-      {auth.signingIn ? <Button label="Cancel sign-in" quiet onPress={() => void session.cancelSignIn().catch(e => setError(message(e)))} /> : <Button label="Continue in browser" disabled={enabled !== true || busy} onPress={() => void run(async () => { try { await session.signIn(); if (alive.current && session.getSnapshot().signedIn) await refresh(control.current.signal); } catch (cause) { if (alive.current) setError(message(cause)); } })} />}
-      {!auth.signingIn && <Button label="Check account availability" quiet disabled={busy} onPress={() => void run(async () => { setEnabled(null); const config = await session.config(); setEnabled(config.enabled === true); })} />}
+      {auth.signingIn ? <Button label="Cancel sign-in" quiet onPress={() => void session.cancelSignIn().catch(e => setError(message(e)))} /> : enabled === true ? <Button label="Continue in browser" disabled={enabled !== true || busy} onPress={() => void run(async () => { try { await session.signIn(); if (alive.current && session.getSnapshot().signedIn) await refresh(control.current.signal); } catch (cause) { if (alive.current) setError(message(cause)); } })} /> : null}
+      {checkingAvailability && <ActivityIndicator color={c.ink} accessibilityLabel="Checking account availability" />}
+      {!auth.signingIn && <Button label="Check account availability" quiet disabled={busy || checkingAvailability} onPress={() => void run(async () => { setCheckingAvailability(true); try { setEnabled(null); const config = await session.config(); setEnabled(config.enabled === true); } finally { if (alive.current) setCheckingAvailability(false); } })} />}
+      {!auth.signingIn && <View style={s.section}><Text style={s.heading}>On this device</Text><Text style={s.caption}>Saved outings and reusable circles work without sign-in. They do not sync to your cloud account.</Text><Button label="Return to Plan" onPress={() => onNavigate("plan")} /><Button label="Open saved outings" quiet onPress={() => onNavigate("saved")} /><Button label="Open device circles" quiet onPress={() => onNavigate("circles")} /></View>}
     </View> : <>
       <View style={s.card}><Text style={s.heading}>{account?.user?.email || 'Your signed-in account'}</Text>
         <Text style={s.body}>Tastes: {(account?.user?.profile?.artists || []).join(', ') || 'None saved'}</Text>

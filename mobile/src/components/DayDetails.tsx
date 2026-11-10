@@ -7,6 +7,7 @@ import {
   createDayDetailsApi, dayMapsUrl, dayRouteLegs, detailScopeKey, enquiryDraft,
   readinessData, venueDetailsData, venueMapsUrl, visitDetailsData,
 } from '../day-details';
+import { unfilledVisitMessage } from '../plan-flow';
 import type { Plan, Stop } from '../types';
 
 const colors = {paper:'#F7F5EF', surface:'#FFFDF8', ink:'#183B35', muted:'#5F6F66', celery:'#DCEABD', line:'#DDE3D8', error:'#9B392F'};
@@ -100,7 +101,7 @@ export function VenueDetails({stop, plan, onError}: {stop:Stop; plan:Plan; onErr
   const [draftKey, setDraftKey] = useState<string | null>(null);
   const [failedImage, setFailedImage] = useState<string | null>(null);
   const key = detailScopeKey(plan, stop);
-  if (!stop.item) return <Body>No venue has been selected for this stop.</Body>;
+  if (!stop.item) return <Body>{unfilledVisitMessage(stop)}</Body>;
   return <View style={styles.root}>
     {place.imageUrl && failedImage !== place.imageUrl && <Image accessible accessibilityLabel={`Provider-reported photo for ${place.name}`} source={{uri:place.imageUrl}} style={styles.venueImage} resizeMode="cover" onError={() => setFailedImage(place.imageUrl)}/>}
     <Text style={styles.eyebrow}>{visit.time}</Text>
@@ -133,7 +134,7 @@ function ReadyStop({stop, plan, onError, onOpenStop}: {stop:Stop; plan:Plan; onE
   const evidence = useVenueEvidence(plan, stop, onError);
   const place = venueDetailsData(evidence.report?.place || stop.item), visit = visitDetailsData(stop, plan);
   const {open, error} = useOpenLink(onError);
-  if (!stop.item) return <View style={styles.card}><Heading>A stop still to find</Heading><Body>Return to Places to adjust this part of the day.</Body></View>;
+  if (!stop.item) return <View style={styles.card}><Heading>A stop still to find</Heading><Body>{unfilledVisitMessage(stop)}</Body></View>;
   return <View style={styles.card}>
     <Text style={styles.eyebrow}>{visit.time}</Text><Heading>{place.name}</Heading>
     {!!visit.allowance && <Body>{visit.allowance} shared allowance · not a quote</Body>}
@@ -145,11 +146,12 @@ function ReadyStop({stop, plan, onError, onOpenStop}: {stop:Stop; plan:Plan; onE
   </View>;
 }
 /** Place inside the day screen's ScrollView. No checks run until a deliberate tap. */
-export function DayReadiness({plan, onError, onOpenStop}: {plan:Plan; onError?:ErrorHandler; onOpenStop?:(stop:Stop) => void}) {
+export function DayReadiness({plan, onError, onOpenStop, onEditTiming}: {plan:Plan; onError?:ErrorHandler; onOpenStop?:(stop:Stop) => void; onEditTiming?:() => void}) {
   const data = readinessData(plan), {open, error} = useOpenLink(onError);
   const [mode, setMode] = useState('driving'); const route = dayMapsUrl(plan, mode); const legs = dayRouteLegs(plan, mode);
   return <View style={styles.root}>
     <View style={styles.intro}><Text style={styles.eyebrow}>A LITTLE PREPARATION</Text><Heading>Before you head out</Heading><Body>{data.date}{data.timeZone ? ` · ${data.timeZone}` : ''}</Body><Body subtle>This is a suggested outing. Check the details below and confirm reservations directly with each venue.</Body></View>
+    {(!plan.request.timing.dateConfirmed || !plan.request.timing.timeConfirmed) && <View style={styles.card}><Heading>When are you heading out?</Heading><Body subtle>Your time is still flexible. Choose a date and time to check how the places fit.</Body>{!!onEditTiming && <Action label="Choose a date and time" icon="time-outline" onPress={onEditTiming}/>}</View>}
     <View style={styles.card}><Heading>A little room in the budget</Heading><Text style={styles.emphasis}>{data.total || 'Budget not set'}</Text>{!!data.total && <Body subtle>{data.suggested ? 'Suggested outing allowance' : 'Your whole-outing allowance'}. Not a venue quote.</Body>}{!!data.transport && <Body>Getting around: {data.transport}</Body>}{!!data.reserve && <Body>Breathing room: {data.reserve}</Body>}{!!data.note && <Body subtle>{data.note}</Body>}</View>
     {plan.stops.map(stop => <ReadyStop key={`${stop.id}-${stop.item?.id || 'empty'}`} stop={stop} plan={plan} onError={onError} onOpenStop={onOpenStop}/>)}
     <View style={styles.card}><Heading>Check the route</Heading><Body>The route follows your selected places in order. It does not use your current location.</Body><View style={styles.modes}>{[['driving','Drive'], ['walking','Walk'], ['transit','Transit']].map(([value, label]) => <Pressable key={value} accessibilityRole="button" accessibilityState={{selected:mode === value}} onPress={() => setMode(value)} style={[styles.mode, mode === value && styles.selectedMode]}><Text style={styles.actionText}>{label}</Text></Pressable>)}</View>{mode === 'transit' && legs.length > 1 ? <><Body subtle>Transit directions open one leg at a time so no stop is skipped.</Body>{legs.map(leg => <Action key={leg.id} label={leg.label} icon="train-outline" onPress={() => open(leg.url)}/>)}</> : <Action label="Open route in Google Maps" icon="map-outline" onPress={() => open(route)} disabled={!route}/>}<Body subtle>Maps provides the route after you open it. No travel duration, fare or transport booking is confirmed here.</Body></View>
