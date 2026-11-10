@@ -1358,8 +1358,8 @@ function Planner() {
     return (
       <SafeAreaView style={styles.screen}>
         <View style={styles.loading}>
-          <ActivityIndicator color={palette.ink} />
-          <Text style={styles.body}>Making room for your day…</Text>
+          <ActivityIndicator color={palette.ink} accessibilityLabel="Opening your draft" />
+          <Text style={styles.body}>Opening your draft…</Text>
         </View>
       </SafeAreaView>
     );
@@ -1438,19 +1438,9 @@ function Planner() {
             >
               {!!plan && !messages.some(message => message.resultCard) && renderPlanCard()}
                   {!messages.length && !plan && (
-                    <View style={styles.hero}>
-                      <View style={styles.heroSun}>
-                        <BrandMark size={60} />
-                      </View>
-                      <Text style={styles.eyebrow}>
-                        A GOOD DAY STARTS SMALL
-                      </Text>
-                      <Text accessibilityRole="header" style={styles.heroTitle}>
-                        Less figuring out.{"\n"}More heading out.
-                      </Text>
-                      <Text style={styles.heroText}>
-                        A place to pause, something new, or an evening with your
-                        people. What are you in the mood for?
+                    <View style={styles.emptyChat}>
+                      <Text accessibilityRole="header" style={styles.emptyChatTitle}>
+                        What would you like to do?
                       </Text>
                       <View style={styles.suggestions}>
                         {[
@@ -1460,7 +1450,7 @@ function Planner() {
                           <Pressable
                             key={suggestion}
                             accessibilityRole="button"
-                            onPress={() => setText(suggestion)}
+                            onPress={() => { setText(suggestion); composer.current?.focus(); }}
                             style={styles.suggestion}
                           >
                             <Text style={[styles.body, styles.flex]}>
@@ -1985,15 +1975,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   content: { padding: 20, gap: 14, paddingBottom: 28 },
-  hero: { paddingTop: 8, gap: 14 },
-  heroSun: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 5,
-  },
+  emptyChat: { paddingTop: 8, gap: 14 },
   eyebrow: {
     fontFamily: "Manrope_700Bold",
     fontSize: 11,
@@ -2002,20 +1984,14 @@ const styles = StyleSheet.create({
 
     lineHeight: 16,
   },
-  heroTitle: {
+  emptyChatTitle: {
     fontFamily: "Manrope_500Medium",
-    fontSize: 36,
-    lineHeight: 42,
-    letterSpacing: -1.4,
+    fontSize: 22,
+    lineHeight: 30,
+    letterSpacing: -0.5,
     color: palette.ink,
   },
-  heroText: {
-    fontFamily: "Manrope_400Regular",
-    fontSize: 16,
-    lineHeight: 24,
-    color: palette.muted,
-  },
-  suggestions: { gap: 10, marginTop: 9 },
+  suggestions: { gap: 10 },
   suggestion: {
     flexDirection: "row",
     gap: 12,

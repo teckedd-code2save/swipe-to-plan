@@ -11,13 +11,13 @@ import {syntheticRoutePlan} from './fixtures/route-plan.js';
 import {recommendationKey,resultPreview,comparisonPreviewText} from '../src/result-preview.js';
 import {resultsReady} from '../src/results-ready.js';
 
-let ChatStudio,ResultsComparison,createRoot,bundleDir,dom,root,props,compact=false,reduced=false,scrolls=[];
+let ChatStudio,ResultsComparison,createRoot,bundleDir,dom,root,props,compact=false,reduced=false,scrolls=[],mediaChanges=new Set();
 function setupDom(){
  dom?.window.close();dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true});
  for(const key of ['window','document','location','localStorage','sessionStorage','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Element','Node','MutationObserver','Event','MouseEvent','KeyboardEvent','navigator'])Object.defineProperty(globalThis,key,{value:dom.window[key],writable:true,configurable:true});
  globalThis.IS_REACT_ACT_ENVIRONMENT=true;
  globalThis.requestAnimationFrame=fn=>{fn();return 0;};globalThis.cancelAnimationFrame=()=>{};
- window.matchMedia=query=>({matches:query.includes('prefers-reduced-motion')?reduced:compact,addEventListener(){},removeEventListener(){}});
+ window.matchMedia=query=>({get matches(){return query.includes('prefers-reduced-motion')?reduced:compact;},addEventListener(type,listener){if(query.includes('max-width'))mediaChanges.add(listener);},removeEventListener(type,listener){mediaChanges.delete(listener);}});
  HTMLElement.prototype.scrollTo=function(options){scrolls.push({element:this,options});};HTMLElement.prototype.scrollIntoView=()=>{};
  // JSDOM does not lay out. Expose potential focus targets for behavior-only Tab
  // tests, not as evidence of visibility or rendered viewport fit.
@@ -33,7 +33,7 @@ before(async()=>{
 });
 after(async()=>{await rm(bundleDir,{recursive:true,force:true});});
 beforeEach(()=>{
- compact=false;reduced=false;scrolls=[];setupDom();const plan=syntheticRoutePlan();
+ compact=false;reduced=false;scrolls=[];mediaChanges=new Set();setupDom();const plan=syntheticRoutePlan();
  props={brief:plan.request,plan,chat:[{id:'receipt',role:'assistant',text:'Original generated receipt.',result:{recommendationKey:recommendationKey(plan),title:'Synthetic outing',detail:'2 stops'}}],tool:null,message:'',busy:false,configured:true,owner:true,guest:false,connecting:false,error:'',revisionFailed:false,draftChanged:false,planOpen:false,planView:'itinerary',resultScope:'account-a:day-one',resultRevision:1,
  onMessage(){},onSend(){},onDismissError(){},onNew(){},onSaved(){},onTool(){},onOpenPlan(){},onClosePlan(){},onPlanView(){},onPlace(){},onNextAction(){},renderTool:()=>null,children:React.createElement('section',{'data-testid':'full-results'},'Full synthetic results')};
 });
@@ -187,4 +187,87 @@ test('empty results never invent a recommendation, selected visit, photo or book
  const plan={...props.plan,stops:[],shortlist:[],warnings:[]};await render({plan,brief:plan.request,chat:[{id:'receipt',role:'assistant',result:{recommendationKey:recommendationKey(plan)}}]});
  assert.match(currentText(),/Places still to find/);assert.equal(document.querySelectorAll('.cs-preview-places li').length,0);assert.equal(document.querySelectorAll('.cs-preview-places img').length,0);assert.match(currentText(),/0 planned stops · 0 places to explore/);assert.doesNotMatch(currentText(),/booked|confirmed availability/i);
  function currentText(){return document.querySelector('.cs-recommendation-preview').textContent;}
+});
+
+test('a fresh web conversation has a useful unbranded prompt and no automatic personalization wall',async()=>{
+ localStorage.removeItem('unstressed.intro-dismissed');
+ await render({plan:null,chat:[]});
+ const opening=document.querySelector('.cs-opening');assert.ok(opening);assert.match(opening.textContent,/What do you feel like doing/);
+ assert.equal(opening.querySelector('.outing-sun'),null);assert.equal(document.querySelector('.cs-welcome'),null);
+ assert.equal(document.querySelector('[aria-label="Help me know your kind of outing"]'),null);
+ assert.ok(document.querySelector('.cs-header .cs-brand'));assert.ok(button('Plan near me'));assert.ok(button('Bring a circle'));
+ assert.equal(document.querySelector('.cs-thinking'),null,'No made-up loading period');
+});
+
+test('an opening suggestion fills the composer without sending or requesting location',async()=>{
+ let draft,sent=0,tools=0;
+ await render({plan:null,chat:[],onMessage:text=>{draft=text;},onSend:()=>sent++,onTool:()=>tools++});
+ await click('Somewhere to unwind');assert.equal(draft,'I’d like somewhere to unwind.');assert.equal(sent,0);assert.equal(tools,0);
+ assert.equal(document.querySelector('.cs-opening'),null);assert.equal(document.activeElement,document.querySelector('textarea'));
+ await render({message:draft});await render({message:''});assert.equal(document.querySelector('.cs-opening'),null,'Clearing a draft does not replay the opening');
+});
+
+test('typing, tools, results and real activity dismiss the opening for the current outing only',async()=>{
+ await render({plan:null,chat:[]});assert.ok(document.querySelector('.cs-opening'));
+ await render({message:'A quiet place'});assert.equal(document.querySelector('.cs-opening'),null);
+ await render({message:''});assert.equal(document.querySelector('.cs-opening'),null);
+ await render({resultScope:'new-day'});assert.ok(document.querySelector('.cs-opening'));
+ await render({tool:{id:'review',kind:'review'},reviewContent:React.createElement('p',null,'Review the draft')});assert.equal(document.querySelector('.cs-opening'),null);assert.match(document.querySelector('.cs-draft-plan').textContent,/Review the draft/);
+ await render({tool:null});assert.equal(document.querySelector('.cs-opening'),null);
+ await render({resultScope:'next-day',busy:true});assert.equal(document.querySelector('.cs-opening'),null);assert.ok(document.querySelector('.cs-thinking'));
+ await render({busy:false});assert.equal(document.querySelector('.cs-opening'),null);
+});
+
+test('nearby and circle starters use the existing contextual actions without an intro detour',async()=>{
+ const actions=[];await render({plan:null,chat:[],onTool:kind=>actions.push(kind)});
+ await click('Plan near me');assert.deepEqual(actions,['nearby']);assert.equal(document.querySelector('.cs-opening'),null);
+ await render({resultScope:'new-day'});await click('Bring a circle');assert.deepEqual(actions,['nearby','circles']);
+});
+
+test('personalization is explicitly opened, dismissible and cleared across account or outing changes',async()=>{
+ await render({plan:null,chat:[]});await click('Add to the conversation');await click('Personalize');
+ assert.ok(document.querySelector('[aria-label="Help me know your kind of outing"]'));assert.equal(document.querySelector('.cs-opening'),null);
+ await click('Maybe later');assert.equal(document.querySelector('[aria-label="Help me know your kind of outing"]'),null);
+ await click('Add to the conversation');await click('Personalize');await render({resultScope:'another-account'});
+ assert.equal(document.querySelector('[aria-label="Help me know your kind of outing"]'),null);assert.ok(document.querySelector('.cs-opening'));
+});
+
+test('shared-day connection status exists only while connecting and never delays the join screen',async()=>{
+ await render({plan:null,chat:[],guest:true,owner:false,connecting:true,joinContent:React.createElement('p',{'data-testid':'join'},'Join this day')});
+ assert.match(document.querySelector('.cs-connecting').textContent,/Opening your shared day/);assert.equal(document.querySelector('.cs-opening'),null);
+ await render({connecting:false});assert.equal(document.querySelector('.cs-connecting'),null);assert.ok(document.querySelector('[data-testid="join"]'));assert.equal(document.querySelector('.cs-opening'),null);
+});
+
+test('desktop keeps the inline outing, opens details on request and restores focus after repeated dismissals',async()=>{
+ let closed=0;await render({chat:[],onClosePlan:()=>closed++});
+ assert.ok(document.querySelector('[data-current-result-preview]'));assert.equal(document.querySelector('.cs-opening'),null);assert.equal(document.querySelector('.cs-welcome'),null);
+ const panel=document.querySelector('.cs-day-panel');assert.equal(panel.hidden,true);assert.equal(button('Your day').getAttribute('aria-expanded'),'false');
+ for(let i=0;i<2;i++){
+  const more=await click('More · View results');await render({planOpen:true});assert.equal(panel.hidden,false);assert.equal(panel.getAttribute('aria-modal'),null);assert.equal(document.activeElement,button('Back to chat'));
+  assert.equal(button('Your day').getAttribute('aria-expanded'),'true');
+  await act(async()=>panel.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));assert.equal(closed,i+1);
+  await render({planOpen:false});assert.equal(panel.hidden,true);assert.ok(document.activeElement===more,'Focus returns to the result trigger');
+ }
+});
+
+test('contextual detail views support arrow keys, Home and End with one tab stop and linked panel',async()=>{
+ let selected='itinerary';await render({planOpen:true,onPlanView:value=>selected=value});
+ const tabs=[...document.querySelectorAll('[role="tab"]')],panel=document.querySelector('[role="tabpanel"]');
+ assert.equal(tabs.filter(tab=>tab.tabIndex===0).length,1);assert.equal(panel.getAttribute('aria-labelledby'),tabs[0].id);
+ const press=async key=>act(async()=>document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true})));
+ tabs[0].focus();await press('ArrowRight');assert.equal(selected,'taste');assert.equal(document.activeElement,tabs[1]);
+ await render({planView:selected});assert.equal(tabs[1].tabIndex,0);assert.equal(tabs[0].tabIndex,-1);
+ await press('End');assert.equal(selected,'checklist');await render({planView:selected});assert.equal(panel.id,tabs[3].getAttribute('aria-controls'));
+ await press('ArrowRight');assert.equal(selected,'itinerary');await press('ArrowLeft');assert.equal(selected,'checklist');await press('Home');assert.equal(selected,'itinerary');
+});
+
+
+test('narrowing an open desktop pane moves focus into the modal without losing its original return target',async()=>{
+ await render();const more=await click('More · View results');await render({planOpen:true});
+ document.querySelector('textarea').focus();assert.equal(document.activeElement.tagName,'TEXTAREA');
+ await act(async()=>{compact=true;for(const change of mediaChanges)change();});
+ assert.equal(document.querySelector('.cs-day-panel').getAttribute('aria-modal'),'true');
+ assert.ok(document.activeElement===button('Back to chat'),'Focus leaves the newly inert conversation');
+ await act(async()=>{compact=false;for(const change of mediaChanges)change();});
+ await render({planOpen:false});assert.ok(document.activeElement===more,'Resize never replaces the original return target');
 });
