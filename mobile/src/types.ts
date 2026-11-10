@@ -54,6 +54,7 @@ export type Stop = {
   start?: string;
   end?: string;
   unfilledReason?: string;
+  reason?: string;
   connections?: { personId: string; kind: string; label: string }[];
 };
 export type Plan = {
