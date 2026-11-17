@@ -64,3 +64,28 @@ test('discovery renders actual streamed frames read-only and clears them on clos
  await act(async()=>{streamController.enqueue(new TextEncoder().encode('{"type":"result","result":{"status":"no_supported_form","forms":[]}}\n'));streamController.close();});
  assert.equal(document.querySelector('[aria-label="Read-only browser view"]'),null);
 });
+
+test('capability failure keeps discovery visible but gated and retry recovers',async()=>{
+ const normal=globalThis.fetch;let attempts=0;globalThis.fetch=async(url,options)=>{
+  if(url.endsWith('/capabilities')&&attempts++===0)throw new Error('Temporary network failure');
+  return normal(url,options);
+ };
+ await render();assert.equal(button('Find booking form').disabled,true);assert.match(document.body.textContent,/Could not check/);
+ await click('Find booking form');assert.equal(requests.length,0);
+ await click('Retry availability check');assert.equal(button('Find booking form').disabled,false);assert.equal(button('Retry availability check'),undefined);
+ await click('Find booking form');assert.ok(requests.some(r=>r.url.endsWith('/reservation-form')));
+});
+test('capability loading is visible and disabled; retry respects disabled capability',async()=>{
+ let resolve;globalThis.fetch=async()=>new Promise(done=>{resolve=done;});
+ await render();assert.match(document.body.textContent,/Checking whether/);assert.equal(button('Find booking form').disabled,true);
+ await act(async()=>resolve(new Response('{}')));assert.equal(document.body.textContent,'');
+});
+test('failed capability retry can resolve disabled without enabling discovery',async()=>{
+ let attempts=0;globalThis.fetch=async()=>{if(attempts++===0)throw new Error('offline');return new Response('{"reservationFormPreview":false}');};
+ await render();await click('Retry availability check');assert.equal(document.body.textContent,'');assert.equal(attempts,2);
+});
+test('unmount aborts capability lookup and ignores late availability',async()=>{
+ let resolve,signal;globalThis.fetch=async(url,options)=>{signal=options.signal;return new Promise(done=>{resolve=done;});};
+ await render();await act(async()=>root.unmount());root=null;assert.equal(signal.aborted,true);
+ await act(async()=>resolve(new Response('{"reservationFormPreview":true}')));assert.equal(document.body.textContent,'');
+});

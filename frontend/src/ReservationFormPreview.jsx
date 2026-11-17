@@ -6,7 +6,7 @@ export default function ReservationFormPreview({snapshot,message,disabled=false,
   return enabled?<PreviewSession key={JSON.stringify([snapshot,message])} snapshot={snapshot} message={message} disabled={disabled} fillAllowed={fillAllowed} onTiming={onTiming}/>:null;
 }
 function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
-  const [available,setAvailable]=useState(false),[discovery,setDiscovery]=useState(null),[formId,setFormId]=useState(''),[fields,setFields]=useState({}),[consent,setConsent]=useState(false),[preview,setPreview]=useState(null),[busy,setBusy]=useState(''),[error,setError]=useState('');
+  const [capability,setCapability]=useState('loading'),[capabilityAttempt,setCapabilityAttempt]=useState(0),[discovery,setDiscovery]=useState(null),[formId,setFormId]=useState(''),[fields,setFields]=useState({}),[consent,setConsent]=useState(false),[preview,setPreview]=useState(null),[busy,setBusy]=useState(''),[error,setError]=useState('');
   const pending=useRef(null),lease=useRef(null);
   const [browserView,setBrowserView]=useState(null);
   function receiveProgress(abort){return event=>{if(abort.signal.aborted)return;setBrowserView(previous=>event.type==='frame'?{...previous,imageDataUrl:event.imageDataUrl}:{...previous,stage:event.stage});};}
@@ -18,7 +18,12 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
   }
   function clearPreview(){closeLease();setPreview(null);}
 
-  useEffect(()=>{const abort=new AbortController();api.actionCapabilities(abort.signal).then(value=>{if(!abort.signal.aborted)setAvailable(value.reservationFormPreview===true);}).catch(()=>{});return()=>{abort.abort();pending.current?.abort();closeLease();};},[]);
+  useEffect(()=>{
+    const abort=new AbortController();
+    api.actionCapabilities(abort.signal).then(value=>{if(!abort.signal.aborted)setCapability(value.reservationFormPreview===true?'available':'disabled');}).catch(()=>{if(!abort.signal.aborted)setCapability('failed');});
+    return()=>abort.abort();
+  },[capabilityAttempt]);
+  useEffect(()=>()=>{pending.current?.abort();closeLease();},[]);
   useEffect(()=>{
     if(!preview?.expiresAt)return;
     const timer=setTimeout(()=>{closeLease();setPreview(null);setConsent(false);setError('This interactive preview expired. Fill the form again to reopen it.');},Math.min(2147483647,Math.max(0,Date.parse(preview.expiresAt)-Date.now())));
@@ -57,7 +62,12 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
     finally{if(!abort.signal.aborted){pending.current=null;setBusy('');}}
   }
   function cancel(){setBrowserView(null);pending.current?.abort();pending.current=null;setBusy('');setConsent(false);clearPreview();setDiscovery(null);setFields({});setError('');}
-  if(!available)return null;
+  if(capability==='disabled')return null;
+  if(capability!=='available')return <section className="pg-form-preview" aria-label="Booking form preview">
+    <h4>Find a booking form</h4>
+    <button type="button" className="pl-secondary-button" disabled>Find booking form</button>
+    {capability==='loading'?<p role="status">Checking whether booking form preview is available…</p>:<><p role="status">Could not check booking form preview availability. Try again to check before opening a venue page.</p><button type="button" className="pl-secondary-button" disabled={disabled} onClick={()=>{setCapability('loading');setCapabilityAttempt(value=>value+1);}}>Retry availability check</button></>}
+  </section>;
   return <section className="pg-form-preview" aria-label="Booking form preview">
     <h4>Fill the booking form</h4><p>Use this stop’s details to prepare the venue’s form for review. Nothing will be submitted.</p>
     <button type="button" className="pl-secondary-button" onClick={discover} disabled={locked||!snapshot.entityId}>{busy==='finding'?'Finding the form…':'Find booking form'}</button>
