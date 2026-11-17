@@ -65,7 +65,7 @@ test('preview retains visit order and repeated venues, counts options separately
  await render({plan,brief:plan.request,chat:[{id:'receipt',role:'assistant',result:{recommendationKey:recommendationKey(plan)}}],onPlace:stop=>{opened=stop;}});
  const preview=document.querySelector('.cs-recommendation-preview');assert.equal(preview.querySelectorAll('li').length,3);assert.match(preview.textContent,/2 of 3 stops found · 2 places to explore/);
  assert.deepEqual([...preview.querySelectorAll('.cs-preview-place-copy strong')].map(el=>el.textContent),['Synthetic Listening Bar','Synthetic Listening Bar','Still to find']);
- await click('Explore stop 2: Synthetic Listening Bar');assert.equal(opened,plan.stops[1]);assert.match(preview.textContent,/compatible recent provider evidence is unavailable/);assert.match(preview.textContent,/Hours, prices and availability need confirmation/);
+ await click('Explore stop 2: Synthetic Listening Bar');assert.equal(opened,plan.stops[1]);assert.match(preview.textContent,/compatible recent provider evidence is unavailable/);assert.doesNotMatch(preview.textContent,/Hours, prices and availability need confirmation/);
  assert.equal(plan.stops.length,3);assert.equal(plan.stops[2].item,null);
 });
 
@@ -75,7 +75,7 @@ test('More opens Places directly while the complete comparison and actual result
  const comparison={id:'compare',role:'assistant',text:long,comparisonKey:recommendationKey(props.plan)};let opened=0,view;
  await render({chat:[...props.chat,comparison],onOpenPlan:()=>opened++,onPlanView:value=>{view=value;},planView:'checklist'});
  assert.equal(document.querySelectorAll('.cs-messages .cs-recommendation-preview').length,1);assert.equal(document.querySelector('.cs-messages').textContent.includes(long.trim()),false);assert.equal(document.querySelector('.cs-preview-lead').textContent,lead);
- await click('More · View results');assert.equal(opened,1);assert.equal(view,'itinerary');
+ await click('View results');assert.equal(opened,1);assert.equal(view,'itinerary');
  await render({planOpen:true,planView:view});const detail=document.querySelector('.cs-result-reasoning');assert.ok(detail);assert.equal(detail.open,false);assert.ok(detail.textContent.includes('Prices, opening times and meal service are unconfirmed.'));assert.ok(document.querySelector('[data-testid="full-results"]'));
  await act(async()=>{detail.open=true;});await click('Back to places');assert.equal(detail.open,false);assert.equal(document.activeElement,detail.querySelector('summary'));
 });
@@ -121,7 +121,7 @@ test('a refresh never opens results, steals button focus or jumps a reader to th
 });
 
 test('mobile results keep focus within the panel and return focus to More on Escape',async()=>{
- compact=true;await render();const more=await click('More · View results');await render({planOpen:true,onClosePlan:()=>{}});const panel=document.querySelector('.cs-day-panel');assert.equal(panel.getAttribute('aria-modal'),'true');assert.equal(document.activeElement,button('Back to chat'));
+ compact=true;await render();const more=await click('View results');await render({planOpen:true,onClosePlan:()=>{}});const panel=document.querySelector('.cs-day-panel');assert.equal(panel.getAttribute('aria-modal'),'true');assert.equal(document.activeElement,button('Back to chat'));
  const candidates=[...panel.querySelectorAll('button:not(:disabled),a[href],input:not(:disabled),summary,[tabindex="0"]')];candidates.at(-1).focus();await act(async()=>panel.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true})));assert.equal(document.activeElement,candidates[0]);
  let closed=0;await render({onClosePlan:()=>closed++});await act(async()=>panel.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));assert.equal(closed,1);
  await render({planOpen:false});assert.equal(document.activeElement,more);
@@ -164,7 +164,7 @@ test('a comparison lead preserves complete source sentences, grounding and all c
 test('Your day preserves the selected result tab while a new first-plan preview is discoverable',async()=>{
  let opened=0,selected;await render({chat:[],planView:'checklist',busy:true,onOpenPlan:()=>opened++,onPlanView:tab=>{selected=tab;}});
  assert.ok(document.querySelector('[data-current-result-preview]'));assert.equal(document.querySelector('.cs-result-toast'),null);await click('Your day');assert.equal(opened,1);assert.equal(selected,undefined);
- await click('More · View results');assert.equal(opened,2);assert.equal(selected,'itinerary');
+ await click('View results');assert.equal(opened,2);assert.equal(selected,'itinerary');
 });
 
 test('feedback expires without reannouncing on polling and its timer is cancelled on a context change',async()=>{
@@ -243,7 +243,7 @@ test('desktop keeps the inline outing, opens details on request and restores foc
  assert.ok(document.querySelector('[data-current-result-preview]'));assert.equal(document.querySelector('.cs-opening'),null);assert.equal(document.querySelector('.cs-welcome'),null);
  const panel=document.querySelector('.cs-day-panel');assert.equal(panel.hidden,true);assert.equal(button('Your day').getAttribute('aria-expanded'),'false');
  for(let i=0;i<2;i++){
-  const more=await click('More · View results');await render({planOpen:true});assert.equal(panel.hidden,false);assert.equal(panel.getAttribute('aria-modal'),null);assert.equal(document.activeElement,button('Back to chat'));
+  const more=await click('View results');await render({planOpen:true});assert.equal(panel.hidden,false);assert.equal(panel.getAttribute('aria-modal'),null);assert.equal(document.activeElement,button('Back to chat'));
   assert.equal(button('Your day').getAttribute('aria-expanded'),'true');
   await act(async()=>panel.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));assert.equal(closed,i+1);
   await render({planOpen:false});assert.equal(panel.hidden,true);assert.ok(document.activeElement===more,'Focus returns to the result trigger');
@@ -263,7 +263,7 @@ test('contextual detail views support arrow keys, Home and End with one tab stop
 
 
 test('narrowing an open desktop pane moves focus into the modal without losing its original return target',async()=>{
- await render();const more=await click('More · View results');await render({planOpen:true});
+ await render();const more=await click('View results');await render({planOpen:true});
  document.querySelector('textarea').focus();assert.equal(document.activeElement.tagName,'TEXTAREA');
  await act(async()=>{compact=true;for(const change of mediaChanges)change();});
  assert.equal(document.querySelector('.cs-day-panel').getAttribute('aria-modal'),'true');

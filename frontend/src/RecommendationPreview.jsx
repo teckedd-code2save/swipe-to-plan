@@ -24,7 +24,6 @@ export default function RecommendationPreview({plan,onPlace,onMore,comparisonTex
     <ol className="cs-preview-places">{preview.stops.map((stop,index)=><PreviewPlace key={`${stop.id}:${index}:${stop.item?.id||'missing'}`} stop={stop} index={index} onPlace={onPlace}/>)}</ol>
     {preview.alternatives.length>0&&<p className="cs-preview-caution">{preview.alternatives.length} nearby alternatives are available in results. They are not selected visits.</p>}
     {preview.warnings.map((warning,index)=><p className="cs-preview-caution" key={index}>{warning}</p>)}
-    <p className="cs-preview-limits">Hours, prices and availability need confirmation.</p>
-    <button type="button" className="cs-preview-more" onClick={onMore}>More · View results<Icon name="arrow" size={16}/></button>
+    <button type="button" className="cs-preview-more" onClick={onMore}>View results<Icon name="arrow" size={16}/></button>
   </section>;
 }

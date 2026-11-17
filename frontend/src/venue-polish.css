@@ -1,0 +1,30 @@
+/* Shared mobile identity: open-U mark, Manrope and deep evergreen. */
+:root{--font-display:var(--font-body)}
+.chat-studio .cs-brand{color:#183b35;gap:8px}
+.chat-studio .cs-brand>span{font:700 25px/1.2 var(--font-body);letter-spacing:-1.1px}
+.chat-studio .cs-welcome h1{font-family:var(--font-body);font-weight:600}
+.chat-studio .cs-recommendation-preview{background:#fff;border-color:#dde5e1;box-shadow:0 4px 20px #183b3506}
+.cs-preview-heading,.chat-studio .cs-preview-lead .agent-reply p{color:#183b35}
+.chat-studio .cs-preview-more{background:#183b35}
+.chat-studio .cs-preview-places li>button{background:#fafbf9;border-color:#e7ece8}
+.cs-preview-place-copy>span{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.outing-place .outing-place-description{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:#596b64;line-height:1.6;margin-top:10px}
+.outing-place-address{display:flex;align-items:flex-start;gap:6px;line-height:1.5}
+.outing-place-address svg{flex-shrink:0;margin-top:3px}
+.outing-place-copy h3{line-height:1.25}
+.pg-dialog .pg-detail-body{color:#183b35}
+.pg-dialog .pg-detail-section h3{font-family:var(--font-body);font-size:18px;font-weight:650}
+.pg-dialog .pg-hours{background:#f7f9f7;border:1px solid #e2e9e4;padding:18px;color:#40584e;margin:20px 0}
+.pg-dialog .pg-hours.attention{background:#fff8ed;border-color:#eddbc1;color:#80542d}
+.pg-dialog .pg-week{border:1px solid #e0e7e2;border-radius:12px;overflow:hidden;margin:10px 0 0;background:#fff}
+.pg-dialog .pg-week>div{display:grid;grid-template-columns:minmax(90px,1fr) minmax(0,1.6fr);gap:12px;padding:11px 14px;border-top:1px solid #edf0ec;align-items:baseline}
+.pg-dialog .pg-week>div:first-child{border-top:0}
+.pg-dialog .pg-week>div:nth-child(even){background:#f8faf8}
+.pg-dialog .pg-week dt{font-weight:600;color:#284b3e}
+.pg-dialog .pg-week dd{font-variant-numeric:tabular-nums;color:#596b62;overflow-wrap:anywhere}
+.pg-dialog .pg-links a{border:0;padding:8px 0;margin-right:12px;min-height:44px;font-size:13px}
+.pg-dialog .pg-detail-tabs{overflow-x:auto;flex-shrink:0}
+.pg-dialog .pg-detail-tabs button{white-space:nowrap;min-height:44px}
+.pg-dialog .pl-dialog-close{display:grid;place-items:center;min-width:44px;min-height:44px;padding:10px;border-radius:50%;flex-shrink:0}
+.pg-dialog .pl-dialog-close:hover{background:#edf2ee}
+@media(max-width:600px){.chat-studio .cs-brand>span{font-size:22px}.pg-dialog .pg-week>div{padding:10px 12px}.pg-dialog .pg-hours{padding:14px}}

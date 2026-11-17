@@ -26,7 +26,8 @@ export function Icon({name,size=20,...props}) {
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>{paths[name]||paths.arrow}</svg>;
 }
-export function Sun({size=32}) {return <svg className="outing-sun" width={size} height={size} viewBox="0 0 40 40" aria-hidden="true"><g fill="none" stroke="currentColor" strokeWidth="2.7" strokeLinecap="round"><circle cx="20" cy="20" r="7"/>{Array.from({length:12},(_,i)=><path key={i} d="M20 3v4" transform={`rotate(${i*30} 20 20)`}/>)}</g></svg>;}
+// Shared open-U and sun mark used by the native app.
+export function Sun({size=32}) {return <svg className="outing-sun" width={size} height={size} viewBox="0 0 64 64" aria-hidden="true"><g fill="none" stroke="currentColor" strokeWidth="8" strokeLinecap="round"><path d="M14 13v20c0 10.5 8 18 18 18s18-7.5 18-18v-5"/><circle cx="50" cy="13" r="4.8" stroke="none" fill="currentColor"/></g></svg>;}
 export const PERSON_COLORS=['#bb613b','#5b7b65','#7768a8','#b18a35','#427e91','#a6687b'];
 export const ACTIVITY_NAMES={coffee:'Cafés',activity:'Discovery',dinner:'A good meal',drinks:'Drinks'};
 export {money,formatMoney} from './money.js';
