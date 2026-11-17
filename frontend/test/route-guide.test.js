@@ -400,3 +400,16 @@ test('malformed catalog labels never replace a known label or crash the route vi
   const base=globalThis.fetch;globalThis.fetch=async(url,options)=>url==='/api/locations/synthetic-area'?new Response(JSON.stringify({id:'synthetic-area',label:{secret:'unsafe'},name:[],center:{latitude:5.55,longitude:-0.2}})):base(url,options);
   await render();await click('Use Accra · approximate area');assert.match(document.body.textContent,/Near Accra/);assert.equal(mapsOrigin(),'5.55,-0.2');assert.doesNotMatch(document.body.textContent,/unsafe/);
 });
+
+ test('place sheet keeps identity and booking action visible while weekly hours are optional',async()=>{
+  const stop=props.plan.stops[0];stop.item.hours={Monday:[{opens:'09:00',closes:'22:00'}]};delete stop.item.links;
+  await act(async()=>{root=createRoot(document.getElementById('root'));root.render(React.createElement(QueryClientProvider,{client:new QueryClient()},React.createElement(PlaceDetails,{...props,stop,initialView:'practical',onClose:()=>{},onTiming:()=>{}})));});
+  assert.equal(document.querySelector('.pg-sheet-header h2').textContent,stop.item.name);
+  assert.ok(document.querySelector('.pg-sheet-footer button'));
+  assert.equal(document.querySelector('.pg-week-disclosure').open,false);
+  assert.ok(document.querySelector('aside[aria-label="Visit essentials"]'));
+  assert.equal(document.querySelector('.pg-photo'),null);
+  await click('Overview');
+  assert.equal(document.querySelector('.pg-sheet-header h2').textContent,stop.item.name);
+  assert.ok(button('Booking options'));
+ });

@@ -11,6 +11,7 @@ import "./styles.css";
 import PlannerApp from "./PlannerApp.jsx";
 import "./product-design.css";
 import "./venue-polish.css";
+import "./result-actions.css";
 
 function Root() {
   const [hash, setHash] = useState(location.hash);

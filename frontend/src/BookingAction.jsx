@@ -41,7 +41,7 @@ function BookingSession({scope={allowed:true,type:'guest'},plan,stop,place,conte
   if(!editable)return <section className="pg-enquiry"><h3>Booking options</h3>{scope.allowed&&stop.id==='shortlist-place'?<><ReservationFormPreview snapshot={contactSnapshot} message={draft} disabled={locked} fillAllowed={false}/><p className="pg-note">You can find the form now. Add this place to your day before preparing its visit details.</p></>:<p>Only the day owner can prepare and privately track bookings.</p>}</section>;
   return <section className="pg-enquiry" aria-label="Booking preparation">
     <ReservationFormPreview snapshot={contactSnapshot} message={draft} disabled={locked} fillAllowed={timed} onTiming={onTiming}/>
-    <p role="status">{bookingStatus(current?.status||ready&&'ready_for_contact')}</p>
+    {(current||ready)&&<p role="status">{bookingStatus(current?.status||ready&&'ready_for_contact')}</p>}
     <details className="booking-manual"><summary>Send an enquiry yourself</summary>
     <p><strong>Recipient: {contactSnapshot.name}</strong></p><p className="pg-note">Nothing has been sent or booked. {!state.durable&&'This is a temporary draft.'}</p>
     <label>Request type<select value={kind} disabled={locked} aria-describedby={!timed?requirementId:undefined} onChange={e=>{if(e.target.value==='reservation'&&!timed)return;setKind(e.target.value);setReviewed(null);}}><option value="enquiry">General enquiry</option><option value="reservation" disabled={!timed}>Reservation request</option></select></label>
