@@ -29,3 +29,22 @@ test('unmapped date/time is visible and datetime-local is recognized',async()=>{
  assert.equal(semanticField({type:'datetime-local',label:'Visit'}),'dateTime');
  const {api}=fixture();const result=await api.discover(id);assert.deepEqual(result.unsupported,['visit_time_not_mapped']);
 });
+
+test('HTTP provider websites upgrade to HTTPS without ever navigating HTTP',async()=>{
+ let current,visits=[];
+ const api=createReservationForms({config:{},places:{details:async()=>({entityId:id,contact:{website:{url:'http://venue.example/book',source:{entityId:id,field:'properties.website'}}}})},run:async(_,job)=>job({goto:async value=>{current=value;visits.push(value);},url:()=>current,evaluate:async fn=>fn.name==='inspectForms'?structuredClone(raw):[]})});
+ assert.equal((await api.discover(id)).status,'forms_found');assert.deepEqual(visits,[url]);
+});
+test('discovery failures distinguish provider, browser, HTTPS page and missing form without exposing secrets',async()=>{
+ const {reservationDiscoveryFailure,reservationPageUrl}=await import('../src/reservation-form.js');
+ assert.equal(reservationPageUrl('http://venue.example:80/book'),url);
+ for(const value of ['http://127.0.0.1/book','https://user:password@venue.example/book','file:///etc/passwd'])assert.throws(()=>reservationPageUrl(value));
+ const places={details:async()=>({entityId:id,contact:{website:{url,source:{entityId:id,field:'properties.website'}}}})};
+ for(const [code,run] of [['browser_unavailable',async()=>{throw Error('secret auth token');}],['page_unavailable',async(_,job)=>job({goto:async()=>{throw Error('secret url');}})]]){
+  const api=createReservationForms({config:{},places,run});let failure;try{await api.discover(id);}catch(e){failure=reservationDiscoveryFailure(e);}assert.equal(failure.code,code);assert.doesNotMatch(JSON.stringify(failure),/secret/);
+ }
+ const noSite=createReservationForms({config:{},places:{details:async()=>({entityId:id})}});await assert.rejects(noSite.discover(id),e=>reservationDiscoveryFailure(e).code==='no_website');
+ const unavailable=createReservationForms({config:{},places:{details:async()=>{throw Error('private provider url');}}});await assert.rejects(unavailable.discover(id),e=>reservationDiscoveryFailure(e).code==='provider_unavailable');
+ const empty=createReservationForms({config:{},places,run:async(_,job)=>job({goto:async()=>{},url:()=>url,evaluate:async()=>[]})});assert.equal((await empty.discover(id)).status,'no_supported_form');
+ assert.equal(reservationDiscoveryFailure(Error('secret')).code,'discovery_failed');assert.doesNotMatch(reservationDiscoveryFailure(Error('secret')).error,/secret/);
+});

@@ -1,6 +1,6 @@
 import ReservationFormPreview from './ReservationFormPreview.jsx';
 import VenueContact,{DialerLink} from './VenueContact.jsx';
-import {useEffect,useState} from 'react';
+import {useEffect,useId,useState} from 'react';
 import {bookingMessage,bookingSnapshot,bookingStatus,reservationEligible} from './booking-actions.js';
 import useBookingActions from './useBookingActions.js';
 
@@ -20,8 +20,10 @@ function BookingSession({scope={allowed:true,type:'guest'},plan,stop,place,conte
   const ready=reviewed&&reviewed.draft===draft&&reviewed.channel===channel;
   const timed=reservationEligible(contactSnapshot);
   const [kind,setKind]=useState('enquiry');
+  const requirementId=useId();
   async function useDetails(){
     setMessage('');
+    if(kind==='reservation'&&!timed){setMessage('Update the visit details in your plan before preparing a reservation request.');return;}
     if(!state.durable){setReviewed({draft,channel});return;}
     const body={kind,notes:draft};
     const unchanged=current&&!current.stale&&current.kind===kind&&current.notes===draft;
@@ -42,9 +44,10 @@ function BookingSession({scope={allowed:true,type:'guest'},plan,stop,place,conte
     <p>{compact?'Nothing sent or booked. Availability and prices need venue confirmation.':'Nothing has been sent or booked by Unstressed. Availability, prices and your reports are not independently verified.'}</p>
     {!state.durable&&<p>{compact?'Temporary draft. Closing or leaving this enquiry clears it; tracking needs an owned saved plan.':'This preparation is temporary. Closing this panel or changing the day clears it. Private tracking needs an owned saved plan.'}</p>}
     <p><strong>Recipient: {contactSnapshot.name}</strong><br/>{contactSnapshot.date&&contactSnapshot.localTime?`${contactSnapshot.date} · ${contactSnapshot.localTime} · ${contactSnapshot.timeZone||'Time zone missing'}`:'Visit timing not set: general enquiry only.'}{contactSnapshot.party&&` · ${contactSnapshot.party.adults} adults, ${contactSnapshot.party.children||0} children`}</p>
-    <label>Request type<select value={kind} disabled={locked} onChange={e=>{setKind(e.target.value);setReviewed(null);}}><option value="enquiry">General enquiry</option>{timed&&<option value="reservation">Reservation request</option>}</select></label>
+    <label>Request type<select value={kind} disabled={locked} aria-describedby={!timed?requirementId:undefined} onChange={e=>{if(e.target.value==='reservation'&&!timed)return;setKind(e.target.value);setReviewed(null);}}><option value="enquiry">General enquiry</option><option value="reservation" disabled={!timed}>Reservation request</option></select></label>
+    {!timed&&<p id={requirementId} className="pg-note">{!contactSnapshot.date||!contactSnapshot.localTime?'Set and confirm a future date and visit time in your plan to enable Reservation request.':'Check your plan’s visit details: reservation requests need a future date and time, a valid time zone and party size.'} You can still prepare a general enquiry now. Finding a fillable online form depends on the venue’s website.</p>}
     <label>Message to {contactSnapshot.name}<textarea value={draft} maxLength={2000} rows={compact?5:8} disabled={locked} onChange={e=>{setDraft(e.target.value);setReviewed(null);}}/></label>
-    {kind==='reservation'&&<ReservationFormPreview snapshot={contactSnapshot} message={draft} disabled={locked}/>}
+    {kind==='reservation'&&timed&&<ReservationFormPreview snapshot={contactSnapshot} message={draft} disabled={locked}/>}
     <label>Contact channel<select value={channel} disabled={locked} onChange={e=>{setChannel(e.target.value);setReviewed(null);}}><option value="copy">Copy for me to send</option>{contacts.website&&<option value="website">Venue website</option>}{contacts.phone&&<option value="phone">Call venue</option>}</select></label>
     <p>{channel==='website'?`Website: ${contacts.website}`:channel==='phone'?`Phone: ${contacts.phone}`:'Copy only: you choose the recipient when you send.'}</p>
     {compact?<details className="gr-contact-evidence"><summary>Review contact sources</summary><VenueContact place={{entityId:contactSnapshot.entityId,name:contactSnapshot.name,links:contacts}} contact={contactEvidence} contacts={contacts} scope={scope} context={context} allowDial={false} allowWebsite={false}/></details>:<VenueContact place={{entityId:contactSnapshot.entityId,name:contactSnapshot.name,links:contacts}} contact={contactEvidence} contacts={contacts} scope={scope} context={context} allowDial={false} allowWebsite={false}/>}

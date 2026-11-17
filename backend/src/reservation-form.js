@@ -5,6 +5,29 @@ import {lookup} from 'node:dns/promises';
 import {canonicalContactRedirect} from './contact-evidence.js';
 import {locationId} from './locations.js';
 
+export class ReservationFormError extends Error {
+ constructor(code){super(code);this.code=code;}
+}
+const discoveryMessages={
+ no_website:'No provider-linked website is available for this venue. Use its contact details instead.',
+ provider_unavailable:'Venue website details could not be loaded. Try again shortly.',
+ browser_unavailable:'The booking-form browser is unavailable. Try again shortly; no reservation details were sent.',
+ page_unavailable:'The venue booking page could not be loaded securely over HTTPS. Open the venue website to check it; no reservation details were sent.',
+ destination_changed:'The website redirected to a different destination. Review the venue website manually before continuing.',
+ busy:'Booking-form preview is busy. Try again shortly.',
+ expired:'This booking link expired. Find the booking form again.'
+};
+export function reservationDiscoveryFailure(error){
+ const code=error instanceof ReservationFormError&&Object.hasOwn(discoveryMessages,error.code)?error.code:'discovery_failed';
+ return {code,error:discoveryMessages[code]||'The booking-form check could not finish. Try again or open the venue website. No reservation details were sent.'};
+}
+export function reservationPageUrl(value){
+ const url=menuUrl(value);
+ // Try the same published address securely. Never fall back to HTTP, bypass
+ // certificate checks, or relax private-address validation.
+ if(url.protocol==='http:')url.protocol='https:';
+ return url.href;
+}
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export function configuredKitesurf(env=process.env){
  const endpoint=env.KITESURF_CDP_URL;
@@ -93,8 +116,14 @@ const cleanForms=(raw,url)=>raw.map(form=>({...form,fields:form.fields.map(field
 export function createReservationForms({places,config=configuredKitesurf(),run=browserSession,now=Date.now,previewConfig=chromiumPreviewConfig(config)}={}){
  const discoveries=new Map(),destinations=new Map(),leases=new Map();let active=0;
  async function closePreview(id){const lease=leases.get(id);if(!lease)return;leases.delete(id);clearTimeout(lease.timer);await lease.release();}
- async function runBound(job,selected=config){if(active+leases.size>=2)throw Error('Form preview is busy. Try again shortly.');active++;try{return await run(selected,job);}finally{active--;}}
- async function source(entityId){const id=locationId(entityId),place=await places.details(id),website=place.contact?.website;if(place.entityId?.toUpperCase()!==id||website?.source?.entityId?.toUpperCase()!==id||website.source.field!=='properties.website'||!website.url)throw Error('This venue has no provider-bound website.');return menuUrl(website.url).href;}
+ async function runBound(job,selected=config){if(active+leases.size>=2)throw new ReservationFormError('busy');active++;try{return await run(selected,job);}finally{active--;}}
+ async function source(entityId){
+  const id=locationId(entityId);let place;
+  try{place=await places.details(id);}catch{throw new ReservationFormError('provider_unavailable');}
+  const website=place.contact?.website;
+  if(place.entityId?.toUpperCase()!==id||website?.source?.entityId?.toUpperCase()!==id||website.source.field!=='properties.website'||!website.url)throw new ReservationFormError('no_website');
+  try{return reservationPageUrl(website.url);}catch{throw new ReservationFormError('page_unavailable');}
+ }
  function expire(){
   for(const cache of [discoveries,destinations]){for(const [key,value] of cache)if(value.expires<now())cache.delete(key);while(cache.size>100)cache.delete(cache.keys().next().value);}
  }
@@ -109,16 +138,18 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
   return {forms,links};
  }
  async function discoverAt(entityId,initial,followSameSite){
-  return runBound(async page=>{
+  let started=false;
+  try{return await runBound(async page=>{
+   started=true;
    await page.goto(initial,{waitUntil:'domcontentloaded',timeout:20000});
    let url=page.url();menuUrl(url);
-   if(!canonicalContactRedirect(new URL(initial),new URL(url)))throw Error('Website redirected to another provider. Review it manually.');
+   if(!canonicalContactRedirect(new URL(initial),new URL(url)))throw new ReservationFormError('destination_changed');
    let {forms,links}=await scan(page);
-   if(!forms.length&&followSameSite){const next=links.find(c=>{try{return new URL(c.url).protocol==='https:'&&new URL(c.url).origin===new URL(url).origin&&c.url!==url;}catch{return false;}});
-    if(next){const expected=next.url;await page.goto(menuUrl(expected).href,{waitUntil:'domcontentloaded',timeout:20000});url=page.url();if(!canonicalContactRedirect(new URL(expected),new URL(url)))throw Error('Booking destination changed.');const checked=await scan(page);forms=checked.forms;links=[...links,...checked.links];}
+   if(!forms.length&&followSameSite){const next=links.find(c=>{try{return new URL(reservationPageUrl(c.url)).origin===new URL(url).origin&&reservationPageUrl(c.url)!==url;}catch{return false;}});
+    if(next){const expected=reservationPageUrl(next.url);await page.goto(expected,{waitUntil:'domcontentloaded',timeout:20000});url=page.url();if(!canonicalContactRedirect(new URL(expected),new URL(url)))throw new ReservationFormError('destination_changed');const checked=await scan(page);forms=checked.forms;links=[...links,...checked.links];}
    }
    const seen=new Set(),candidates=[];
-   for(const item of links){if(candidates.length>=30)break;let target;try{target=menuUrl(item.url);if(target.protocol!=='https:'||target.href===url||seen.has(target.href))continue;}catch{continue;}
+   for(const item of links){if(candidates.length>=30)break;let target;try{target=new URL(reservationPageUrl(item.url));if(target.href===url||seen.has(target.href))continue;}catch{continue;}
     seen.add(target.href);const id=randomUUID(),candidate={id,url:target.href,label:String(item.label||'Booking page').slice(0,100),relationship:target.origin===new URL(url).origin?'same_site':'booking_partner'};
     destinations.set(id,{entityId,url:target.href,expires:now()+5*60000});candidates.push(candidate);
    }
@@ -129,7 +160,7 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
    if(links.some(l=>l.label==='Embedded booking page'))unsupported.push('embedded_forms');
    if(forms.length&&forms.some(f=>!f.fields.some(x=>['date','dateTime'].includes(x.semantic))||!f.fields.some(x=>['time','dateTime'].includes(x.semantic))))unsupported.push('visit_time_not_mapped');
    return {status:forms.length?'forms_found':'no_supported_form',previewAvailable:true,sourceUrl:url,forms:forms.map(({id,fields})=>({id,fields})),candidates,unsupported,submitted:false};
-  });
+  });}catch(error){if(error instanceof ReservationFormError)throw error;throw new ReservationFormError(started?'page_unavailable':'browser_unavailable');}
  }
  return {enabled:!!config,closePreview,async discover(entityId){
   if(!config)return {status:'disabled',previewAvailable:false,forms:[],candidates:[]};
@@ -138,7 +169,7 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
   if(!config)throw Error('Form preview is not configured.');
   if(!body||typeof body.candidateId!=='string'||Object.keys(body).some(k=>k!=='candidateId'))throw Error('Select a published booking destination.');
   const destination=destinations.get(body.candidateId);
-  if(!destination||destination.entityId!==entityId||destination.expires<now())throw Error('This booking link expired. Find the booking form again.');
+  if(!destination||destination.entityId!==entityId||destination.expires<now())throw new ReservationFormError('expired');
   return discoverAt(entityId,destination.url,false);
  },async preview(entityId,body){
   if(!config)throw Error('Form preview is not configured.');

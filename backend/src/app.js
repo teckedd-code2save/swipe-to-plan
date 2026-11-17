@@ -1,4 +1,4 @@
-import {createReservationForms} from './reservation-form.js';
+import {createReservationForms,reservationDiscoveryFailure} from './reservation-form.js';
 import {executionCapabilities} from './execution-ledger.js';
 import {compareOpenAreas} from './open-location.js';
 import {createContactEvidence} from './contact-evidence.js';
@@ -124,12 +124,12 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   app.get('/api/places/:id/reservation-form',limit(4,'reservation_form'),route(async(req,res)=>{
     if(Object.keys(req.query).length)throw new InputError('Only an exact venue ID is accepted.');
     try{res.json(await reservationForms.discover(req.params.id));}
-    catch{res.status(422).json({error:'Could not locate a supported booking form. No request was sent.'});}
+    catch(error){res.status(422).json(reservationDiscoveryFailure(error));}
   }));
   app.post('/api/places/:id/reservation-form/destination',limit(4,'reservation_destination'),route(async(req,res)=>{
     if(req.get('origin')!==accounts.origin||!req.is('application/json'))return res.status(403).json({error:'Select this booking page from Unstressed.'});
     try{res.json(await reservationForms.inspectDestination(req.params.id,req.body));}
-    catch{res.status(422).json({error:'Could not inspect this published booking page. Find the form again or open the venue website.'});}
+    catch(error){res.status(422).json(reservationDiscoveryFailure(error));}
   }));
   app.post('/api/places/:id/reservation-form/preview',limit(4,'reservation_preview'),route(async(req,res)=>{
     if(req.get('origin')!==accounts.origin||!req.is('application/json'))return res.status(403).json({error:'Open this preview from Unstressed.'});
