@@ -39,7 +39,7 @@ export function PlaceCheckNotice({checks,onOpen}) {
   if(!issues)return null;
   return <button className="pg-plan-alert" onClick={onOpen}><Icon name="clock" size={17}/><span>{issues===1?'One stop needs a timing check.':`${issues} stops need a timing check.`}<small>I found a mismatch with reported opening hours.</small></span><Icon name="arrow" size={17}/></button>;
 }
-export function PlaceDetails({stop,plan,checks,onClose,onSwap,canSwap,initialView='overview',onSelect,onTiming,routeScope,bookingScope,savedAreas,onSaveArea,signedIn}) {
+export function PlaceDetails({stop,plan,checks,onClose,onSwap,canSwap,initialView='overview',onSelect,onTiming,onBookingTiming,routeScope,bookingScope,savedAreas,onSaveArea,signedIn}) {
   const cache=useQueryClient();
   const [view,setView]=useState(initialView);
   const filled=plan.stops.filter(s=>s.item);
@@ -58,7 +58,7 @@ export function PlaceDetails({stop,plan,checks,onClose,onSwap,canSwap,initialVie
       <div className="pg-detail-body"><div className="pg-place-heading"><h2 id="place-details-title">{place.name}</h2><p><Icon name="pin" size={16}/>{place.address}</p></div>
         {view==='overview'&&place.description&&<p className="pg-description">{place.description}</p>}
         {view==='overview'&&!!place.tagNames?.length&&<div className="pg-tags">{place.tagNames.map(tag=><span key={tag}>{tag}</span>)}</div>}
-        {view==='booking'?<BookingAction scope={bookingScope} context={routeScope} plan={plan} stop={stop} place={place}/>:view==='route'?<RouteGuide onSaveArea={onSaveArea} signedIn={signedIn} savedAreas={savedAreas} routeScope={routeScope} plan={stop.id==='shortlist-place'?{...plan,stops:[stop]}:plan} checks={checks} initialStopId={stop.id} onTiming={onTiming}/>:<>
+        {view==='booking'?<BookingAction onTiming={onBookingTiming||onTiming} scope={bookingScope} context={routeScope} plan={plan} stop={stop} place={place}/>:view==='route'?<RouteGuide onSaveArea={onSaveArea} signedIn={signedIn} savedAreas={savedAreas} routeScope={routeScope} plan={stop.id==='shortlist-place'?{...plan,stops:[stop]}:plan} checks={checks} initialStopId={stop.id} onTiming={onTiming}/>:<>
         {view==='practical'&&<section className={`pg-hours ${hourTone(report?.hours?.status)}`}><div className="pg-section-title"><Icon name="clock" size={20}/><h3>{checks.status==='loading'?'Checking your timing…':hourLabel(report?.hours?.status)}</h3></div><p>{report?.hours?.summary||report?.error||'No usable weekly hours were supplied for this place.'}</p>{report?.hours?.intervals&&<strong>{dateLabel(plan.request.date)} · {periods(report.hours.intervals)}</strong>}<small>Reported weekly schedule. Special dates may differ.</small>{place.hours&&<div className="pg-open-hours"><h4>Reported weekly hours</h4><dl className="pg-week">{Object.entries(place.hours).map(([day,rows])=><div key={day}><dt>{day}</dt><dd>{periods(rows)}</dd></div>)}</dl></div>}{(hourTone(report?.hours?.status)==='attention'||!stop.start)&&onTiming&&<button className="pg-link" onClick={onTiming}>Adjust the visiting time <Icon name="clock" size={15}/></button>}{hourTone(report?.hours?.status)==='attention'&&canSwap&&<button className="pg-link" onClick={onSwap}>Find another place <Icon name="arrow" size={15}/></button>}</section>}
         {view==='practical'&&<VenueMenuEvidence place={place}/>}
         <VenueLinks place={place}/><VenueContact place={place} scope={bookingScope} context={[routeScope,stop.id,plan.request.date]}/>

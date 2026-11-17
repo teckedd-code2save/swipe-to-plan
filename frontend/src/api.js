@@ -1,3 +1,4 @@
+import {readReservationStream} from './reservation-stream.js';
 import {readPlanStream} from './plan-stream.js';
 import {usageSession} from './usage.js';
 async function json(url, options = {}) {
@@ -9,6 +10,7 @@ async function json(url, options = {}) {
 const post = (body) => ({ method: "POST", body: JSON.stringify(body) });
 const dayRequest = (token, method='GET', body) => ({ method, headers: {'content-type':'application/json', authorization:`Bearer ${token}`}, ...(body === undefined ? {} : {body:JSON.stringify(body)}), signal:AbortSignal.timeout(45000) });
 const bookingRequest=(scope,suffix='',method='GET',body,signal)=>json(`/api/${scope.type==='day'?'days':'account/plans'}/${encodeURIComponent(scope.id)}/bookings${suffix}`,{method,...(body?{body:JSON.stringify(body)}:{}),...(scope.type==='day'?{headers:{authorization:`Bearer ${scope.token}`}}:{}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(25000)]):AbortSignal.timeout(25000)});
+const reservationRequest=async(url,options,signal,onEvent)=>readReservationStream(await fetch(url,{...options,headers:{'content-type':'application/json',accept:onEvent?'application/x-ndjson':'application/json',...(!navigator.globalPrivacyControl?{'x-unstressed-session':usageSession()}:{}),...options.headers},signal:signal?AbortSignal.any([signal,AbortSignal.timeout(45000)]):AbortSignal.timeout(45000)}),onEvent);
 export const api = {
   listPlanInvitations:(id,signal)=>json(`/api/account/plans/${encodeURIComponent(id)}/invitations`,{signal}),
   inviteToPlan:(id,body,signal)=>json(`/api/account/plans/${encodeURIComponent(id)}/invitations`,{...post(body),signal}),
@@ -55,10 +57,10 @@ export const api = {
   circleInvite:(id,token)=>json(`/api/circle-invites/${encodeURIComponent(id)}`,{headers:{'x-circle-invite':token}}),
   joinCircle:(id,body)=>json(`/api/account/circles/${encodeURIComponent(id)}/join`,post(body)),
   circlePerson:(id,memberId,person)=>json(`/api/account/circles/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}`,{method:'PATCH',body:JSON.stringify(person)}),
-  reservationForm:(id,signal)=>json(`/api/places/${encodeURIComponent(id)}/reservation-form`,{signal:signal?AbortSignal.any([signal,AbortSignal.timeout(45000)]):AbortSignal.timeout(45000)}),
+  reservationForm:(id,signal,onEvent)=>reservationRequest(`/api/places/${encodeURIComponent(id)}/reservation-form`,{},signal,onEvent),
   closeReservationFormPreview:(id,previewId)=>json(`/api/places/${encodeURIComponent(id)}/reservation-form/close`,{...post({previewId}),keepalive:true}),
-  reservationFormDestination:(id,body,signal)=>json(`/api/places/${encodeURIComponent(id)}/reservation-form/destination`,{...post(body),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(45000)]):AbortSignal.timeout(45000)}),
-  reservationFormPreview:(id,body,signal)=>json(`/api/places/${encodeURIComponent(id)}/reservation-form/preview`,{...post(body),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(45000)]):AbortSignal.timeout(45000)}),
+  reservationFormDestination:(id,body,signal,onEvent)=>reservationRequest(`/api/places/${encodeURIComponent(id)}/reservation-form/destination`,post(body),signal,onEvent),
+  reservationFormPreview:(id,body,signal,onEvent)=>reservationRequest(`/api/places/${encodeURIComponent(id)}/reservation-form/preview`,post(body),signal,onEvent),
   contactEvidence:(id,signal)=>json(`/api/places/${encodeURIComponent(id)}/contact-evidence`,{signal:signal?AbortSignal.any([signal,AbortSignal.timeout(25000)]):AbortSignal.timeout(25000)}),
   menuEvidence:(id,signal)=>json(`/api/places/${encodeURIComponent(id)}/menu`,{signal}),
   place:(id,signal)=>json(`/api/places/${encodeURIComponent(id)}`,{signal}),
