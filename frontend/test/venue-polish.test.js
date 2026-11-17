@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 const source=file=>readFile(new URL(`../src/${file}`,import.meta.url),'utf8');
 test('venue overview keeps detailed evidence in the practical tab and compact contact disclosure',async()=>{
  const code=await source('PlaceGuide.jsx');
- assert.match(code,/<VenueContact compact/);
+ assert.doesNotMatch(code,/<VenueContact compact/); // Contact evidence lives in the manual enquiry, not repeated in overview.
  assert.doesNotMatch(code,/view!=='practical'&&<VenueMenuEvidence/);
  assert.doesNotMatch(code,/report\?\.error\|\|/);
  assert.match(code,/aria-label="Close place details" onClick=\{onClose\}><Icon name="close"/);

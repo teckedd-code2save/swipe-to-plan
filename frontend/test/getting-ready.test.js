@@ -106,7 +106,7 @@ test('marker taps show the exact visit evidence and nested decisions reuse one s
   await render();await act(async()=>maps[0].events.onSelectStop('second-drinks'));
   assert.match(document.querySelector('.gr-sheet-header').textContent,/Stop 2 · 20:00–21:00/);assert.match(document.querySelector('.gr-hours').textContent,/second visit is reported closed/);assert.doesNotMatch(document.querySelector('.gr-hours').textContent,/first visit fits/);
   await click('Contact & bookingVenue details, enquiry and your reports');assert.equal(document.querySelectorAll('dialog').length,1);assert.ok(document.querySelector('.gr-compact-contact'));
-  await click('Prepare enquiry & track replyYou review the details and make contact.');assert.match(document.querySelector('textarea').value,/20:00/);assert.match(document.querySelector('.pg-enquiry').textContent,/Nothing sent or booked/);assert.equal(document.querySelectorAll('a[href^="tel:"]').length,0);
+  await click('Prepare enquiry & track replyYou review the details and make contact.');assert.match(document.querySelector('textarea').value,/20:00/);assert.match(document.querySelector('.pg-enquiry').textContent,/Nothing has been sent or booked/);assert.equal(document.querySelectorAll('a[href^="tel:"]').length,0);
   await click('Back to previous sheet');await click('Back to previous sheet');assert.ok(document.querySelector('.gr-hours'));await close();assert.equal(maps.at(-1).selected,'second-drinks');
 });
 test('second-visit directions originate at the previous selected stop and disabled estimates stay absent',async()=>{
