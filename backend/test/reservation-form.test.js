@@ -112,3 +112,15 @@ test('same-site published booking link redirect also requires explicit cross-dom
  const api=createReservationForms({config:{},places:{details:async()=>({entityId:id,contact:{website:{url:initial,source:{entityId:id,field:'properties.website'}}}})},run:async(_,job)=>job({goto:async to=>{current=to===expected?target:to;},url:()=>current,evaluate:async fn=>{assert.notEqual(current,target);scans++;return ['inspectForms','inspectWixForms'].includes(fn.name)?[]:[{url:expected,label:'Book'}];}})});
  const result=await api.discover(id);assert.ok(scans>0);assert.equal(result.candidates[0].url,target);assert.equal(result.candidates[0].redirectedFrom,expected);assert.deepEqual(result.forms,[]);
 });
+
+test('website transport failures do not falsely claim HTTPS certificate failure or leak raw errors',async()=>{
+ const {reservationDiscoveryFailure,reservationPageFailure}=await import('../src/reservation-form.js');
+ for(const [error,code] of [[Error('net::ERR_HTTP2_PROTOCOL_ERROR at https://private.test/?secret=x'),'page_connection_failed'],[Object.assign(Error('Navigation timeout'),{name:'TimeoutError'}),'page_timeout'],[Error('net::ERR_CERT_DATE_INVALID'),'page_tls_failed'],[Error('unexpected private detail'),'page_unavailable']]){
+  const result=reservationDiscoveryFailure(reservationPageFailure(error));assert.equal(result.code,code);assert.doesNotMatch(JSON.stringify(result),/private|secret|net::/);
+ }
+});
+test('error HTTP responses are not scanned as venue booking pages',async()=>{
+ let scanned=false;
+ const api=createReservationForms({config:{},places:{details:async()=>({entityId:id,contact:{website:{url,source:{entityId:id,field:'properties.website'}}}})},run:async(_,job)=>job({goto:async()=>({status:()=>503}),evaluate:async()=>{scanned=true;return [];}})});
+ await assert.rejects(api.discover(id),e=>e.code==='page_http_error');assert.equal(scanned,false);
+});
