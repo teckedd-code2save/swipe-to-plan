@@ -103,3 +103,9 @@ test('unmount aborts capability lookup and ignores late availability',async()=>{
  assert.ok(button('Try again'));assert.ok(button('Back to booking options'));assert.equal(document.querySelector('a[href="https://example.com/"]').textContent.trim(),'Open venue website');
  assert.equal(requests.some(r=>r.url.endsWith('/preview')),false);await click('Back to booking options');assert.equal(document.querySelector('dialog'),null);
  });
+
+ test('Escape in booking browser closes only its own dialog, not the parent place modal',async()=>{
+ let parentCancelled=0;await render();await act(async()=>root.render(React.createElement('div',{onCancel:()=>parentCancelled++},React.createElement(Preview,props))));
+ await click('Find booking form');await act(async()=>document.querySelector('dialog.booking-workspace').dispatchEvent(new Event('cancel',{bubbles:false,cancelable:true})));
+ assert.equal(parentCancelled,0);assert.equal(document.querySelector('dialog.booking-workspace'),null);assert.ok(button('Find booking form'));
+ });

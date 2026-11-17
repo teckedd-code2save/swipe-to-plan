@@ -81,7 +81,7 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
   return <>
     <div className="booking-launch"><div><strong>Book online</strong><span>Find and prepare the venue’s booking form.</span></div><button ref={trigger} type="button" className="pl-button" onClick={discover} disabled={locked||!snapshot.entityId}><Icon name="arrowUpRight" size={18}/>Find booking form</button></div>
     {!open&&!fillAllowed&&onTiming&&<button type="button" className="pg-link" onClick={onTiming}>Set visit time</button>}
-    {open&&createPortal(<dialog ref={workspace} className="booking-workspace" aria-label={`Booking browser for ${snapshot.name}`} onCancel={e=>{e.preventDefault();cancel();}}>
+    {open&&createPortal(<dialog ref={workspace} className="booking-workspace" aria-label={`Booking browser for ${snapshot.name}`} onCancel={e=>{e.preventDefault();e.stopPropagation();cancel();}} onKeyDown={e=>e.stopPropagation()}>
       <header className="booking-browser-bar"><Icon name="lock" size={18}/><div><strong>{snapshot.name}</strong><span>{discovery?.sourceUrl?new URL(discovery.sourceUrl).hostname:'Booking browser'} · No request sent</span></div><button type="button" className="booking-icon" onClick={discover} disabled={locked} aria-label="Find booking form" title="Retry search"><Icon name="undo"/></button><button type="button" className="booking-icon" onClick={cancel} aria-label="Close form preview" title="Close"><Icon name="close"/></button></header>
       <div className="booking-workspace-body">
       <section className="booking-browser-canvas" aria-label="Read-only browser view">
