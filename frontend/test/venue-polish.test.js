@@ -9,7 +9,7 @@ test('venue overview keeps detailed evidence in the practical tab and compact co
  assert.doesNotMatch(code,/report\?\.error\|\|/);
  assert.match(code,/aria-label="Close place details" onClick=\{onClose\}><Icon name="close"/);
  assert.match(code,/view==='practical'&&<>[\s\S]*<VenueMenuEvidence place=\{place\}/);
- assert.match(code,/pg-sheet-header/);
+ assert.match(code,/<div className="pg-sheet-header">/); // Avoid the app-wide header height/navigation rules.
  assert.match(code,/aria-label="Visit essentials"/);
  assert.match(code,/<summary>Full weekly schedule<\/summary>/);
  assert.doesNotMatch(code,/pg-photo/);
