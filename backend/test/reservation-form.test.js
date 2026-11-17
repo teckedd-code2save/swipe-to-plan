@@ -75,3 +75,40 @@ test('preview never writes to readonly native backing inputs of custom widgets',
  assert.equal(result.fields[0].status,'unsupported_control');
  assert.equal(el.value,'11/17/2026');assert.equal(result.submitted,false);
 });
+
+function redirectFixture({redirects={},website='http://www.capitolgh.com/',clock=()=>0}={}){
+ let current,scans=0;const visits=[];
+ const api=createReservationForms({config:{},previewConfig:null,now:clock,places:{details:async()=>({entityId:id,contact:{website:{url:website,source:{entityId:id,field:'properties.website'}}}})},run:async(_,job)=>job({goto:async target=>{visits.push(target);current=redirects[target]||target;},url:()=>current,evaluate:async fn=>{scans++;return fn.name==='inspectForms'?structuredClone(raw):[];}})});
+ return {api,visits,scans:()=>scans};
+}
+test('cross-domain redirect returns explicit expiring review candidate, not trusted fields',async()=>{
+ let time=0;const target='https://capitolghana.com/';
+ const {api,visits,scans}=redirectFixture({redirects:{'https://www.capitolgh.com/':target},clock:()=>time});
+ const first=await api.discover(id);
+ assert.equal(first.status,'no_supported_form');assert.deepEqual(first.forms,[]);assert.equal(scans(),0);assert.equal(first.submitted,false);
+ assert.equal(first.sourceUrl,'https://www.capitolgh.com/');assert.deepEqual(first.unsupported,['destination_review_required']);
+ const candidate=first.candidates[0];assert.equal(candidate.relationship,'website_redirect');assert.equal(candidate.url,target);assert.equal(candidate.redirectedFrom,first.sourceUrl);
+ await assert.rejects(api.inspectDestination('other',{candidateId:candidate.id}),/expired/);
+ await assert.rejects(api.inspectDestination(id,{candidateId:candidate.id,url:target}),/Select/);
+ await assert.rejects(api.preview(id,{formId:candidate.id,fields:{},consent:true}),/expired/);
+ const next=await api.inspectDestination(id,{candidateId:candidate.id});assert.equal(next.status,'forms_found');assert.equal(next.sourceUrl,target);assert.deepEqual(visits,['https://www.capitolgh.com/',target]);
+ time=300001;await assert.rejects(api.inspectDestination(id,{candidateId:candidate.id}),/expired/);
+});
+test('each new cross-domain redirect needs review; canonical www redirect does not',async()=>{
+ const {api,scans}=redirectFixture({redirects:{'https://www.capitolgh.com/':'https://capitolghana.com/','https://capitolghana.com/':'https://another.example/'}});
+ const first=await api.discover(id),second=await api.inspectDestination(id,{candidateId:first.candidates[0].id});
+ assert.equal(second.candidates[0].url,'https://another.example/');assert.equal(second.candidates[0].relationship,'website_redirect');assert.equal(scans(),0);
+ const canonical=redirectFixture({redirects:{'https://www.capitolgh.com/':'https://capitolgh.com/'}});
+ assert.equal((await canonical.api.discover(id)).status,'forms_found');
+});
+test('unsafe redirect destinations never become selectable candidates',async()=>{
+ for(const target of ['http://capitolghana.com/','https://127.0.0.1/','https://169.254.169.254/','https://user:password@capitolghana.com/','file:///etc/passwd']){
+  const {api,scans}=redirectFixture({redirects:{'https://www.capitolgh.com/':target}});
+  await assert.rejects(api.discover(id));assert.equal(scans(),0);
+ }
+});
+test('same-site published booking link redirect also requires explicit cross-domain review',async()=>{
+ let current,scans=0;const initial='https://venue.example/',expected='https://venue.example/book',target='https://other.example/';
+ const api=createReservationForms({config:{},places:{details:async()=>({entityId:id,contact:{website:{url:initial,source:{entityId:id,field:'properties.website'}}}})},run:async(_,job)=>job({goto:async to=>{current=to===expected?target:to;},url:()=>current,evaluate:async fn=>{assert.notEqual(current,target);scans++;return ['inspectForms','inspectWixForms'].includes(fn.name)?[]:[{url:expected,label:'Book'}];}})});
+ const result=await api.discover(id);assert.ok(scans>0);assert.equal(result.candidates[0].url,target);assert.equal(result.candidates[0].redirectedFrom,expected);assert.deepEqual(result.forms,[]);
+});

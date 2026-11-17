@@ -152,6 +152,17 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
   ]);
   return {forms,links};
  }
+ // A navigation is evidence of a redirect, not proof that the new site belongs
+ // to the venue. Never inspect or authorize its fields until the user selects
+ // this server-held, expiring destination through the normal candidate flow.
+ function redirectedDestination(entityId,from,value){
+  const target=menuUrl(value);
+  if(target.protocol!=='https:')throw new ReservationFormError('destination_changed');
+  const id=randomUUID();
+  destinations.set(id,{entityId,url:target.href,expires:now()+5*60000});
+  expire();
+  return {status:'no_supported_form',previewAvailable:true,sourceUrl:from,forms:[],candidates:[{id,url:target.href,label:'Website redirected here — review before continuing',relationship:'website_redirect',redirectedFrom:from}],unsupported:['destination_review_required'],submitted:false};
+ }
  async function discoverAt(entityId,initial,followSameSite,options={}){
   const progress=(stage,message)=>options.emit?.({type:"progress",stage,message});
   progress("connecting","Opening a read-only booking browser…");
@@ -161,11 +172,11 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
    progress("loading","Loading the venue website securely…");
    await page.goto(initial,{waitUntil:'domcontentloaded',timeout:20000});
    let url=page.url();menuUrl(url);
-   if(!canonicalContactRedirect(new URL(initial),new URL(url)))throw new ReservationFormError('destination_changed');
+   if(!canonicalContactRedirect(new URL(initial),new URL(url)))return redirectedDestination(entityId,initial,url);
    progress("inspecting","Looking for published reservation fields and booking links…");
    let {forms,links}=await scan(page);
    if(!forms.length&&followSameSite){const next=links.find(c=>{try{return new URL(reservationPageUrl(c.url)).origin===new URL(url).origin&&reservationPageUrl(c.url)!==url;}catch{return false;}});
-    if(next){progress("loading","Opening the published booking page…");const expected=reservationPageUrl(next.url);await page.goto(expected,{waitUntil:'domcontentloaded',timeout:20000});url=page.url();if(!canonicalContactRedirect(new URL(expected),new URL(url)))throw new ReservationFormError('destination_changed');const checked=await scan(page);forms=checked.forms;links=[...links,...checked.links];}
+    if(next){progress("loading","Opening the published booking page…");const expected=reservationPageUrl(next.url);await page.goto(expected,{waitUntil:'domcontentloaded',timeout:20000});url=page.url();if(!canonicalContactRedirect(new URL(expected),new URL(url)))return redirectedDestination(entityId,expected,url);const checked=await scan(page);forms=checked.forms;links=[...links,...checked.links];}
    }
    const seen=new Set(),candidates=[];
    for(const item of links){if(candidates.length>=30)break;let target;try{target=new URL(reservationPageUrl(item.url));if(target.href===url||seen.has(target.href))continue;}catch{continue;}

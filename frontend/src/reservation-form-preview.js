@@ -20,7 +20,7 @@ export function normalizeReservationForms(value) {
   const candidateIds=new Set();
   const candidates=rawCandidates.map(candidate=>{
     const url=safeContactWebsite(candidate?.url),id=reservationPreviewId(candidate?.id);
-    if(!id||candidateIds.has(id)||!url||!text(candidate.label,300)||!['same_site','booking_partner'].includes(candidate.relationship))throw Error('Invalid booking destination.');
+    if(!id||candidateIds.has(id)||!url||!text(candidate.label,300)||!['same_site','booking_partner','website_redirect'].includes(candidate.relationship))throw Error('Invalid booking destination.');
     candidateIds.add(id);return {id,url,label:candidate.label||'Booking page',relationship:candidate.relationship};
   });
   return {status:value.status,sourceUrl,forms,candidates,unsupported,previewAvailable:value.previewAvailable===true};
@@ -55,6 +55,7 @@ export function normalizeReservationPreview(value) {
 
 export function unsupportedFormMessage(discovery) {
   const codes=discovery.unsupported||[];
+  if(codes.includes('destination_review_required'))return 'The website redirected to another address. Review it before continuing; no reservation details have been sent.';
   if(codes.includes('custom_calendar'))return 'This page uses a custom calendar that cannot be filled here yet.';
   if(codes.includes('embedded_forms'))return 'The booking form is embedded. Inspect its published booking page below, if available.';
   return discovery.candidates?.length?'Choose a published booking page below to look for the form.':'No fillable booking form found. Use the venue website to continue.';
