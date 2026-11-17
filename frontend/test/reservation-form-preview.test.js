@@ -41,3 +41,11 @@ test('bounded widget fields preserve reviewed date, time and party without suppl
  assert.deepEqual(seedReservationFields(response.forms[0],{date:'2026-12-01',localTime:'19:30',party:{adults:2,children:0}},''),{'wix-date':'2026-12-01','wix-time':'19:30','wix-partySize':'2'});
  assert.deepEqual(seedReservationFields(response.forms[0],{},''),{'wix-date':'','wix-time':'','wix-partySize':''});
 });
+
+test('cross-domain redirect is a review candidate, not an authorized form',async()=>{
+ const {unsupportedFormMessage}=await import('../src/reservation-form-preview.js');
+ const result=normalizeReservationForms({status:'no_supported_form',sourceUrl:'https://www.capitolgh.com/',forms:[],candidates:[{id:'e81234ab-4123-4123-8123-123456789abc',url:'https://capitolghana.com/',label:'Website redirected here — review before continuing',relationship:'website_redirect'}],unsupported:['destination_review_required'],previewAvailable:true,submitted:false});
+ assert.equal(result.candidates[0].relationship,'website_redirect');assert.deepEqual(result.forms,[]);
+ assert.match(unsupportedFormMessage(result),/Review it before continuing/);
+ assert.throws(()=>normalizeReservationForms({...result,candidates:[{...result.candidates[0],url:'javascript:alert(1)'}]}));
+});

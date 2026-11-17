@@ -97,9 +97,9 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
     {discovery&&<div>
       {discovery.sourceUrl&&<a className="pg-link" href={discovery.sourceUrl} target="_blank" rel="noopener noreferrer">Venue booking page <Icon name="arrowUpRight" size={16}/></a>}
       {!!discovery.candidates.length&&<div><h4>Choose a booking page</h4><ul>{discovery.candidates.map(candidate=><li key={candidate.id}>
-        <strong>{candidate.label}</strong> · {candidate.relationship==='booking_partner'?'External booking provider':'Venue website'}<br/>
+        <strong>{candidate.label}</strong> · {candidate.relationship==='website_redirect'?'Redirected website':candidate.relationship==='booking_partner'?'External booking provider':'Venue website'}<br/>
         <a href={candidate.url} target="_blank" rel="noopener noreferrer">{new URL(candidate.url).hostname}</a><br/>
-        <button type="button" className="pl-secondary-button" disabled={locked} onClick={()=>inspectDestination(candidate)}>Inspect this booking page</button>
+        <button type="button" className="pl-secondary-button" disabled={locked} onClick={()=>inspectDestination(candidate)}>{candidate.relationship==='website_redirect'?'Continue to this website':'Inspect this booking page'}</button>
       </li>)}</ul></div>}
       {discovery.unsupported.includes('visit_time_not_mapped')&&<p role="status">This form’s date or time control could not be mapped. Check the visit timing on the venue page; the preview is incomplete.</p>}
       {!discovery.forms.length?<p role="status">{unsupportedFormMessage(discovery)}</p>:<>
