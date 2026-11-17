@@ -46,3 +46,21 @@ test('published partner can be inspected with no native form and without sending
  await render();await click('Find booking form');assert.match(document.body.textContent,/External booking provider/);assert.match(document.body.textContent,/booking form is embedded/);assert.equal(button('Fill form without submitting'),undefined);
  await click('Inspect this booking page');const destination=requests.find(r=>r.url.endsWith('/destination'));assert.deepEqual(destination.body,{candidateId:'e81234ab-4123-4123-8123-123456789abc'});assert.equal(document.querySelector('input[type=checkbox]').checked,false);assert.equal(button('Fill form without submitting').disabled,true);assert.equal(document.querySelector('input[type=date]').value,'2026-12-01');
 });
+test('untimed enquiry can discover forms but cannot fill and offers timing action',async()=>{
+ let timing=0;await render({fillAllowed:false,onTiming:()=>{timing++;},snapshot:{...props.snapshot,date:null,localTime:null}});
+ assert.ok(button('Find booking form'));assert.ok(button('Set visit time'));await click('Find booking form');assert.equal(document.querySelector('input[type=checkbox]').disabled,true);assert.equal(button('Fill form without submitting').disabled,true);assert.match(document.body.textContent,/You can find the form now/);
+ await click('Set visit time');assert.equal(timing,1);assert.equal(requests.some(r=>r.url.endsWith('/preview')),false);
+ await render({fillAllowed:true,snapshot:{...props.snapshot,date:'2026-12-01',localTime:'19:00'}});await click('Find booking form');assert.equal(document.querySelector('input[type=checkbox]').disabled,false);assert.equal(document.querySelector('input[type=checkbox]').checked,false);
+});
+test('discovery renders actual streamed frames read-only and clears them on close',async()=>{
+ const normal=globalThis.fetch;let streamController;globalThis.fetch=async(url,options={})=>{
+  if(!url.endsWith('/reservation-form'))return normal(url,options);
+  requests.push({url,options});return new Response(new ReadableStream({start(c){streamController=c;}}),{headers:{'content-type':'application/x-ndjson'}});
+ };
+ await render();await click('Find booking form');assert.equal(requests.at(-1).options.headers.accept,'application/x-ndjson');
+ await act(async()=>{streamController.enqueue(new TextEncoder().encode('{"type":"progress","stage":"loading"}\n{"type":"frame","imageDataUrl":"data:image/jpeg;base64,YQ=="}\n'));});
+ const panel=document.querySelector('[aria-label="Read-only browser view"]');assert.match(panel.textContent,/Opening the venue website/);assert.ok(panel.querySelector('img'));assert.equal(panel.querySelector('iframe'),null);
+ await click('Close form preview');assert.equal(document.querySelector('[aria-label="Read-only browser view"]'),null);
+ await act(async()=>{streamController.enqueue(new TextEncoder().encode('{"type":"result","result":{"status":"no_supported_form","forms":[]}}\n'));streamController.close();});
+ assert.equal(document.querySelector('[aria-label="Read-only browser view"]'),null);
+});

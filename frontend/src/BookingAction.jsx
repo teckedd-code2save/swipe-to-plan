@@ -8,7 +8,7 @@ export default function BookingAction(props) {
   // Remount, cancel and discard reviewed details on every identity or itinerary change.
   return <BookingSession key={JSON.stringify([props.scope,props.context,props.plan,props.stop,props.place?.links,props.place?.contact],(key,value)=>['retrievedAt','providerUpdatedAt'].includes(key)?undefined:value)} {...props}/>;
 }
-function BookingSession({scope={allowed:true,type:'guest'},plan,stop,place,context,compact=false}) {
+function BookingSession({scope={allowed:true,type:'guest'},plan,stop,place,context,compact=false,onTiming}) {
   const state=useBookingActions(scope),snapshot=bookingSnapshot(plan,stop,state.durable?stop.item:place);
   const [draft,setDraft]=useState(()=>bookingMessage(snapshot)),[channel,setChannel]=useState('copy'),[reviewed,setReviewed]=useState(null),[record,setRecord]=useState(null),[message,setMessage]=useState(''),[reference,setReference]=useState(''),[outcome,setOutcome]=useState('awaiting_reply');
   const locked=state.busy||state.blocked;
@@ -47,7 +47,7 @@ function BookingSession({scope={allowed:true,type:'guest'},plan,stop,place,conte
     <label>Request type<select value={kind} disabled={locked} aria-describedby={!timed?requirementId:undefined} onChange={e=>{if(e.target.value==='reservation'&&!timed)return;setKind(e.target.value);setReviewed(null);}}><option value="enquiry">General enquiry</option><option value="reservation" disabled={!timed}>Reservation request</option></select></label>
     {!timed&&<p id={requirementId} className="pg-note">{!contactSnapshot.date||!contactSnapshot.localTime?'Set and confirm a future date and visit time in your plan to enable Reservation request.':'Check your plan’s visit details: reservation requests need a future date and time, a valid time zone and party size.'} You can still prepare a general enquiry now. Finding a fillable online form depends on the venue’s website.</p>}
     <label>Message to {contactSnapshot.name}<textarea value={draft} maxLength={2000} rows={compact?5:8} disabled={locked} onChange={e=>{setDraft(e.target.value);setReviewed(null);}}/></label>
-    {kind==='reservation'&&timed&&<ReservationFormPreview snapshot={contactSnapshot} message={draft} disabled={locked}/>}
+    <ReservationFormPreview snapshot={contactSnapshot} message={draft} disabled={locked} fillAllowed={timed} onTiming={onTiming}/>
     <label>Contact channel<select value={channel} disabled={locked} onChange={e=>{setChannel(e.target.value);setReviewed(null);}}><option value="copy">Copy for me to send</option>{contacts.website&&<option value="website">Venue website</option>}{contacts.phone&&<option value="phone">Call venue</option>}</select></label>
     <p>{channel==='website'?`Website: ${contacts.website}`:channel==='phone'?`Phone: ${contacts.phone}`:'Copy only: you choose the recipient when you send.'}</p>
     {compact?<details className="gr-contact-evidence"><summary>Review contact sources</summary><VenueContact place={{entityId:contactSnapshot.entityId,name:contactSnapshot.name,links:contacts}} contact={contactEvidence} contacts={contacts} scope={scope} context={context} allowDial={false} allowWebsite={false}/></details>:<VenueContact place={{entityId:contactSnapshot.entityId,name:contactSnapshot.name,links:contacts}} contact={contactEvidence} contacts={contacts} scope={scope} context={context} allowDial={false} allowWebsite={false}/>}

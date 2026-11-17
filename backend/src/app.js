@@ -1,3 +1,4 @@
+import {reservationTransport} from './reservation-stream.js';
 import {createReservationForms,reservationDiscoveryFailure} from './reservation-form.js';
 import {executionCapabilities} from './execution-ledger.js';
 import {compareOpenAreas} from './open-location.js';
@@ -123,18 +124,21 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   }));
   app.get('/api/places/:id/reservation-form',limit(4,'reservation_form'),route(async(req,res)=>{
     if(Object.keys(req.query).length)throw new InputError('Only an exact venue ID is accepted.');
-    try{res.json(await reservationForms.discover(req.params.id));}
-    catch(error){res.status(422).json(reservationDiscoveryFailure(error));}
+    const transport=reservationTransport(req,res);
+    try{await transport.result(await reservationForms.discover(req.params.id,transport.options));}
+    catch(error){transport.error(reservationDiscoveryFailure(error));}
   }));
   app.post('/api/places/:id/reservation-form/destination',limit(4,'reservation_destination'),route(async(req,res)=>{
     if(req.get('origin')!==accounts.origin||!req.is('application/json'))return res.status(403).json({error:'Select this booking page from Unstressed.'});
-    try{res.json(await reservationForms.inspectDestination(req.params.id,req.body));}
-    catch(error){res.status(422).json(reservationDiscoveryFailure(error));}
+    const transport=reservationTransport(req,res);
+    try{await transport.result(await reservationForms.inspectDestination(req.params.id,req.body,transport.options));}
+    catch(error){transport.error(reservationDiscoveryFailure(error));}
   }));
   app.post('/api/places/:id/reservation-form/preview',limit(4,'reservation_preview'),route(async(req,res)=>{
     if(req.get('origin')!==accounts.origin||!req.is('application/json'))return res.status(403).json({error:'Open this preview from Unstressed.'});
-    try{const result=await reservationForms.preview(req.params.id,req.body);if(res.destroyed){if(result.previewId)await reservationForms.closePreview(result.previewId);return;}res.json(result);}
-    catch{res.status(422).json({error:'Could not safely fill this form. Locate it again or use the venue website. Nothing was submitted.'});}
+    const transport=reservationTransport(req,res);
+    try{await transport.result(await reservationForms.preview(req.params.id,req.body,transport.options),reservationForms.closePreview);}
+    catch{transport.error({code:'preview_failed',error:'Could not safely fill this form. Locate it again or use the venue website. Nothing was submitted.'});}
   }));
   app.post('/api/places/:id/reservation-form/close',limit(12,'reservation_preview_close'),route(async(req,res)=>{
     if(req.get('origin')!==accounts.origin||!req.is('application/json'))return res.status(403).json({error:'Close this preview from Unstressed.'});

@@ -1,3 +1,4 @@
+import {startReservationScreencast} from './reservation-stream.js';
 import {createHash,randomUUID} from 'node:crypto';
 import puppeteer from 'puppeteer-core';
 import {menuUrl,publicAddress} from './menu-evidence.js';
@@ -11,6 +12,7 @@ export class ReservationFormError extends Error {
 const discoveryMessages={
  no_website:'No provider-linked website is available for this venue. Use its contact details instead.',
  provider_unavailable:'Venue website details could not be loaded. Try again shortly.',
+ visual_unavailable:'This browser could not start a live visual stream. No reservation details were sent. Try again or use the venue website.',
  browser_unavailable:'The booking-form browser is unavailable. Try again shortly; no reservation details were sent.',
  page_unavailable:'The venue booking page could not be loaded securely over HTTPS. Open the venue website to check it; no reservation details were sent.',
  destination_changed:'The website redirected to a different destination. Review the venue website manually before continuing.',
@@ -57,11 +59,14 @@ export function inspectForms(){
  return [...document.forms].slice(0,12).map((form,index)=>({index,action:form.action,method:form.method,fields:[...form.querySelectorAll(inputs)].map((el,elementIndex)=>({elementIndex,name:el.name,type:el.tagName==='SELECT'?'select':el.tagName==='TEXTAREA'?'textarea':el.type,label:[...(el.labels||[])].map(l=>l.textContent.trim()).join(' ')||el.getAttribute('aria-label')||el.placeholder||el.name,autocomplete:el.autocomplete,required:el.required,disabled:el.disabled,visible:!!(el.getClientRects().length)&&getComputedStyle(el).visibility!=='hidden',options:el.tagName==='SELECT'?[...el.options].slice(0,100).map(o=>({value:o.value,label:o.text})):undefined})).filter(f=>f.visible&&!f.disabled&&!/leave (?:this )?(?:field )?(?:empty|blank)|do not fill/i.test(f.label)&&!['hidden','submit','button','reset','file','password','checkbox','radio','image'].includes(f.type))})).filter(f=>f.fields.length>0&&f.fields.length<=30);
 }
 export async function browserSession(config,job){
- const {resolve=lookup,liveView=false,...connection}=config;
- const browser=await puppeteer.connect({...connection,protocolTimeout:20000});
- let page,retained=false;
- const release=async()=>{await page?.close().catch(()=>{});await browser.disconnect();};
+ const {resolve=lookup,liveView=false,emit,signal,connect=puppeteer.connect.bind(puppeteer),...connection}=config;
+ signal?.throwIfAborted();
+ const browser=await connect({...connection,protocolTimeout:20000});
+ let page,retained=false,stopFrames;
+ const release=async()=>{await stopFrames?.();await page?.close().catch(()=>{});await browser.disconnect();};
+ const aborted=()=>{release().catch(()=>{});};signal?.addEventListener("abort",aborted,{once:true});
  try{
+  signal?.throwIfAborted();
   page=await browser.newPage();
   await page.setViewport({width:1100,height:900});
   await page.setRequestInterception(true);
@@ -85,6 +90,8 @@ export async function browserSession(config,job){
     return req.continue().catch(()=>{});
    }catch{return req.abort().catch(()=>{});}
   });
+  if(emit){try{stopFrames=await startReservationScreencast(page,emit);}catch{throw new ReservationFormError("visual_unavailable");}}
+  signal?.throwIfAborted();
   // Keep all mutation methods blocked even during form discovery. A site requiring
   // a POST for availability must report unsupported, not quietly submit it.
   const result=await job(page,async()=>{
@@ -95,15 +102,18 @@ export async function browserSession(config,job){
    await page.evaluate(()=>{window.stop();document.addEventListener('click',e=>{if(e.target.closest?.('a,button,input[type=submit],input[type=image],input[type=reset]')){e.preventDefault();e.stopImmediatePropagation();}},true);document.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();e.stopImmediatePropagation();}},true);document.addEventListener('submit',e=>{e.preventDefault();e.stopImmediatePropagation();},true);HTMLFormElement.prototype.submit=function(){throw Error('Preview only');};HTMLFormElement.prototype.requestSubmit=function(){throw Error('Preview only');};});
    return blocked;
   });
+  signal?.throwIfAborted();
+  await stopFrames?.();
   if(liveView&&result.networkDisconnected===true){
    const cdp=await page.createCDPSession();
    const {devtoolsFrontendUrl}=await cdp.send('Cloudflare.getLiveView',{mode:'tab',expiresInMs:60000});
    const link=new URL(devtoolsFrontendUrl);
    if(link.protocol!=='https:'||link.hostname!=='live.browser.run')throw Error('Untrusted live view URL');
+   signal?.throwIfAborted();
    retained=true;return {...result,liveViewUrl:link.href,release};
   }
   return result;
- }finally{if(!retained)await release();}
+ }finally{signal?.removeEventListener("abort",aborted);if(!retained)await release();}
 }
 export function chromiumPreviewConfig(config,enabled=process.env.RESERVATION_FORM_LIVE_VIEW==='true'){
  if(!enabled||!config?.browserWSEndpoint)return null;
@@ -116,7 +126,7 @@ const cleanForms=(raw,url)=>raw.map(form=>({...form,fields:form.fields.map(field
 export function createReservationForms({places,config=configuredKitesurf(),run=browserSession,now=Date.now,previewConfig=chromiumPreviewConfig(config)}={}){
  const discoveries=new Map(),destinations=new Map(),leases=new Map();let active=0;
  async function closePreview(id){const lease=leases.get(id);if(!lease)return;leases.delete(id);clearTimeout(lease.timer);await lease.release();}
- async function runBound(job,selected=config){if(active+leases.size>=2)throw new ReservationFormError('busy');active++;try{return await run(selected,job);}finally{active--;}}
+ async function runBound(job,selected=config,options={}){options.signal?.throwIfAborted();if(active+leases.size>=2)throw new ReservationFormError('busy');active++;try{return await run({...selected,...options},job);}finally{active--;}}
  async function source(entityId){
   const id=locationId(entityId);let place;
   try{place=await places.details(id);}catch{throw new ReservationFormError('provider_unavailable');}
@@ -137,16 +147,20 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
   ]);
   return {forms,links};
  }
- async function discoverAt(entityId,initial,followSameSite){
+ async function discoverAt(entityId,initial,followSameSite,options={}){
+  const progress=(stage,message)=>options.emit?.({type:"progress",stage,message});
+  progress("connecting","Opening a read-only booking browser…");
   let started=false;
   try{return await runBound(async page=>{
    started=true;
+   progress("loading","Loading the venue website securely…");
    await page.goto(initial,{waitUntil:'domcontentloaded',timeout:20000});
    let url=page.url();menuUrl(url);
    if(!canonicalContactRedirect(new URL(initial),new URL(url)))throw new ReservationFormError('destination_changed');
+   progress("inspecting","Looking for published reservation fields and booking links…");
    let {forms,links}=await scan(page);
    if(!forms.length&&followSameSite){const next=links.find(c=>{try{return new URL(reservationPageUrl(c.url)).origin===new URL(url).origin&&reservationPageUrl(c.url)!==url;}catch{return false;}});
-    if(next){const expected=reservationPageUrl(next.url);await page.goto(expected,{waitUntil:'domcontentloaded',timeout:20000});url=page.url();if(!canonicalContactRedirect(new URL(expected),new URL(url)))throw new ReservationFormError('destination_changed');const checked=await scan(page);forms=checked.forms;links=[...links,...checked.links];}
+    if(next){progress("loading","Opening the published booking page…");const expected=reservationPageUrl(next.url);await page.goto(expected,{waitUntil:'domcontentloaded',timeout:20000});url=page.url();if(!canonicalContactRedirect(new URL(expected),new URL(url)))throw new ReservationFormError('destination_changed');const checked=await scan(page);forms=checked.forms;links=[...links,...checked.links];}
    }
    const seen=new Set(),candidates=[];
    for(const item of links){if(candidates.length>=30)break;let target;try{target=new URL(reservationPageUrl(item.url));if(target.href===url||seen.has(target.href))continue;}catch{continue;}
@@ -160,29 +174,35 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
    if(links.some(l=>l.label==='Embedded booking page'))unsupported.push('embedded_forms');
    if(forms.length&&forms.some(f=>!f.fields.some(x=>['date','dateTime'].includes(x.semantic))||!f.fields.some(x=>['time','dateTime'].includes(x.semantic))))unsupported.push('visit_time_not_mapped');
    return {status:forms.length?'forms_found':'no_supported_form',previewAvailable:true,sourceUrl:url,forms:forms.map(({id,fields})=>({id,fields})),candidates,unsupported,submitted:false};
-  });}catch(error){if(error instanceof ReservationFormError)throw error;throw new ReservationFormError(started?'page_unavailable':'browser_unavailable');}
+  },options.emit?(previewConfig||chromiumPreviewConfig(config,true)||config):config,options);}catch(error){if(error instanceof ReservationFormError)throw error;throw new ReservationFormError(started?'page_unavailable':'browser_unavailable');}
  }
- return {enabled:!!config,closePreview,async discover(entityId){
+ return {enabled:!!config,closePreview,async discover(entityId,options={}){
   if(!config)return {status:'disabled',previewAvailable:false,forms:[],candidates:[]};
-  return discoverAt(entityId,await source(entityId),true);
- },async inspectDestination(entityId,body){
+  return discoverAt(entityId,await source(entityId),true,options);
+ },async inspectDestination(entityId,body,options={}){
   if(!config)throw Error('Form preview is not configured.');
   if(!body||typeof body.candidateId!=='string'||Object.keys(body).some(k=>k!=='candidateId'))throw Error('Select a published booking destination.');
   const destination=destinations.get(body.candidateId);
   if(!destination||destination.entityId!==entityId||destination.expires<now())throw new ReservationFormError('expired');
-  return discoverAt(entityId,destination.url,false);
- },async preview(entityId,body){
+  return discoverAt(entityId,destination.url,false,options);
+ },async preview(entityId,body,options={}){
+  const progress=(stage,message)=>options.emit?.({type:"progress",stage,message});
   if(!config)throw Error('Form preview is not configured.');
   if(!body||body.consent!==true||typeof body.formId!=='string'||!body.fields||typeof body.fields!=='object'||Array.isArray(body.fields)||Object.keys(body).some(k=>!['consent','formId','fields'].includes(k)))throw Error('Review the fields and authorize preview first.');
   const saved=discoveries.get(body.formId);
   if(!saved||saved.entityId!==entityId||saved.expires<now())throw Error('This form preview expired. Locate the form again.');
   const fields=saved.form.fields;
   for(const [id,value] of Object.entries(body.fields))if(!fields.some(f=>f.id===id)||typeof value!=='string'||value.length>2000)throw Error('Invalid form field.');
+  progress("connecting","Opening a secure review browser…");
   const result=await runBound(async(page,freeze)=>{
+   progress("loading","Loading the reviewed booking page…");
    await page.goto(saved.sourceUrl,{waitUntil:'domcontentloaded',timeout:20000});
    const form=cleanForms(await page.evaluate(inspectForms),page.url()).find(f=>f.index===saved.form.index);
    if(!form||hash(form)!==saved.fingerprint)throw Error('The form changed. Locate it again before filling.');
+   progress("freezing","Disconnecting the page before entering your details…");
    await freeze();
+   options.signal?.throwIfAborted();
+   progress("filling","Filling reviewed details with networking disabled…");
    const result=await page.evaluate(({index,fields,values})=>{
     const form=document.forms[index],elements=form.querySelectorAll('input,select,textarea');
     return fields.map(field=>{const el=elements[field.elementIndex],value=values[field.id];if(value==null||value==='')return {label:field.label,value:'',status:field.required?'missing_required':'not_provided'};if(el.tagName==='SELECT'&&![...el.options].some(o=>o.value===value))return {label:field.label,value,status:'no_matching_option'};
@@ -193,7 +213,8 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
    },{index:form.index,fields,values:body.fields});
    const screenshot=await page.screenshot({type:'png'});
    return {status:'preview_ready',sourceUrl:saved.sourceUrl,fields:result,screenshotDataUrl:`data:image/png;base64,${Buffer.from(screenshot).toString('base64')}`,submitted:false,networkDisconnected:true,notice:'Filled for review with networking disabled. No request sent. Dynamic form handlers were not triggered.'};
-  },previewConfig||config);
+  },previewConfig||config,options);
+  progress("ready","The filled form is ready for review. Nothing was submitted.");
   if(result.release){
    const {release,...response}=result,id=randomUUID(),expiresAt=new Date(now()+120000).toISOString();
    const timer=setTimeout(()=>{closePreview(id).catch(()=>{});},120000);timer.unref?.();

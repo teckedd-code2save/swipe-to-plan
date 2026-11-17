@@ -1,3 +1,4 @@
+import {resolveBookingReturn,timingReturnKey} from './booking-return.js';
 import {checkedVisit} from './decision-evidence.js';
 import {pinKey,reviseStops} from '../../shared/stop-intents.js';
 import {rememberStops,toggleStopPin,isStopPinned,stopIndex,menuChoicePins} from './stop-controls.js';
@@ -240,7 +241,12 @@ export default function PlannerApp() {
     if(waiting){await sendMessage(waiting,{record:false});return;}
     append('assistant',`${selected.name} it is. What do you have in mind?`);
   }
-  async function applyTiming(request){
+  const bookingTimingReturn=useRef(null);
+  function captureBookingReturn(stop){return {stopId:stop.id,itemId:stop.item.id,entityId:stop.item.entityId,account:accountRef.current.user?.id||'guest',epoch:dayEpoch.current};}
+  function beginBookingTiming(stop){bookingTimingReturn.current=captureBookingReturn(stop);setSelectedPlace(null);setPlanOpen(false);presentTool('timing');}
+  async function applyTiming(request,options={}){
+    if(options.bookingReturn)bookingTimingReturn.current={...options.bookingReturn,account:accountRef.current.user?.id||'guest',epoch:dayEpoch.current};
+    if(bookingTimingReturn.current)bookingTimingReturn.current={...bookingTimingReturn.current,timing:timingReturnKey(request)};
     replaceBrief(request);
     if(autopilotRef.current&&autopilotPending.current){await continueAutopilot(request);return;}
     if(planRef.current&&!planningPaused.current){toolRef.current=null;setTool(null);showWhenReady.current=true;await build(request);return;}
@@ -249,6 +255,7 @@ export default function PlannerApp() {
   }
   async function forgetLocation(id){if(account.user)await account.forgetPlanningLocation(id);else{const areas=guestAreas.filter(p=>p.id!==id);localStorage.setItem('unstressed.planning-areas',JSON.stringify(areas));if(areas.length)localStorage.setItem('unstressed.planning-area',JSON.stringify(areas[0]));else localStorage.removeItem('unstressed.planning-area');setGuestAreas(areas);}setNotice('Area removed. This outing keeps its area.');}
   function finishTool(){
+    if(toolRef.current?.kind==='timing')bookingTimingReturn.current=null;
     if(pendingGroupMessage.current&&briefRef.current.people.length>1){const sent=pendingGroupMessage.current;pendingGroupMessage.current=null;toolRef.current=null;setTool(null);sendMessage(sent,{record:false});return;}
     const tastes=toolRef.current?.kind==='tastes',resume=toolRef.current?.resume,requestOnly=toolRef.current?.focus==='request';toolRef.current=null;setTool(null);
     if(!tastes)return;
@@ -272,8 +279,12 @@ export default function PlannerApp() {
       showWhenReady.current=false;
     }
     if(old)resultReceipt(result,undefined,true);
+    const returnTarget=bookingTimingReturn.current;bookingTimingReturn.current=null;
+    const returnStop=resolveBookingReturn(returnTarget,result,{account:accountRef.current.user?.id||'guest',epoch:dayEpoch.current,version:localVersion.current});
+    if(returnStop){setPlanOpen(false);openPlace(returnStop,'booking');}
+
   }
-  useEffect(()=>{planner.current=createLatestPlanner({run:(request,{signal,onPreview})=>api.itinerary(request,savingHeaders(),{signal,onDiscovery:onPreview}),onPreview:result=>{setOutageOptions(null);if(!previewBase.current)previewBase.current={plan:planRef.current};planRef.current=result;setPlan(result);setDraftChanged(false);},onStart:()=>setBusy(true),onIdle:()=>{setBusy(false);if(!autoTimer.current)setPending(false);},onError:e=>{if(planRef.current?.qualityReview?.status==='pending'){planRef.current={...planRef.current,qualityReview:{...planRef.current.qualityReview,status:'unavailable'}};setPlan(planRef.current);}setError(e.message==='Failed to fetch'?'Couldn’t refresh the places. Your current results are still here.':e.message);setRevisionFailed(true);setAutopilotPhase('');autopilotPending.current=null;},onResult:result=>{showPlan(result);replaceBrief(result.request);}});return()=>{dayEpoch.current++;clearTimeout(autoTimer.current);autoTimer.current=null;clearTimeout(profileTimer.current);planner.current.dispose();};},[]);
+  useEffect(()=>{planner.current=createLatestPlanner({run:(request,{signal,onPreview})=>api.itinerary(request,savingHeaders(),{signal,onDiscovery:onPreview}),onPreview:result=>{setOutageOptions(null);if(!previewBase.current)previewBase.current={plan:planRef.current};planRef.current=result;setPlan(result);setDraftChanged(false);},onStart:()=>setBusy(true),onIdle:()=>{setBusy(false);if(!autoTimer.current)setPending(false);},onError:e=>{bookingTimingReturn.current=null;if(planRef.current?.qualityReview?.status==='pending'){planRef.current={...planRef.current,qualityReview:{...planRef.current.qualityReview,status:'unavailable'}};setPlan(planRef.current);}setError(e.message==='Failed to fetch'?'Couldn’t refresh the places. Your current results are still here.':e.message);setRevisionFailed(true);setAutopilotPhase('');autopilotPending.current=null;},onResult:result=>{showPlan(result);replaceBrief(result.request);}});return()=>{dayEpoch.current++;clearTimeout(autoTimer.current);autoTimer.current=null;clearTimeout(profileTimer.current);planner.current.dispose();};},[]);
   useEffect(()=>{api.deck().then(setDeck).catch(e=>setError(e.message));},[]);
   useEffect(()=>{if(location.hash.startsWith('#/discover'))setTasteId(briefRef.current.people[0].id);},[]);
   useEffect(()=>{
@@ -512,6 +523,7 @@ export default function PlannerApp() {
     replaceBrief(request);
     pendingRun.stage='planning';setAutopilotPhase('planning');toolRef.current=null;setTool(null);showWhenReady.current=true;
     planningPaused.current=false;setDraftChanged(false);localVersion.current++;
+    if(bookingTimingReturn.current){if(bookingTimingReturn.current.timing===timingReturnKey(request))bookingTimingReturn.current.version=localVersion.current;else bookingTimingReturn.current=null;}
     // A draft tool must not suppress the ready itinerary when research completes.
     toolRef.current=null;setTool(null);
     clearTimeout(autoTimer.current);autoTimer.current=null;planner.current.invalidate();setError('');
@@ -554,14 +566,15 @@ export default function PlannerApp() {
   function accept(result, text) {locationConfirmed.current=true;showPlan(result,text);replaceBrief(result.request);setTab('itinerary');}
   async function build(request, description, revision) {
     const nextStep=nextPlanningStep(request,locationConfirmed.current||shared.linked);
-    if(nextStep==='location'){askLocation(request);return false;}
-    if(nextStep==='timing'){replaceBrief(request);presentTool('timing');return false;}
-    if(nextStep==='activities'){replaceBrief(request);presentTool('review','Choose what you’d like to do. I’ll find places once you select an activity.');return false;}
+    if(nextStep==='location'){bookingTimingReturn.current=null;askLocation(request);return false;}
+    if(nextStep==='timing'){bookingTimingReturn.current=null;replaceBrief(request);presentTool('timing');return false;}
+    if(nextStep==='activities'){bookingTimingReturn.current=null;replaceBrief(request);presentTool('review','Choose what you’d like to do. I’ll find places once you select an activity.');return false;}
     planningPaused.current=false;setDraftChanged(false);localVersion.current++;
+    if(bookingTimingReturn.current){if(bookingTimingReturn.current.timing===timingReturnKey(request))bookingTimingReturn.current.version=localVersion.current;else bookingTimingReturn.current=null;}
     // The draft card must release control once a valid research run starts.
     toolRef.current=null;setTool(null);
     clearTimeout(autoTimer.current);autoTimer.current=null;setError('');setRevisionFailed(false);
-    if(shared.linked){try{await shared.updateBrief(request,revision);return true;}catch(e){setError(e.message);return false;}}
+    if(shared.linked){try{await shared.updateBrief(request,revision);return true;}catch(e){bookingTimingReturn.current=null;setError(e.message);return false;}}
     planner.current.enqueue(replaceBrief(request));return true;
   }
   async function sendMessage(sent=message,{record=true,task='conversation',comparisonIds=[]}={}){
@@ -692,7 +705,7 @@ export default function PlannerApp() {
     {tab==='taste'&&<TasteMap key={selection||'all'} plan={plan} initialSelection={selection} onEdit={()=>{setPlanOpen(false);openTaste();}}/>}{tab==='budget'&&<Budget plan={plan} onBudget={owner?applyBudget:undefined} onPerson={owner?editTaste:undefined} disabled={groupUpdating} onEdit={id=>{setPlanOpen(false);openTaste(id);}}/>} {tab==='checklist'&&<BeforeGoing onSaveArea={saveDefaultArea} signedIn={!!account.user} savedAreas={savedAreas} routeScope={routeScope} plan={plan} checks={placeChecks} onDetails={(stop,view='practical')=>openPlace(stop,view)} bookingScope={makeBookingScope(account,shared,plan,owner)} timingBrief={brief} timingHistory={chat} onApplyTiming={owner?applyTiming:undefined}/>}
     {shared.day?.status==='error'&&<button className="pl-button" onClick={()=>shared.retry().catch(e=>setError(e.message))}>Retry the update</button>}</>}
   </ChatStudio>
-  {selectedStop&&<PlaceDetails onSaveArea={saveDefaultArea} signedIn={!!account.user} savedAreas={savedAreas} bookingScope={makeBookingScope(account,shared,plan,owner)} routeScope={routeScope} key={JSON.stringify([selectedPlace,placeView,selectedStop.start,selectedStop.end,selectedStop.item,plan.request.date,plan.request.party])} initialView={placeView} onSelect={(id,view)=>{const stop=plan.stops.find(s=>s.id===id);if(stop)openPlace(stop,view);}} onTiming={owner?()=>{setSelectedPlace(null);setPlanOpen(false);presentTool('timing');}:undefined} stop={selectedStop} plan={plan} checks={placeChecks} onClose={()=>setSelectedPlace(null)} onSwap={()=>{setSelectedPlace(null);swap(selectedStop);}} canSwap={owner&&!groupUpdating&&!plan.request.route&&selectedStop.id!=='shortlist-place'&&!isStopPinned(plan,selectedStop)}/> }
+  {selectedStop&&<PlaceDetails onSaveArea={saveDefaultArea} signedIn={!!account.user} savedAreas={savedAreas} bookingScope={makeBookingScope(account,shared,plan,owner)} routeScope={routeScope} key={JSON.stringify([selectedPlace,placeView,selectedStop.start,selectedStop.end,selectedStop.item,plan.request.date,plan.request.party])} initialView={placeView} onSelect={(id,view)=>{const stop=plan.stops.find(s=>s.id===id);if(stop)openPlace(stop,view);}} onBookingTiming={owner?()=>beginBookingTiming(selectedStop):undefined} onTiming={owner?()=>{setSelectedPlace(null);setPlanOpen(false);presentTool('timing');}:undefined} stop={selectedStop} plan={plan} checks={placeChecks} onClose={()=>setSelectedPlace(null)} onSwap={()=>{setSelectedPlace(null);swap(selectedStop);}} canSwap={owner&&!groupUpdating&&!plan.request.route&&selectedStop.id!=='shortlist-place'&&!isStopPinned(plan,selectedStop)}/> }
   {invitationInboxOpen&&account.user&&<InvitationInbox accountId={account.user.id} onClose={()=>setInvitationInboxOpen(false)} onChanged={()=>account.refresh()}/>}
   {planInvitationsOpen&&canInvite&&<PlanInvitationManager initialRecipientId={invitationPerson} accountId={account.user.id} planId={plan.savedPlan.id} revision={plan.savedPlan.revision} circleShared={!!plan.savedPlan.circleIds?.length} title={plan.request.title} date={plan.request.timing?.dateConfirmed?plan.request.date:null} connections={connections.map(({id,name})=>({id,name}))} onClose={()=>setPlanInvitationsOpen(false)} onConnections={()=>{setPlanInvitationsOpen(false);setProfileCirclesOpen(true);}} onChanged={()=>account.refresh()}/>}
   {accountOpen&&<AccountPanel onInvitations={account.invitationAvailable!==false?()=>{setAccountOpen(false);setInvitationInboxOpen(true);}:undefined} onInvitePeople={canInvite?()=>{setAccountOpen(false);setInvitationPerson(null);setPlanInvitationsOpen(true);}:undefined} resumeAction={accountAction} account={account} onClose={()=>{setAccountOpen(false);setAccountAction(null);}} onSignIn={signIn} onTastes={()=>{setAccountOpen(false);presentTool('profile');}} onCircles={()=>{setAccountOpen(false);setProfileCirclesOpen(true);}} onLocation={()=>{setAccountOpen(false);askLocation();}} onUsage={()=>{setAccountOpen(false);setUsageOpen(true);}} onSignOut={async()=>{await account.signOut();setAccountOpen(false);}}/>}
