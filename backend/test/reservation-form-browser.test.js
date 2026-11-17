@@ -1,11 +1,12 @@
 import test from 'node:test';import assert from 'node:assert/strict';import puppeteer from 'puppeteer-core';
-import WebSocket from 'ws';import {HttpsProxyAgent} from 'https-proxy-agent';
 import {createReservationForms,browserSession} from '../src/reservation-form.js';
 // Explicit local browser test, not production content or live venue submission.
 test('real browser fill disconnects before values, suppresses handlers, produces screenshot',{skip:!process.env.TEST_CHROMIUM&&process.env.TEST_KITESURF!=='1'},async()=>{
  const browser=process.env.TEST_CHROMIUM?await puppeteer.launch({executablePath:process.env.TEST_CHROMIUM,args:['--no-sandbox']}):null;
  async function config(){
   if(browser)return {browserWSEndpoint:browser.wsEndpoint()};
+  const {default:WebSocket}=await import('ws');
+  const {HttpsProxyAgent}=await import('https-proxy-agent');
   const proxy=process.env.HTTPS_PROXY||process.env.https_proxy;
   const ws=new WebSocket('wss://kitesurf.dev/devtools/browser',proxy?{agent:new HttpsProxyAgent(proxy)}:{});
   await new Promise((r,j)=>{ws.once('open',r);ws.once('error',j)});
