@@ -22,3 +22,9 @@ test('web mark follows native open-U geometry and typography',async()=>{
  assert.ok(icons.includes(shape)&&native.includes(shape));
  assert.match(css,/--font-display:var\(--font-body\)/);
 });
+
+test('shortlisted venues offer discovery without permitting form filling',async()=>{
+ const code=await source('BookingAction.jsx');
+ assert.match(code,/scope.allowed&&stop.id==='shortlist-place'\?<><ReservationFormPreview[^>]*fillAllowed=\{false\}/);
+ assert.match(code,/You can find the form now. Add this place/);
+});

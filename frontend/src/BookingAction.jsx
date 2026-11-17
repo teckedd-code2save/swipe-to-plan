@@ -38,7 +38,7 @@ function BookingSession({scope={allowed:true,type:'guest'},plan,stop,place,conte
   }
   async function copy(){try{await navigator.clipboard.writeText(draft);setMessage('Copied. Nothing sent.');}catch{setMessage('Copy failed. Select and copy the message below.');}}
   async function report(){const saved=await state.mutate('reportBooking',current,{outcome,reference});if(saved){setRecord(saved);setMessage('Your report saved. Not independently verified.');}}
-  if(!editable)return <section className="pg-enquiry"><h3>Booking preparation</h3><p>{stop.id==='shortlist-place'?'Add this place to your day to prepare its visit details.':'Only the day owner can prepare and privately track bookings.'}</p></section>;
+  if(!editable)return <section className="pg-enquiry"><h3>Booking options</h3>{scope.allowed&&stop.id==='shortlist-place'?<><ReservationFormPreview snapshot={contactSnapshot} message={draft} disabled={locked} fillAllowed={false}/><p className="pg-note">You can find the form now. Add this place to your day before preparing its visit details.</p></>:<p>Only the day owner can prepare and privately track bookings.</p>}</section>;
   return <section className="pg-enquiry" aria-label="Booking preparation">
     <ReservationFormPreview snapshot={contactSnapshot} message={draft} disabled={locked} fillAllowed={timed} onTiming={onTiming}/>
     <p role="status">{bookingStatus(current?.status||ready&&'ready_for_contact')}</p>
