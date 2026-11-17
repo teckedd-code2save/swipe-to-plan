@@ -23,7 +23,7 @@ jobs:
         with: { node-version: 22 }
       - run: npm run setup && npm run lint && npm test && npm run build
       - name: Build immutable image
-        run: docker build --pull -t "ghcr.io/teckedd-code2save/unstressed:$GITHUB_SHA" .
+        run: docker build --pull --build-arg VITE_RESERVATION_FORM_PREVIEW=true -t "ghcr.io/teckedd-code2save/unstressed:$GITHUB_SHA" .
       - name: Smoke-check runtime invitation protocol
         run: bash deploy/smoke-invitation-epoch.sh "ghcr.io/teckedd-code2save/unstressed:$GITHUB_SHA"
       - uses: docker/login-action@v3

@@ -5,7 +5,8 @@ RUN npm ci
 COPY frontend/ ./
 COPY shared /build/shared
 RUN npm test
-RUN npm run build
+ARG VITE_RESERVATION_FORM_PREVIEW=false
+RUN VITE_RESERVATION_FORM_PREVIEW=$VITE_RESERVATION_FORM_PREVIEW npm run build
 
 FROM node:22-bookworm-slim AS backend
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
