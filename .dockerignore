@@ -24,4 +24,8 @@ screenshots
 backups
 
 # The native app is built separately from the production web/API image.
-mobile/
+mobile/**
+# Include only the reference used by the frontend brand parity test.
+!mobile/assets/
+!mobile/assets/brand/
+!mobile/assets/brand/unstressed-mark.svg
