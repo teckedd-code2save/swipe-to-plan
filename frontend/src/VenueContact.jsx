@@ -1,3 +1,4 @@
+import {Icon} from './PlannerIcons.jsx';
 import WebsiteContactEvidence from './WebsiteContactEvidence.jsx';
 import {contactForItem,safeContactWebsite} from '../../shared/venue-contact.js';
 
@@ -11,7 +12,7 @@ export function DialerLink({place,contact,allowedUrl,className=''}) {
   const evidence=evidenceFor(place,contact),phone=evidence.phone;
   const url=phone?.dialUrl;
   if(evidence.identityStatus==='conflicting'||contact?.identityStatus==='conflicting'||!/^tel:\+[1-9][0-9]{7,14}$/.test(url||'')||(allowedUrl!==undefined&&url!==allowedUrl))return null;
-  return <a className={className} href={url}>Open dialer · {place?.name||'Venue'} · {url.slice(4)}</a>;
+  return <a className={className} href={url} aria-label={`Call ${place?.name||'venue'}`} title={url.slice(4)}><Icon name="phone" size={16}/>Call</a>;
 }
 function Source({source}) {
   const date=source?.retrievedAt&&new Date(source.retrievedAt),valid=date&&Number.isFinite(date.getTime());

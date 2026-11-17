@@ -281,3 +281,20 @@ test('results contain no next-step dashboard or sticky budget footer',async()=>{
  assert.equal(panel.querySelector('.bc-footer-budget'),null);
  assert.ok(panel.querySelector('[data-testid="full-results"]'));
 });
+
+test('new results use a transient toast and burst, never the persistent orange dot',async()=>{
+ await render({busy:true});await render({busy:false});
+ assert.ok(document.querySelector('.cs-result-toast[role="status"]'));
+ assert.ok(document.querySelector('.cs-view-day .cs-result-sparkles[aria-hidden="true"]'));
+ assert.equal(document.querySelector('.cs-view-day > i'),null);
+ assert.equal(document.querySelector('[aria-label="Updated results"]'),null);
+ const css=await readFile(new URL('../src/recommendation-preview.css',import.meta.url),'utf8');
+ assert.match(css,/@media\(prefers-reduced-motion:reduce\).*cs-result-sparkles\{display:none\}/);
+});
+
+test('ready and autopilot flows do not automatically open the saved-tastes recap',async()=>{
+ const source=await readFile(new URL('../src/PlannerApp.jsx',import.meta.url),'utf8');
+ assert.doesNotMatch(source,/if\((?:pendingRun|result)\.tasteCards\?\.length\)openTaste/);
+ assert.match(source,/if\(kind==='tastes'\)openTaste\(\)/,'Explicit taste editing remains available');
+ assert.match(source,/planner\.current\.enqueue\(withPeopleIds\(request\)\)/,'The full request, including people and tastes, still drives planning');
+});

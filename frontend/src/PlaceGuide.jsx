@@ -58,7 +58,7 @@ export function PlaceDetails({stop,plan,checks,onClose,onSwap,canSwap,initialVie
     </div>
     {filled.length>1&&stop.id!=='shortlist-place'&&<label className="pg-stop-picker">Place in your day<select aria-label="Place to review" value={stop.id} onChange={e=>onSelect?.(e.target.value,view)}>{filled.map(s=><option key={s.id} value={s.id}>{s.start||'Time to choose'} · {s.item.name}</option>)}</select></label>}
     <nav className="pg-detail-tabs" aria-label="Place details sections">{[['overview','Overview','info'],['practical','Hours & menu','clock'],['route','Getting there','map'],['booking','Booking','calendar']].map(([id,label,icon])=><button type="button" key={id} aria-pressed={view===id} onClick={()=>setView(id)}><Icon name={icon} size={16}/>{label}</button>)}</nav>
-    <div className="pg-sheet-layout pg-dialog-scroll" key={view}>
+    <div className={`pg-sheet-layout pg-dialog-scroll ${view!=='overview'?'pg-sheet-focused':''}`} key={view}>
       <main className="pg-sheet-content">
         {view==='overview'&&<><h3>About this place</h3><p className="pg-description">{place.description||'Explore the hours, menu and booking options to see whether this place fits your day.'}</p>{!!place.tagNames?.length&&<div className="pg-tags">{place.tagNames.filter(tag=>tag.toLowerCase()!=='place').slice(0,5).map(tag=><span key={tag}>{tag}</span>)}</div>}{!!place.practicalTags?.length&&<section className="pg-detail-section"><h3>Good to know</h3><div className="pg-tags">{[...new Set(place.practicalTags)].slice(0,8).map((tag,i)=><span key={`${tag}-${i}`}>{tag}</span>)}</div></section>}<button className="pg-sheet-next" onClick={()=>setView('practical')}><Icon name="clock" size={18}/><span>Plan your visit<small>Opening hours and menu</small></span><Icon name="arrow" size={18}/></button></>}
         {view==='booking'?<BookingAction onTiming={onBookingTiming||onTiming} scope={bookingScope} context={routeScope} plan={plan} stop={stop} place={place} compact/>:view==='route'?<RouteGuide onSaveArea={onSaveArea} signedIn={signedIn} savedAreas={savedAreas} routeScope={routeScope} plan={stop.id==='shortlist-place'?{...plan,stops:[stop]}:plan} checks={checks} initialStopId={stop.id} onTiming={onTiming}/>:null}
@@ -72,14 +72,14 @@ export function PlaceDetails({stop,plan,checks,onClose,onSwap,canSwap,initialVie
           </section><VenueMenuEvidence place={place}/>
         </>}
         {checks.status==='error'&&<p className="pg-note" role="alert">Details couldn’t load. <button className="pg-link" onClick={checks.refresh}>Try again</button></p>}
-        {report?.place&&view!=='booking'&&view!=='route'&&<details className="pg-source"><summary>About these details</summary><p>Place details supplied by Qloo. Retrieved {new Date(place.provenance.retrievedAt).toLocaleString()}. Its last update time is unknown; holidays and private events may differ.</p></details>}
+        {report?.place&&view==='overview'&&<details className="pg-source"><summary>About these details</summary><p>Place details supplied by Qloo. Retrieved {new Date(place.provenance.retrievedAt).toLocaleString()}. Its last update time is unknown; holidays and private events may differ.</p></details>}
       </main>
-      <aside className="pg-sheet-sidebar" aria-label="Visit essentials">
+      {view==='overview'&&<aside className="pg-sheet-sidebar" aria-label="Visit essentials">
         <section><span className="pg-sheet-eyebrow">Your visit</span><div className="pg-sheet-fact"><Icon name="calendar" size={18}/><div><strong>{stop.start&&stop.end?`${stop.start}–${stop.end}`:'Choose a time'}</strong><small>{stop.start?dateLabel(plan.request.date):'Find the place first, choose when next.'}</small></div></div>{onTiming&&<button type="button" className="pg-link" onClick={onTiming}>{stop.start?'Review visit time':'Set visit time'}<Icon name="arrow" size={14}/></button>}</section>
         <section><span className="pg-sheet-eyebrow">Price guide</span><strong className="pg-sheet-price">{place.facts?.price?.level?['','Lower price range','Mid price range','Higher price range','Premium price range'][place.facts.price.level]:'Prices not listed'}</strong><small>Venue price band, not a quote.</small><div className="pg-sheet-budget"><span>{plan.request.budget==null?'Suggested outing total':'Your outing limit'}</span><strong>{formatMoney(plan.request.budget??plan.allowance?.amount,plan.request.currency)}</strong></div></section>
         <section><span className="pg-sheet-eyebrow">Explore directly</span><VenueLinks place={place}/>{!place.links?.website&&!place.links?.menu&&!place.links?.map&&<small>Website and map links aren’t available.</small>}</section>
-      </aside>
+      </aside>}
     </div>
-    {view!=='booking'&&<footer className="pg-sheet-footer"><span><Icon name="calendar" size={18}/><span>Make it happen<small>Check online booking or contact the venue.</small></span></span><button className="pl-button" onClick={()=>setView('booking')}>Booking options <Icon name="arrow" size={17}/></button></footer>}
+    {view==='overview'&&<footer className="pg-sheet-footer"><span><Icon name="calendar" size={18}/><span>Make it happen<small>Check online booking or contact the venue.</small></span></span><button className="pl-button" onClick={()=>setView('booking')}>Booking options <Icon name="arrow" size={17}/></button></footer>}
   </dialog>;
 }

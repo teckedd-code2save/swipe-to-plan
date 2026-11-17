@@ -405,9 +405,10 @@ test('malformed catalog labels never replace a known label or crash the route vi
   const stop=props.plan.stops[0];stop.item.hours={Monday:[{opens:'09:00',closes:'22:00'}]};delete stop.item.links;
   await act(async()=>{root=createRoot(document.getElementById('root'));root.render(React.createElement(QueryClientProvider,{client:new QueryClient()},React.createElement(PlaceDetails,{...props,stop,initialView:'practical',onClose:()=>{},onTiming:()=>{}})));});
   assert.equal(document.querySelector('.pg-sheet-header h2').textContent,stop.item.name);
-  assert.ok(document.querySelector('.pg-sheet-footer button'));
+  assert.equal(document.querySelector('.pg-sheet-footer button'),null);
   assert.equal(document.querySelector('.pg-week-disclosure').open,false);
-  assert.ok(document.querySelector('aside[aria-label="Visit essentials"]'));
+  assert.equal(document.querySelector('aside[aria-label="Visit essentials"]'),null);
+  assert.doesNotMatch(document.body.textContent,/Current prices and availability still need confirmation|Open dialer|About these details|Price guide|Make it happen/);
   assert.equal(document.querySelector('.pg-photo'),null);
   await click('Overview');
   assert.equal(document.querySelector('.pg-sheet-header h2').textContent,stop.item.name);
