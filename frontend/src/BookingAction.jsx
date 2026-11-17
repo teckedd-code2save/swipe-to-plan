@@ -1,3 +1,4 @@
+import ReservationFormPreview from './ReservationFormPreview.jsx';
 import VenueContact,{DialerLink} from './VenueContact.jsx';
 import {useEffect,useState} from 'react';
 import {bookingMessage,bookingSnapshot,bookingStatus,reservationEligible} from './booking-actions.js';
@@ -43,6 +44,7 @@ function BookingSession({scope={allowed:true,type:'guest'},plan,stop,place,conte
     <p><strong>Recipient: {contactSnapshot.name}</strong><br/>{contactSnapshot.date&&contactSnapshot.localTime?`${contactSnapshot.date} · ${contactSnapshot.localTime} · ${contactSnapshot.timeZone||'Time zone missing'}`:'Visit timing not set: general enquiry only.'}{contactSnapshot.party&&` · ${contactSnapshot.party.adults} adults, ${contactSnapshot.party.children||0} children`}</p>
     <label>Request type<select value={kind} disabled={locked} onChange={e=>{setKind(e.target.value);setReviewed(null);}}><option value="enquiry">General enquiry</option>{timed&&<option value="reservation">Reservation request</option>}</select></label>
     <label>Message to {contactSnapshot.name}<textarea value={draft} maxLength={2000} rows={compact?5:8} disabled={locked} onChange={e=>{setDraft(e.target.value);setReviewed(null);}}/></label>
+    {kind==='reservation'&&<ReservationFormPreview snapshot={contactSnapshot} message={draft} disabled={locked}/>}
     <label>Contact channel<select value={channel} disabled={locked} onChange={e=>{setChannel(e.target.value);setReviewed(null);}}><option value="copy">Copy for me to send</option>{contacts.website&&<option value="website">Venue website</option>}{contacts.phone&&<option value="phone">Call venue</option>}</select></label>
     <p>{channel==='website'?`Website: ${contacts.website}`:channel==='phone'?`Phone: ${contacts.phone}`:'Copy only: you choose the recipient when you send.'}</p>
     {compact?<details className="gr-contact-evidence"><summary>Review contact sources</summary><VenueContact place={{entityId:contactSnapshot.entityId,name:contactSnapshot.name,links:contacts}} contact={contactEvidence} contacts={contacts} scope={scope} context={context} allowDial={false} allowWebsite={false}/></details>:<VenueContact place={{entityId:contactSnapshot.entityId,name:contactSnapshot.name,links:contacts}} contact={contactEvidence} contacts={contacts} scope={scope} context={context} allowDial={false} allowWebsite={false}/>}

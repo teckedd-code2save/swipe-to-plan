@@ -1,3 +1,4 @@
+import {createReservationForms} from './reservation-form.js';
 import {executionCapabilities} from './execution-ledger.js';
 import {compareOpenAreas} from './open-location.js';
 import {createContactEvidence} from './contact-evidence.js';
@@ -21,7 +22,7 @@ import {createMetrics,CLIENT_EVENTS,visitorId} from './metrics.js';
 import { createPlaceGuide } from './place-guide.js';
 import { createRouteActions, RouteActionError } from './route-actions.js';
 
-export function createApp({ provider, prisma = null, agent = null, dayStore, metrics, accounts=createAccounts(), routeActions, contactEvidenceReader, rateLimit = true, trustProxy = process.env.TRUST_PROXY === '1' ? 1 : false, now = Date.now } = {}) {
+export function createApp({ provider, prisma = null, agent = null, dayStore, metrics, accounts=createAccounts(), routeActions, contactEvidenceReader, reservationForms, rateLimit = true, trustProxy = process.env.TRUST_PROXY === '1' ? 1 : false, now = Date.now } = {}) {
   metrics??=createMetrics({now});
   routeActions??=createRouteActions({now});
   const app = express();
@@ -30,6 +31,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   const discovery = createDiscovery({ provider, now,reviewCandidates:agent?.configured?.()&&agent.reviewCandidates?agent.reviewCandidates:undefined });
   const places = createPlaceGuide({provider,now});
   const menuEvidence=createMenuEvidence({places,now});
+  reservationForms??=createReservationForms({places,now});
   const contactEvidence=createContactEvidence({places,now,readPage:contactEvidenceReader});
   discovery.placeDetails=provider.getPlace?places.details:null;
   discovery.now=now;
@@ -79,7 +81,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     }
   });
   app.get('/api/actions/execution-capabilities',limit(60,'execution_capabilities'),(_req,res)=>res.json(executionCapabilities()));
-  app.get('/api/actions/capabilities',limit(60,'actions_capabilities'),routeAction(() => routeActions.capabilities()));
+  app.get('/api/actions/capabilities',limit(60,'actions_capabilities'),routeAction(() => ({...routeActions.capabilities(),reservationFormPreview:reservationForms.enabled})));
   app.post('/api/actions/routes/estimate',limit(12,'route_estimates'),routeAction(req => routeActions.estimate(req.body)));
   app.get('/api/locations',limit(60),route(async(req,res)=>{
     const query=req.query.q;if(typeof query!=='string'||query.trim().length<2||query.length>160||/[\x00-\x1f<>]/.test(query))throw new InputError('Type at least two characters of a city, town or neighborhood.');
@@ -118,6 +120,27 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   app.get('/api/places/:id/contact-evidence',limit(8,'contact_evidence'),route(async(req,res)=>{
     if(Object.keys(req.query).length||Object.keys(req.body||{}).length)throw new InputError('Only an exact venue ID is accepted.');
     res.json(await contactEvidence.get(req.params.id));
+  }));
+  app.get('/api/places/:id/reservation-form',limit(4,'reservation_form'),route(async(req,res)=>{
+    if(Object.keys(req.query).length)throw new InputError('Only an exact venue ID is accepted.');
+    try{res.json(await reservationForms.discover(req.params.id));}
+    catch{res.status(422).json({error:'Could not locate a supported booking form. No request was sent.'});}
+  }));
+  app.post('/api/places/:id/reservation-form/destination',limit(4,'reservation_destination'),route(async(req,res)=>{
+    if(req.get('origin')!==accounts.origin||!req.is('application/json'))return res.status(403).json({error:'Select this booking page from Unstressed.'});
+    try{res.json(await reservationForms.inspectDestination(req.params.id,req.body));}
+    catch{res.status(422).json({error:'Could not inspect this published booking page. Find the form again or open the venue website.'});}
+  }));
+  app.post('/api/places/:id/reservation-form/preview',limit(4,'reservation_preview'),route(async(req,res)=>{
+    if(req.get('origin')!==accounts.origin||!req.is('application/json'))return res.status(403).json({error:'Open this preview from Unstressed.'});
+    try{const result=await reservationForms.preview(req.params.id,req.body);if(res.destroyed){if(result.previewId)await reservationForms.closePreview(result.previewId);return;}res.json(result);}
+    catch{res.status(422).json({error:'Could not safely fill this form. Locate it again or use the venue website. Nothing was submitted.'});}
+  }));
+  app.post('/api/places/:id/reservation-form/close',limit(12,'reservation_preview_close'),route(async(req,res)=>{
+    if(req.get('origin')!==accounts.origin||!req.is('application/json'))return res.status(403).json({error:'Close this preview from Unstressed.'});
+    strictFields(req.body,['previewId']);
+    if(typeof req.body.previewId!=='string'||!/^[a-f0-9-]{36}$/.test(req.body.previewId))throw new InputError('Invalid preview.');
+    await reservationForms.closePreview(req.body.previewId);res.json({closed:true});
   }));
   app.get('/api/places/:id/menu',limit(12),route(async(req,res)=>res.json(await menuEvidence.get(req.params.id))));
   app.get('/api/places/:id',limit(30),route(async(req,res)=>res.json(await places.details(req.params.id))));

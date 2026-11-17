@@ -22,9 +22,14 @@
     "google-auth-library": "^10.9.1",
     "ipaddr.js": "^2.5.0",
     "prisma": "^6.0.0",
+    "puppeteer-core": "^25.17.0",
     "tldts": "^7.4.19"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "https-proxy-agent": "^9.1.0",
+    "ws": "^8.23.0"
   }
 }
