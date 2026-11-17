@@ -15,7 +15,11 @@ const discoveryMessages={
  provider_unavailable:'Venue website details could not be loaded. Try again shortly.',
  visual_unavailable:'This browser could not start a live visual stream. No reservation details were sent. Try again or use the venue website.',
  browser_unavailable:'The booking-form browser is unavailable. Try again shortly; no reservation details were sent.',
- page_unavailable:'The venue booking page could not be loaded securely over HTTPS. Open the venue website to check it; no reservation details were sent.',
+ page_unavailable:'The booking browser could not load this website. It may still open in your browser. No reservation details were sent.',
+ page_timeout:'The venue website took too long to load. Try again or open it in your browser. No reservation details were sent.',
+ page_connection_failed:'The booking browser could not connect to this website. It may still open in your browser. No reservation details were sent.',
+ page_tls_failed:'The booking browser could not verify this website’s secure connection. No reservation details were sent.',
+ page_http_error:'The venue website returned an error to the booking browser. Try again later or open it in your browser. No reservation details were sent.',
  destination_changed:'The website redirected to a different destination. Review the venue website manually before continuing.',
  busy:'Booking-form preview is busy. Try again shortly.',
  expired:'This booking link expired. Find the booking form again.'
@@ -23,6 +27,19 @@ const discoveryMessages={
 export function reservationDiscoveryFailure(error){
  const code=error instanceof ReservationFormError&&Object.hasOwn(discoveryMessages,error.code)?error.code:'discovery_failed';
  return {code,error:discoveryMessages[code]||'The booking-form check could not finish. Try again or open the venue website. No reservation details were sent.'};
+}
+export function reservationPageFailure(error){
+ const message=String(error?.message||'');
+ if(error?.name==='TimeoutError'||/Navigation timeout/i.test(message))return new ReservationFormError('page_timeout');
+ if(/net::ERR_(?:CERT_|SSL_|TLS_)/.test(message))return new ReservationFormError('page_tls_failed');
+ if(/net::ERR_(?:HTTP2_PROTOCOL_ERROR|CONNECTION_|NAME_NOT_RESOLVED|INTERNET_DISCONNECTED|NETWORK_CHANGED|TIMED_OUT)/.test(message))return new ReservationFormError('page_connection_failed');
+ return new ReservationFormError('page_unavailable');
+}
+async function navigateReservation(page,url){
+ let response;
+ try{response=await page.goto(url,{waitUntil:'domcontentloaded',timeout:20000});}
+ catch(error){throw reservationPageFailure(error);}
+ if(response?.status?.()>=400)throw new ReservationFormError('page_http_error');
 }
 export function reservationPageUrl(value){
  const url=menuUrl(value);
@@ -170,13 +187,13 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
   try{return await runBound(async page=>{
    started=true;
    progress("loading","Loading the venue website securely…");
-   await page.goto(initial,{waitUntil:'domcontentloaded',timeout:20000});
+   await navigateReservation(page,initial);
    let url=page.url();menuUrl(url);
    if(!canonicalContactRedirect(new URL(initial),new URL(url)))return redirectedDestination(entityId,initial,url);
    progress("inspecting","Looking for published reservation fields and booking links…");
    let {forms,links}=await scan(page);
    if(!forms.length&&followSameSite){const next=links.find(c=>{try{return new URL(reservationPageUrl(c.url)).origin===new URL(url).origin&&reservationPageUrl(c.url)!==url;}catch{return false;}});
-    if(next){progress("loading","Opening the published booking page…");const expected=reservationPageUrl(next.url);await page.goto(expected,{waitUntil:'domcontentloaded',timeout:20000});url=page.url();if(!canonicalContactRedirect(new URL(expected),new URL(url)))return redirectedDestination(entityId,expected,url);const checked=await scan(page);forms=checked.forms;links=[...links,...checked.links];}
+    if(next){progress("loading","Opening the published booking page…");const expected=reservationPageUrl(next.url);await navigateReservation(page,expected);url=page.url();if(!canonicalContactRedirect(new URL(expected),new URL(url)))return redirectedDestination(entityId,expected,url);const checked=await scan(page);forms=checked.forms;links=[...links,...checked.links];}
    }
    const seen=new Set(),candidates=[];
    for(const item of links){if(candidates.length>=30)break;let target;try{target=new URL(reservationPageUrl(item.url));if(target.href===url||seen.has(target.href))continue;}catch{continue;}

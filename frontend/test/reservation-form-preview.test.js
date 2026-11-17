@@ -49,3 +49,10 @@ test('cross-domain redirect is a review candidate, not an authorized form',async
  assert.match(unsupportedFormMessage(result),/Review it before continuing/);
  assert.throws(()=>normalizeReservationForms({...result,candidates:[{...result.candidates[0],url:'javascript:alert(1)'}]}));
 });
+
+test('booking error handoff preserves HTTPS instead of returning stale provider HTTP',async()=>{
+ const {secureBookingWebsite}=await import('../src/reservation-form-preview.js');
+ assert.equal(secureBookingWebsite('http://www.frontbackaccra.com/'),'https://www.frontbackaccra.com/');
+ assert.equal(secureBookingWebsite('https://www.frontbackaccra.com/'),'https://www.frontbackaccra.com/');
+ for(const value of ['javascript:alert(1)','http://user:pass@example.com/','http://127.0.0.1/'])assert.equal(secureBookingWebsite(value),null);
+});

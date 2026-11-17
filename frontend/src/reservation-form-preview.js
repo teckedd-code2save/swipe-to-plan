@@ -1,4 +1,8 @@
 import {safeContactWebsite} from '../../shared/venue-contact.js';
+export function secureBookingWebsite(value){
+ const valid=safeContactWebsite(value);if(!valid)return null;
+ const url=new URL(valid);url.protocol='https:';return url.href;
+}
 const text=(v,n=2000)=>typeof v==='string'&&v.length<=n;
 export function normalizeReservationForms(value) {
   if(!value||!text(value.status,80)||!Array.isArray(value.forms)||value.forms.length>12)throw Error('Invalid form discovery response.');
