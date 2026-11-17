@@ -36,3 +36,8 @@ test('validates published candidates without requiring a native form',()=>{
  assert.equal(normalizeReservationForms(response).candidates[0].relationship,'booking_partner');
  for(const bad of [{...candidate,url:'javascript:alert(1)'},{...candidate,id:'not-an-id'},{...candidate,relationship:'trusted'}])assert.throws(()=>normalizeReservationForms({...response,candidates:[bad]}));
 });
+test('bounded widget fields preserve reviewed date, time and party without supplying identity',()=>{
+ const response=normalizeReservationForms({status:'found',sourceUrl:'https://www.saighana.com/',previewAvailable:true,forms:[{id:'wix-form',fields:[{id:'wix-date',label:'Date',type:'date',semantic:'date',required:true},{id:'wix-time',label:'Time',type:'time',semantic:'time',required:true},{id:'wix-partySize',label:'Party size',type:'number',semantic:'partySize',required:true}]}]});
+ assert.deepEqual(seedReservationFields(response.forms[0],{date:'2026-12-01',localTime:'19:30',party:{adults:2,children:0}},''),{'wix-date':'2026-12-01','wix-time':'19:30','wix-partySize':'2'});
+ assert.deepEqual(seedReservationFields(response.forms[0],{},''),{'wix-date':'','wix-time':'','wix-partySize':''});
+});
