@@ -530,7 +530,7 @@ export default function PlannerApp() {
     append('assistant',needsTiming(request)?'I’m finding places from your request and tastes. You can choose a time after seeing the options.':`I’m planning for ${request.people.map(p=>p.name==='You'?'you':p.name).join(', ')}: ${dateLabel(request.date)}, ${timingLabel(request)}, ${request.budget==null?'with no budget set':`with ${formatMoney(request.budget,request.currency)} ${request.party.adults+request.party.children===1?'for you':'for everyone'}`}. You can adjust these details in chat.`);
     if(shared.linked){try{await shared.autopilot(request,pendingRun.revision);}catch(e){autopilotPending.current=null;setAutopilotPhase('');setRevisionFailed(true);throw e;}}
     else {setPending(true);planner.current.enqueue(withPeopleIds(request));}
-    if(pendingRun.tasteCards?.length)openTaste(undefined,'I’m finding places for your outing. You can add tastes to help refine them.',{focus:'request',cardIds:pendingRun.tasteCards,prompts:pendingRun.cardPrompts||[]});
+    // Saved tastes already travel with the request; don't interrupt results with a taste recap.
   }
   // Place evidence comes from the displayed plan; mutable constraints come from
   // the latest brief, which may already include an edit awaiting retrieval.
@@ -628,7 +628,7 @@ export default function PlannerApp() {
         else {setTab(result.panel==='budget'?'budget':result.panel==='checks'?'checklist':'itinerary');setPlanOpen(true);append('assistant',result.assistantMessage||(planRef.current?(result.panel==='checks'?'I’m comparing your times with reported hours and gathering the venue details. You’ll see what still needs confirming.':'Here’s the current day.'):'Tell me the outing you have in mind, and we can shape it together.'));}
       }else if(result.status==='needs_input')append('assistant',result.question);
       else if(result.status==='reply')append('assistant',result.text);
-      else if(result.status==='ready'){if(!owner)throw Error('Only the organizer can change the trip details.');replaceBrief(result.request);showWhenReady.current=false;await build(result.request,undefined,revision);if(result.tasteCards?.length)openTaste(undefined,'I’m finding places for your outing. You can add tastes to help refine them.',{focus:'request',cardIds:result.tasteCards,prompts:result.cardPrompts||[]});}else throw Error('The planning response was not understood. Please retry your request.');
+      else if(result.status==='ready'){if(!owner)throw Error('Only the organizer can change the trip details.');replaceBrief(result.request);showWhenReady.current=false;await build(result.request,undefined,revision);}else throw Error('The planning response was not understood. Please retry your request.');
     }catch(e){
       if(version!==localVersion.current)return;
       setRevisionFailed(true);setMessage(sent);setAutopilotPhase('');autopilotPending.current=null;

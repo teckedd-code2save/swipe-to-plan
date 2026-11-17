@@ -1,3 +1,4 @@
+import {venueSearchUrl} from './booking-contact-links.js';
 import {useEffect,useRef,useState} from 'react';
 import {safeContactWebsite} from '../../shared/venue-contact.js';
 import {createPortal} from 'react-dom';
@@ -92,7 +93,7 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
       <aside className="booking-browser-controls" aria-label="Booking details">
     {busy==='inspecting' &&<p role="status">Inspecting the selected booking page…</p>}
     {!fillAllowed&&<p className="pg-note">You can find the form now. Add your visit time and party size before filling. {onTiming&&<button type="button" className="pg-link" disabled={locked} onClick={onTiming}>Set visit time</button>}</p>}
-    {error&&<div className="booking-error"><p role="alert">{error}</p><button type="button" className="pl-secondary-button" disabled={locked} onClick={discover}>Try again</button>{safeContactWebsite(snapshot.contacts?.website)&&<a className="pg-link" href={safeContactWebsite(snapshot.contacts.website)} target="_blank" rel="noopener noreferrer">Open venue website <Icon name="arrowUpRight" size={16}/></a>}<button type="button" className="pg-link" onClick={cancel}>Back to booking options</button></div>}
+    {error&&<div className="booking-error"><p role="alert">{error}</p><button type="button" className="pl-secondary-button" disabled={locked} onClick={discover}>Try again</button>{safeContactWebsite(snapshot.contacts?.website)&&<a className="pg-link" href={safeContactWebsite(snapshot.contacts.website)} target="_blank" rel="noopener noreferrer">Open venue website <Icon name="arrowUpRight" size={16}/></a>}<a className="pg-link" href={venueSearchUrl({name:snapshot.name,contact:snapshot.contactEvidence})} target="_blank" rel="noopener noreferrer">Search web for booking <Icon name="arrowUpRight" size={16}/></a><button type="button" className="pg-link" onClick={cancel}>Back to booking options</button></div>}
     {discovery&&<div>
       {discovery.sourceUrl&&<a className="pg-link" href={discovery.sourceUrl} target="_blank" rel="noopener noreferrer">Venue booking page <Icon name="arrowUpRight" size={16}/></a>}
       {!!discovery.candidates.length&&<div><h4>Choose a booking page</h4><ul>{discovery.candidates.map(candidate=><li key={candidate.id}>
