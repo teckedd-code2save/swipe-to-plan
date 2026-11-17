@@ -1,3 +1,4 @@
+import {createReservationSearch} from './reservation-search.js';
 import {inspectWixForms,fillWixForm,installReservationClickGate} from '../../shared/reservation-wix.js';
 import {startReservationScreencast} from './reservation-stream.js';
 import {createHash,randomUUID} from 'node:crypto';
@@ -11,6 +12,8 @@ export class ReservationFormError extends Error {
  constructor(code){super(code);this.code=code;}
 }
 const discoveryMessages={
+ search_changed:'The page changed. Refresh the search view and review it before selecting.',
+ search_select:'Open and review the venue website before using it for booking.',
  no_website:'No provider-linked website is available for this venue. Use its contact details instead.',
  provider_unavailable:'Venue website details could not be loaded. Try again shortly.',
  visual_unavailable:'This browser could not start a live visual stream. No reservation details were sent. Try again or use the venue website.',
@@ -77,7 +80,7 @@ export function inspectForms(){
  return [...document.forms].slice(0,12).map((form,index)=>({index,action:form.action,method:form.method,fields:[...form.querySelectorAll(inputs)].map((el,elementIndex)=>({elementIndex,name:el.name,type:el.tagName==='SELECT'?'select':el.tagName==='TEXTAREA'?'textarea':el.type,label:[...(el.labels||[])].map(l=>l.textContent.trim()).join(' ')||el.getAttribute('aria-label')||el.placeholder||el.name,autocomplete:el.autocomplete,required:el.required,disabled:el.disabled,readOnly:el.readOnly===true||el.getAttribute('aria-readonly')==='true',visible:!!(el.getClientRects().length)&&getComputedStyle(el).visibility!=='hidden',options:el.tagName==='SELECT'?[...el.options].slice(0,100).map(o=>({value:o.value,label:o.text})):undefined})).filter(f=>f.visible&&!f.disabled&&!/leave (?:this )?(?:field )?(?:empty|blank)|do not fill/i.test(f.label)&&!['hidden','submit','button','reset','file','password','checkbox','radio','image'].includes(f.type))})).filter(f=>f.fields.length>0&&f.fields.length<=30);
 }
 export async function browserSession(config,job){
- const {resolve=lookup,liveView=false,emit,signal,connect=puppeteer.connect.bind(puppeteer),...connection}=config;
+ const {resolve=lookup,liveView=false,retainReadOnly=false,emit,signal,connect=puppeteer.connect.bind(puppeteer),...connection}=config;
  signal?.throwIfAborted();
  const browser=await connect({...connection,protocolTimeout:20000});
  let page,retained=false,stopFrames,releasePromise;
@@ -131,6 +134,7 @@ export async function browserSession(config,job){
   });
   signal?.throwIfAborted();
   await stopFrames?.();
+  if(retainReadOnly&&result.retainReadOnly===true){retained=true;return {...result,page,release};}
   if(liveView&&result.networkDisconnected===true){
    const cdp=await page.createCDPSession();
    const {devtoolsFrontendUrl}=await cdp.send('Cloudflare.getLiveView',{mode:'tab',expiresInMs:60000});
@@ -153,7 +157,11 @@ const cleanForms=(raw,url)=>raw.map(form=>({...form,fields:form.fields.map(field
 export function createReservationForms({places,config=configuredKitesurf(),run=browserSession,now=Date.now,previewConfig=chromiumPreviewConfig(config)}={}){
  const discoveries=new Map(),destinations=new Map(),leases=new Map();let active=0;
  async function closePreview(id){const lease=leases.get(id);if(!lease)return;leases.delete(id);clearTimeout(lease.timer);await lease.release();}
- async function runBound(job,selected=config,options={}){options.signal?.throwIfAborted();if(active+leases.size>=2)throw new ReservationFormError('busy');active++;try{return await run({...selected,...options},job);}finally{active--;}}
+ async function runBound(job,selected=config,options={}){options.signal?.throwIfAborted();if(active+leases.size+search.size>=2)throw new ReservationFormError('busy');active++;try{return await run({...selected,...options},job);}finally{active--;}}
+ const search=createReservationSearch({places,runBound,config:previewConfig||chromiumPreviewConfig(config,true)||config,now,ErrorType:ReservationFormError,registerDestination(entityId,url){
+  const candidateId=randomUUID();destinations.set(candidateId,{entityId,url,expires:now()+5*60000});expire();
+  return {candidateId,url,label:'Website selected by you',relationship:'user_selected_search',submitted:false};
+ }});
  async function source(entityId){
   const id=locationId(entityId);let place;
   try{place=await places.details(id);}catch{throw new ReservationFormError('provider_unavailable');}
@@ -218,7 +226,7 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
    return {status:forms.length?'forms_found':'no_supported_form',previewAvailable:true,sourceUrl:url,forms:forms.map(({id,fields})=>({id,fields})),candidates,unsupported,submitted:false};
   },options.emit?(previewConfig||chromiumPreviewConfig(config,true)||config):config,options);}catch(error){if(error instanceof ReservationFormError)throw error;throw new ReservationFormError(started?'page_unavailable':'browser_unavailable');}
  }
- return {enabled:!!config,closePreview,async discover(entityId,options={}){
+ return {enabled:!!config,closePreview,startSearch:search.start,searchAction:search.action,selectSearch:search.select,closeSearch:search.close,async discover(entityId,options={}){
   if(!config)return {status:'disabled',previewAvailable:false,forms:[],candidates:[]};
   return discoverAt(entityId,await source(entityId),true,options);
  },async inspectDestination(entityId,body,options={}){

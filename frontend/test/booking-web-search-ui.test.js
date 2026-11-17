@@ -1,0 +1,20 @@
+import test,{before,after,beforeEach,afterEach} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {fileURLToPath,pathToFileURL} from 'node:url';
+import {join} from 'node:path';
+import {build} from 'esbuild';
+import {JSDOM} from 'jsdom';
+import React,{act} from 'react';
+let Component,root,createRoot,dom,dir,requests,selected,frame;
+const originalFetch=globalThis.fetch;
+function setup(){dom=new JSDOM('<div id="root"></div>',{url:'http://localhost'});for(const key of ['window','document','navigator','localStorage','sessionStorage','HTMLElement','Event'])Object.defineProperty(globalThis,key,{value:dom.window[key],writable:true,configurable:true});globalThis.IS_REACT_ACT_ENVIRONMENT=true;}
+before(async()=>{setup();({createRoot}=await import('react-dom/client'));const frontend=fileURLToPath(new URL('..',import.meta.url));dir=await mkdtemp(join(frontend,'node_modules/.search-test-'));const outfile=join(dir,'search.mjs');await build({entryPoints:[join(frontend,'src/BookingWebSearch.jsx')],outfile,bundle:true,platform:'node',format:'esm',jsx:'automatic',packages:'external'});({default:Component}=await import(pathToFileURL(outfile).href));dom.window.close();});
+after(async()=>{globalThis.fetch=originalFetch;await rm(dir,{recursive:true,force:true});});
+beforeEach(()=>{setup();requests=[];selected=null;frame={searchId:'e81234ab-4123-4123-8123-123456789abc',sequence:0,submitted:false,url:'https://www.google.com/search?q=venue',title:'Search',status:'ready',width:1100,height:900,imageDataUrl:'data:image/png;base64,YQ==',expiresAt:new Date(Date.now()+60000).toISOString(),canUse:false};globalThis.fetch=async(url,options={})=>{const body=JSON.parse(options.body||'{}');requests.push({url,body});return new Response(JSON.stringify(url.endsWith('/select')?{candidateId:'server-held'}:url.endsWith('/close')?{closed:true}:url.endsWith('/action')?{...frame,sequence:1,url:'https://venue.example/',title:'Venue',canUse:true}:frame));};});
+afterEach(async()=>{await act(async()=>root?.unmount());root=null;dom.window.close();});
+async function render(){root=createRoot(document.getElementById('root'));await act(async()=>root.render(React.createElement(Component,{snapshot:{entityId:'venue',name:'Public Venue'},onSelected:async value=>{selected=value;},onCancel:()=>{}})));}
+async function click(text){const b=[...document.querySelectorAll('button')].find(e=>e.textContent.includes(text));assert.ok(b,text);await act(async()=>b.click());}
+test('in-app search uses scoped session actions then deliberate server-held destination selection',async()=>{await render();assert.equal(document.querySelector('a[target="_blank"]'),null);assert.equal(requests[0].url,'/api/places/venue/reservation-search');assert.equal(document.querySelector('input'),null);await click('Scroll down');assert.deepEqual(requests[1].body,{searchId:frame.searchId,sequence:0,action:{type:'scroll',deltaY:600}});await click('Use this website');assert.deepEqual(selected,{candidateId:'server-held'});assert.ok(requests.some(r=>r.url.endsWith('/close')));assert.ok(!requests.some(r=>/preview|submit|booking/.test(r.url)));});
+test('challenge disables navigation and never offers selection',async()=>{frame={...frame,status:'challenge',canUse:true};await render();assert.match(document.body.textContent,/No bypass is attempted/);assert.equal([...document.querySelectorAll('button')].some(e=>e.textContent.includes('Use this website')),false);assert.equal(document.querySelector('[aria-label="Back in search browser"]').disabled,false);});
+test('dismissal closes the held browser session',async()=>{await render();await act(async()=>root.unmount());root=null;assert.ok(requests.some(r=>r.url.endsWith('/close')&&r.body.searchId===frame.searchId));});
