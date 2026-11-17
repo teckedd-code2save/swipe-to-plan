@@ -4,6 +4,8 @@ COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
 COPY shared /build/shared
+# Brand parity test needs only this native reference, not the mobile app.
+COPY mobile/assets/brand/unstressed-mark.svg /build/mobile/assets/brand/unstressed-mark.svg
 RUN npm test
 ARG VITE_RESERVATION_FORM_PREVIEW=false
 RUN VITE_RESERVATION_FORM_PREVIEW=$VITE_RESERVATION_FORM_PREVIEW npm run build

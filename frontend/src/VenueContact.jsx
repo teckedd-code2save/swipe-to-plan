@@ -15,7 +15,7 @@ export function DialerLink({place,contact,allowedUrl,className=''}) {
 }
 function Source({source}) {
   const date=source?.retrievedAt&&new Date(source.retrievedAt),valid=date&&Number.isFinite(date.getTime());
-  return <small>Source: {source?.provider==='qloo'?'Qloo':source?.provider||'saved venue data'}{source?.field?` · ${source.field}`:''}. {valid?<>Retrieved <time dateTime={date.toISOString()}>{date.toLocaleString()}</time>.</>:'Retrieval time unknown.'} Provider update time unknown.</small>;
+  return <small>Source: {source?.provider==='qloo'?'Qloo':'saved venue data'}. {valid?<>Retrieved <time dateTime={date.toISOString()}>{date.toLocaleString()}</time>.</>:'Retrieval time unknown.'} Provider update time unknown.</small>;
 }
 export default function VenueContact({place,contact,allowDial=true,allowWebsite=true,contacts,scope,context,compact=false}) {
   const evidence=evidenceFor(place,contact),phone=evidence.phone,website=evidence.website;
