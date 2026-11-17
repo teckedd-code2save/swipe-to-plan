@@ -1,3 +1,4 @@
+import {inspectWixForms,fillWixForm,installReservationClickGate} from '../../shared/reservation-wix.js';
 import {startReservationScreencast} from './reservation-stream.js';
 import {createHash,randomUUID} from 'node:crypto';
 import puppeteer from 'puppeteer-core';
@@ -56,7 +57,7 @@ export function semanticField(field){
 // Runs inside the browser. No selectors or executable text supplied by the venue/user.
 export function inspectForms(){
  const inputs='input,select,textarea';
- return [...document.forms].slice(0,12).map((form,index)=>({index,action:form.action,method:form.method,fields:[...form.querySelectorAll(inputs)].map((el,elementIndex)=>({elementIndex,name:el.name,type:el.tagName==='SELECT'?'select':el.tagName==='TEXTAREA'?'textarea':el.type,label:[...(el.labels||[])].map(l=>l.textContent.trim()).join(' ')||el.getAttribute('aria-label')||el.placeholder||el.name,autocomplete:el.autocomplete,required:el.required,disabled:el.disabled,visible:!!(el.getClientRects().length)&&getComputedStyle(el).visibility!=='hidden',options:el.tagName==='SELECT'?[...el.options].slice(0,100).map(o=>({value:o.value,label:o.text})):undefined})).filter(f=>f.visible&&!f.disabled&&!/leave (?:this )?(?:field )?(?:empty|blank)|do not fill/i.test(f.label)&&!['hidden','submit','button','reset','file','password','checkbox','radio','image'].includes(f.type))})).filter(f=>f.fields.length>0&&f.fields.length<=30);
+ return [...document.forms].slice(0,12).map((form,index)=>({index,action:form.action,method:form.method,fields:[...form.querySelectorAll(inputs)].map((el,elementIndex)=>({elementIndex,name:el.name,type:el.tagName==='SELECT'?'select':el.tagName==='TEXTAREA'?'textarea':el.type,label:[...(el.labels||[])].map(l=>l.textContent.trim()).join(' ')||el.getAttribute('aria-label')||el.placeholder||el.name,autocomplete:el.autocomplete,required:el.required,disabled:el.disabled,readOnly:el.readOnly===true||el.getAttribute('aria-readonly')==='true',visible:!!(el.getClientRects().length)&&getComputedStyle(el).visibility!=='hidden',options:el.tagName==='SELECT'?[...el.options].slice(0,100).map(o=>({value:o.value,label:o.text})):undefined})).filter(f=>f.visible&&!f.disabled&&!/leave (?:this )?(?:field )?(?:empty|blank)|do not fill/i.test(f.label)&&!['hidden','submit','button','reset','file','password','checkbox','radio','image'].includes(f.type))})).filter(f=>f.fields.length>0&&f.fields.length<=30);
 }
 export async function browserSession(config,job){
  const {resolve=lookup,liveView=false,emit,signal,connect=puppeteer.connect.bind(puppeteer),...connection}=config;
@@ -99,8 +100,8 @@ export async function browserSession(config,job){
    // Disconnect the engine's network before touching personal fields, not only
    // before the submit button. Unsupported engines fail closed here.
    await page.setOfflineMode(true);
-   await page.evaluate(()=>{window.stop();document.addEventListener('click',e=>{if(e.target.closest?.('a,button,input[type=submit],input[type=image],input[type=reset]')){e.preventDefault();e.stopImmediatePropagation();}},true);document.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();e.stopImmediatePropagation();}},true);document.addEventListener('submit',e=>{e.preventDefault();e.stopImmediatePropagation();},true);HTMLFormElement.prototype.submit=function(){throw Error('Preview only');};HTMLFormElement.prototype.requestSubmit=function(){throw Error('Preview only');};});
-   return blocked;
+   const gate=await page.evaluateHandle(installReservationClickGate);
+   return {blocked,gate};
   });
   signal?.throwIfAborted();
   await stopFrames?.();
@@ -122,7 +123,7 @@ export function chromiumPreviewConfig(config,enabled=process.env.RESERVATION_FOR
  url.searchParams.delete('browser');url.searchParams.set('keep_alive','10000');
  return {...config,browserWSEndpoint:url.href,liveView:true};
 }
-const cleanForms=(raw,url)=>raw.map(form=>({...form,fields:form.fields.map(field=>({...field,id:`field-${field.elementIndex}`,semantic:semanticField(field)}))})).filter(form=>form.fields.some(f=>['date','time','dateTime','partySize'].includes(f.semantic))).map(form=>({...form,sourceUrl:url}));
+const cleanForms=(raw,url)=>raw.map(form=>({...form,fields:form.fields.map(field=>({...field,id:field.id||`field-${field.elementIndex}`,semantic:semanticField(field)}))})).filter(form=>form.fields.some(f=>['date','time','dateTime','partySize'].includes(f.semantic))).map(form=>({...form,sourceUrl:url}));
 export function createReservationForms({places,config=configuredKitesurf(),run=browserSession,now=Date.now,previewConfig=chromiumPreviewConfig(config)}={}){
  const discoveries=new Map(),destinations=new Map(),leases=new Map();let active=0;
  async function closePreview(id){const lease=leases.get(id);if(!lease)return;leases.delete(id);clearTimeout(lease.timer);await lease.release();}
@@ -137,10 +138,14 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
  function expire(){
   for(const cache of [discoveries,destinations]){for(const [key,value] of cache)if(value.expires<now())cache.delete(key);while(cache.size>100)cache.delete(cache.keys().next().value);}
  }
+ async function readForms(page){
+  const native=await page.evaluate(inspectForms),wix=await page.evaluate(inspectWixForms);
+  return cleanForms([...native.filter(f=>!wix.some(w=>w.index===f.index)),...wix],page.url());
+ }
  async function scan(page){
   // Give client-rendered forms a short bounded opportunity to mount. No clicks.
   let forms=[];
-  for(let attempt=0;attempt<4;attempt++){forms=cleanForms(await page.evaluate(inspectForms),page.url());if(forms.length)break;if(attempt<3)await new Promise(r=>setTimeout(r,250));}
+  for(let attempt=0;attempt<4;attempt++){forms=await readForms(page);if(forms.some(f=>f.adapter||f.fields.some(x=>!x.readOnly&&['date','dateTime','time','partySize'].includes(x.semantic))))break;if(attempt<3)await new Promise(r=>setTimeout(r,250));}
   const links=await page.evaluate(()=>[
    ...[...document.querySelectorAll('a[href]')].filter(a=>/\b(book(?:ing)?|reserv(?:e|ation|ations))\b/i.test(a.textContent)).slice(0,12).map(a=>({url:a.href,label:a.textContent.trim().slice(0,100)})),
    ...[...document.querySelectorAll('iframe[src]')].filter(f=>/book|reserv|table|resos|opentable|serva/i.test(`${f.src} ${f.title}`)).slice(0,4).map(f=>({url:f.src,label:f.title||'Embedded booking page'}))
@@ -172,7 +177,7 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
    const unsupported=[];
    if(!forms.length)unsupported.push('no_native_form');
    if(links.some(l=>l.label==='Embedded booking page'))unsupported.push('embedded_forms');
-   if(forms.length&&forms.some(f=>!f.fields.some(x=>['date','dateTime'].includes(x.semantic))||!f.fields.some(x=>['time','dateTime'].includes(x.semantic))))unsupported.push('visit_time_not_mapped');
+   if(forms.length&&forms.some(f=>!f.fields.some(x=>!x.readOnly&&['date','dateTime'].includes(x.semantic))||!f.fields.some(x=>!x.readOnly&&['time','dateTime'].includes(x.semantic))))unsupported.push('visit_time_not_mapped');
    return {status:forms.length?'forms_found':'no_supported_form',previewAvailable:true,sourceUrl:url,forms:forms.map(({id,fields})=>({id,fields})),candidates,unsupported,submitted:false};
   },options.emit?(previewConfig||chromiumPreviewConfig(config,true)||config):config,options);}catch(error){if(error instanceof ReservationFormError)throw error;throw new ReservationFormError(started?'page_unavailable':'browser_unavailable');}
  }
@@ -197,22 +202,30 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
   const result=await runBound(async(page,freeze)=>{
    progress("loading","Loading the reviewed booking page…");
    await page.goto(saved.sourceUrl,{waitUntil:'domcontentloaded',timeout:20000});
-   const form=cleanForms(await page.evaluate(inspectForms),page.url()).find(f=>f.index===saved.form.index);
+   let form;
+   for(let attempt=0;attempt<4;attempt++){
+    options.signal?.throwIfAborted();
+    form=(await readForms(page)).find(f=>f.index===saved.form.index);
+    if(form&&hash(form)===saved.fingerprint)break;
+    if(attempt<3)await new Promise(r=>setTimeout(r,250));
+   }
    if(!form||hash(form)!==saved.fingerprint)throw Error('The form changed. Locate it again before filling.');
    progress("freezing","Disconnecting the page before entering your details…");
-   await freeze();
+   const frozen=await freeze();
    options.signal?.throwIfAborted();
    progress("filling","Filling reviewed details with networking disabled…");
-   const result=await page.evaluate(({index,fields,values})=>{
+   const result=form.adapter==='wix-reservation-v1'
+    ?await page.evaluate(fillWixForm,{index:form.index,values:body.fields},frozen.gate)
+    :await page.evaluate(({index,fields,values})=>{
     const form=document.forms[index],elements=form.querySelectorAll('input,select,textarea');
-    return fields.map(field=>{const el=elements[field.elementIndex],value=values[field.id];if(value==null||value==='')return {label:field.label,value:'',status:field.required?'missing_required':'not_provided'};if(el.tagName==='SELECT'&&![...el.options].some(o=>o.value===value))return {label:field.label,value,status:'no_matching_option'};
+    return fields.map(field=>{const el=elements[field.elementIndex],value=values[field.id];if(el.readOnly||el.getAttribute('aria-readonly')==='true')return {label:field.label,value:'',status:'unsupported_control'};if(value==null||value==='')return {label:field.label,value:'',status:field.required?'missing_required':'not_provided'};if(el.tagName==='SELECT'&&![...el.options].some(o=>o.value===value))return {label:field.label,value,status:'no_matching_option'};
       // No input/change event: handlers may autosave. The visible native field
       // value is a review preview, not a claim React/app state is submitted-ready.
       el.value=value;return {label:field.label,value:el.value,status:el.value===value?'filled':'unsupported_value'};
     });
    },{index:form.index,fields,values:body.fields});
    const screenshot=await page.screenshot({type:'png'});
-   return {status:'preview_ready',sourceUrl:saved.sourceUrl,fields:result,screenshotDataUrl:`data:image/png;base64,${Buffer.from(screenshot).toString('base64')}`,submitted:false,networkDisconnected:true,notice:'Filled for review with networking disabled. No request sent. Dynamic form handlers were not triggered.'};
+   return {status:form.adapter==='wix-reservation-v1'&&result.length===3&&result.every(f=>f.status==='filled')?'filled':'preview_ready',sourceUrl:saved.sourceUrl,fields:result,screenshotDataUrl:`data:image/png;base64,${Buffer.from(screenshot).toString('base64')}`,submitted:false,networkDisconnected:true,notice:form.adapter?'Selected available widget values for review with networking disabled. No request sent.':'Filled for review with networking disabled. No request sent. Dynamic form handlers were not triggered.'};
   },previewConfig||config,options);
   progress("ready","The filled form is ready for review. Nothing was submitted.");
   if(result.release){

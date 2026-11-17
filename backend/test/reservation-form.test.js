@@ -19,7 +19,7 @@ test('hybrid selects Chromium only for preview and closes retained lease',async(
 test('published partner destination requires explicit selection and cannot accept caller URLs',async()=>{
  let current=url,visits=[];
  const partner='https://booking.example/restaurant/real-venue';
- const api=createReservationForms({config:{},previewConfig:null,places:{details:async()=>({entityId:id,contact:{website:{url,source:{entityId:id,field:'properties.website'}}}})},run:async(_,job)=>job({goto:async target=>{current=target;visits.push(target);},url:()=>current,evaluate:async fn=>fn.name==='inspectForms'?structuredClone(raw):current===url?[{url:partner,label:'Reserve a table'},{url:'javascript:alert(1)',label:'Book'}]:[]})});
+ const api=createReservationForms({config:{},previewConfig:null,places:{details:async()=>({entityId:id,contact:{website:{url,source:{entityId:id,field:'properties.website'}}}})},run:async(_,job)=>job({goto:async target=>{current=target;visits.push(target);},url:()=>current,evaluate:async fn=>fn.name==='inspectForms'?structuredClone(raw):fn.name==='inspectWixForms'?[]:current===url?[{url:partner,label:'Reserve a table'},{url:'javascript:alert(1)',label:'Book'}]:[]})});
  const first=await api.discover(id);assert.deepEqual(visits,[url]);assert.equal(first.candidates.length,1);assert.equal(first.candidates[0].relationship,'booking_partner');
  await assert.rejects(api.inspectDestination(id,{candidateId:first.candidates[0].id,url:partner}),/Select/);
  await assert.rejects(api.inspectDestination('other',{candidateId:first.candidates[0].id}),/expired/);
@@ -47,4 +47,31 @@ test('discovery failures distinguish provider, browser, HTTPS page and missing f
  const unavailable=createReservationForms({config:{},places:{details:async()=>{throw Error('private provider url');}}});await assert.rejects(unavailable.discover(id),e=>reservationDiscoveryFailure(e).code==='provider_unavailable');
  const empty=createReservationForms({config:{},places,run:async(_,job)=>job({goto:async()=>{},url:()=>url,evaluate:async()=>[]})});assert.equal((await empty.discover(id)).status,'no_supported_form');
  assert.equal(reservationDiscoveryFailure(Error('secret')).code,'discovery_failed');assert.doesNotMatch(reservationDiscoveryFailure(Error('secret')).error,/secret/);
+});
+
+test('readonly custom date widgets do not count as mapped writable timing',async()=>{
+ const custom=[{index:0,action:url,method:'post',fields:[
+  {elementIndex:0,type:'text',label:'Date',name:'date',readOnly:true},
+  {elementIndex:1,type:'time',label:'Time',name:'time'}
+ ]}];
+ const api=createReservationForms({config:{},places:{details:async()=>({entityId:id,contact:{website:{url,source:{entityId:id,field:'properties.website'}}}})},run:async(_,job)=>job({goto:async()=>{},url:()=>url,evaluate:async fn=>fn.name==='inspectForms'?structuredClone(custom):[]})});
+ const result=await api.discover(id);
+ assert.ok(result.unsupported.includes('visit_time_not_mapped'));
+ assert.equal(result.forms[0].fields[0].readOnly,true);
+});
+
+test('preview never writes to readonly native backing inputs of custom widgets',async()=>{
+ const custom=[{index:0,action:url,method:'post',fields:[{elementIndex:0,type:'text',label:'Date',name:'date',readOnly:true}]}];
+ const el={readOnly:true,value:'11/17/2026',getAttribute:()=>null};let frozen=false;
+ const api=createReservationForms({config:{},places:{details:async()=>({entityId:id,contact:{website:{url,source:{entityId:id,field:'properties.website'}}}})},run:async(_,job)=>job({goto:async()=>{},url:()=>url,evaluate:async(fn,args)=>{
+  if(!args)return fn.name==='inspectForms'?structuredClone(custom):[];
+  assert.equal(frozen,true);
+  const prior=globalThis.document;
+  globalThis.document={forms:[{querySelectorAll:()=>[el]}]};
+  try{return fn(args);}finally{if(prior===undefined)delete globalThis.document;else globalThis.document=prior;}
+ },screenshot:async()=>Buffer.from('test')},async()=>{frozen=true;})});
+ const found=await api.discover(id);
+ const result=await api.preview(id,{formId:found.forms[0].id,consent:true,fields:{'field-0':'2026-11-18'}});
+ assert.equal(result.fields[0].status,'unsupported_control');
+ assert.equal(el.value,'11/17/2026');assert.equal(result.submitted,false);
 });
