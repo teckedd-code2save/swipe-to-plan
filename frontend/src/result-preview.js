@@ -24,7 +24,9 @@ export function resultPreview(plan) {
   const missing=plan.stops.some(stop=>!stop.item);
   const timing=plan.phase==='needs_timing'?'Visit times need adjusting.':plan.phase==='discovery'?'Visit times are not set.':'';
   const gap=partialPlanSummary(plan);
-  const warnings=[...new Set([gap,timing,...(plan.warnings||[])].filter(Boolean))];
+  // Generic planning caveats remain in the full itinerary, not every chat result.
+  const generic=new Set(['Suggested times do not verify opening hours. Travel buffers are not route estimates.','Budget figures are allowances, not venue quotes. Confirm prices and availability before going.']);
+  const warnings=[...new Set([gap,timing,...(plan.warnings||[])].filter(value=>value&&!generic.has(value)))];
   return {
     title:!plan.stops.some(stop=>stop.item)?'Places still to find':missing?'Your outing so far':'Suggested for your outing',
     stops:plan.stops,

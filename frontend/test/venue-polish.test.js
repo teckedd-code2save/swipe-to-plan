@@ -28,3 +28,9 @@ test('shortlisted venues offer discovery without permitting form filling',async(
  assert.match(code,/scope.allowed&&stop.id==='shortlist-place'\?<><ReservationFormPreview[^>]*fillAllowed=\{false\}/);
  assert.match(code,/You can find the form now. Add this place/);
 });
+
+test('chat summary retains specific warnings without repeating generic itinerary disclaimers',async()=>{
+ const {resultPreview}=await import('../src/result-preview.js');
+ const plan={phase:'discovery',stops:[{id:'one',item:{name:'A venue'}}],warnings:['Suggested times do not verify opening hours. Travel buffers are not route estimates.','Budget figures are allowances, not venue quotes. Confirm prices and availability before going.','The selected venue is closed on Tuesday.']};
+ const result=resultPreview(plan);assert.deepEqual(result.warnings,['Visit times are not set.','The selected venue is closed on Tuesday.']);
+});
