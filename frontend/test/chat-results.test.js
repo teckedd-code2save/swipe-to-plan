@@ -271,3 +271,13 @@ test('narrowing an open desktop pane moves focus into the modal without losing i
  await act(async()=>{compact=false;for(const change of mediaChanges)change();});
  await render({planOpen:false});assert.ok(document.activeElement===more,'Resize never replaces the original return target');
 });
+
+
+test('results contain no next-step dashboard or sticky budget footer',async()=>{
+ await render({planOpen:true,nextSteps:steps()});
+ const panel=document.querySelector('#current-outing-panel');
+ assert.equal(panel.querySelector('.cs-next-steps'),null);
+ assert.equal(panel.querySelector('.cs-day-footer'),null);
+ assert.equal(panel.querySelector('.bc-footer-budget'),null);
+ assert.ok(panel.querySelector('[data-testid="full-results"]'));
+});

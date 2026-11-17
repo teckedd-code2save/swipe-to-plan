@@ -1,0 +1,16 @@
+/* Quiet utilities, not a second navigation or an action dashboard. */
+.result-tools{display:flex;align-items:center;gap:4px;margin:0 0 14px;min-height:40px}
+.result-tools button,.place-actions button,.place-actions a{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-width:40px;min-height:40px;padding:8px!important;border:0;border-radius:8px;background:transparent!important;color:#46604a;font:600 12px/1.3 var(--font-body);text-decoration:none;cursor:pointer}
+.result-tools button:hover,.place-actions button:hover,.place-actions a:hover{background:#edf2ea!important}
+.result-tools button:disabled,.place-actions button:disabled{opacity:.4;cursor:default}
+.result-tools .result-add{padding:8px 10px!important}
+.result-tools-spacer,.place-actions-spacer{flex:1}
+.place-actions{display:flex;align-items:center;gap:3px;margin-top:16px;padding-top:10px;border-top:1px solid #edf0e9}
+.place-actions .place-view{justify-content:flex-start;padding-left:0!important;color:#264a3a}
+.place-actions button[aria-pressed=true]{background:#e8f0e6!important}
+.chat-studio .outing-place-description{-webkit-line-clamp:2}
+.chat-studio .outing-place-copy{padding:18px}
+.chat-studio .outing-place-photo{height:160px}
+@media(max-width:600px){.result-tools button,.place-actions button,.place-actions a{min-width:44px;min-height:44px}.chat-studio .outing-place-copy{padding:16px}.chat-studio .outing-place-photo{height:150px}}
+.chat-studio .cs-result-reasoning{padding:0 0 12px;margin:0 0 4px;border:0;background:none;border-radius:0;font-size:12px}
+.chat-studio .cs-result-reasoning summary{min-height:32px}
