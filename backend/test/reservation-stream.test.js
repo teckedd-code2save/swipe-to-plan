@@ -60,3 +60,23 @@ test('undeliverable final result closes retained preview and JSON personal resul
  assert.equal(closed,'retained');assert.equal(t.options.signal.aborted,true);assert.deepEqual(res.lines,[]);
  const json=response(),u=reservationTransport({get:()=> 'application/json'},json);await u.result({screenshotDataUrl:'private'});assert.equal(json.headers['Cache-Control'],'no-store');
 });
+
+test('operation-owned browser is closed once after discovery, including abort cleanup',async()=>{
+ const {browserSession}=await import('../src/reservation-form.js');
+ for(const cancel of [false,true]){
+  const calls=[],abort=new AbortController(),page=new EventEmitter();
+  Object.assign(page,{setViewport:async()=>{},setRequestInterception:async()=>{},evaluateOnNewDocument:async()=>{},close:async()=>calls.push('page')});
+  const browser={newPage:async()=>page,close:async()=>calls.push('browser'),disconnect:async()=>calls.push('disconnect')};
+  const operation=browserSession({connect:async()=>browser,signal:abort.signal},async()=>{if(cancel){abort.abort();throw Error('cancelled');}return {};});
+  if(cancel)await assert.rejects(operation,/cancelled/);else await operation;
+  assert.deepEqual(calls,['page','browser']);
+ }
+});
+test('retained live view owns browser until its idempotent release; close failure disconnects',async()=>{
+ const {browserSession}=await import('../src/reservation-form.js');const calls=[],page=new EventEmitter();
+ Object.assign(page,{setViewport:async()=>{},setRequestInterception:async()=>{},evaluateOnNewDocument:async()=>{},close:async()=>calls.push('page'),createCDPSession:async()=>({send:async()=>({devtoolsFrontendUrl:'https://live.browser.run/view'})})});
+ const browser={newPage:async()=>page,close:async()=>{calls.push('browser');throw Error('engine closed');},disconnect:async()=>calls.push('disconnect')};
+ const result=await browserSession({connect:async()=>browser,liveView:true},async()=>({networkDisconnected:true}));
+ assert.deepEqual(calls,[]);await Promise.all([result.release(),result.release()]);
+ assert.deepEqual(calls,['page','browser','disconnect']);
+});

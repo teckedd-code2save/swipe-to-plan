@@ -80,8 +80,17 @@ export async function browserSession(config,job){
  const {resolve=lookup,liveView=false,emit,signal,connect=puppeteer.connect.bind(puppeteer),...connection}=config;
  signal?.throwIfAborted();
  const browser=await connect({...connection,protocolTimeout:20000});
- let page,retained=false,stopFrames;
- const release=async()=>{await stopFrames?.();await page?.close().catch(()=>{});await browser.disconnect();};
+ let page,retained=false,stopFrames,releasePromise;
+ // These sessions are owned by this operation, not a shared browser pool.
+ // Disconnect alone leaves Cloudflare's session alive until its idle timeout.
+ const release=()=>releasePromise??=(async()=>{
+  try{await stopFrames?.();}catch{}
+  try{await page?.close();}catch{}
+  try{await browser.close();}catch{
+   // An already closed/unsupported engine must still release the transport.
+   try{await browser.disconnect();}catch{}
+  }
+ })();
  const aborted=()=>{release().catch(()=>{});};signal?.addEventListener("abort",aborted,{once:true});
  try{
   signal?.throwIfAborted();
