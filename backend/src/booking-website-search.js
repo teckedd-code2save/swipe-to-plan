@@ -51,7 +51,7 @@ export function createBookingWebsiteSearch({places,registerDestination,search,no
   const id=locationId(entityId);let place;try{place=await places.details(id);}catch{throw new ErrorType('provider_unavailable');}
   if(place?.entityId?.toUpperCase()!==id||!place.name||!place.address)throw new ErrorType('provider_unavailable');
   const venueName=clean(place.name,200),venueAddress=clean(place.address,400);if(!venueName||!venueAddress)throw new ErrorType('provider_unavailable');
-  let results;try{results=await search.search(`${venueName} ${venueAddress} official website reservations`.slice(0,650),options);}catch(error){throw typed(error);}
+  let results;try{results=await search.search(`${venueName} ${venueAddress} reservations book a table`.slice(0,650),options);}catch(error){throw typed(error);}
   if(options.signal?.aborted)throw new ErrorType('expired');prune();const expires=now()+ttl,seen=new Set(),items=[];
   for(const result of results.slice(0,6)){
    let url;try{url=menuUrl(result.url);if(url.protocol!=='https:')continue;}catch{continue;}

@@ -19,7 +19,7 @@ test('search has no app daily or per-minute quota',async()=>{
 });
 test('search result candidates are safe transient leads, explicit entity-bound selection only',async()=>{
  let clock=0,query,registered;const api=createBookingWebsiteSearch({places,now:()=>clock,registerDestination:(entityId,url)=>{registered={entityId,url};return registered;},search:{enabled:true,search:async q=>{query=q;return [{title:'<b>Republic</b>',description:'<i>Official</i> website',url:'https://venue.example/#foo'},{title:'private',url:'https://127.0.0.1/'},{title:'http',url:'http://venue.example/'},{title:'dup',url:'https://venue.example/'}];}}});
- const found=await api.find(id,{});assert.equal(query,'Republic Bar Osu, Accra official website reservations');assert.equal(registered,undefined);assert.equal(found.candidates.length,1);assert.equal(found.candidates[0].title,'Republic');assert.equal(found.candidates[0].snippet,'Official website');assert.equal(found.submitted,false);
+ const found=await api.find(id,{});assert.equal(query,'Republic Bar Osu, Accra reservations book a table');assert.equal(registered,undefined);assert.equal(found.candidates.length,1);assert.equal(found.candidates[0].title,'Republic');assert.equal(found.candidates[0].snippet,'Official website');assert.equal(found.submitted,false);
  const candidateId=found.candidates[0].candidateId;await assert.rejects(api.select('87654321-1234-1234-1234-123456789ABC',{candidateId}),/expired/);await api.select(id,{candidateId});assert.equal(registered.url,'https://venue.example/');await assert.rejects(api.select(id,{candidateId}),/expired/);
  const again=await api.find(id,{});clock=180001;await assert.rejects(api.select(id,{candidateId:again.candidates[0].candidateId}),/expired/);
 });
@@ -61,4 +61,9 @@ test('website search endpoints have no local request quota while retaining origi
  const request=(suffix,origin='http://127.0.0.1:5173')=>new Promise((resolve,reject)=>{const req=http.request({host:'127.0.0.1',port:server.address().port,path:`/api/places/${id}/booking-websites${suffix}`,method:'POST',headers:{origin,'content-type':'application/json'}},res=>{res.resume();res.on('end',()=>resolve(res.statusCode));});req.on('error',reject);req.end('{}');});
  for(const suffix of ['', '/select'])for(let i=0;i<6;i++)assert.equal(await request(suffix),200);
  assert.equal(calls,12);assert.equal(await request('','https://other.example'),403);assert.equal(calls,12);
+});
+
+test('booking intent uses provider name and address without preferring an official site',async()=>{
+ let query;const api=createBookingWebsiteSearch({places:{details:async()=>({entityId:id,name:'A Venue / Branch',address:'12 First Lane Example City Country'})},search:{enabled:true,provider:'serper',search:async q=>{query=q;return [{title:'Venue reservations',url:'https://booking.example/venue/',description:'Book a table'}];}},registerDestination:()=>assert.fail('must review candidate')});
+ const result=await api.find(id,{});assert.equal(query,'A Venue / Branch 12 First Lane Example City Country reservations book a table');assert.equal(result.candidates[0].url,'https://booking.example/venue/');assert.equal(result.submitted,false);
 });
