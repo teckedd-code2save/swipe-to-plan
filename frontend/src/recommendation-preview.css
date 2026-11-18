@@ -36,14 +36,14 @@
 .cs-result-reasoning summary,.cs-earlier-result summary{cursor:pointer;min-height:44px;align-content:center;font-size:12px;font-weight:650;color:#506547}
 .chat-studio .cs-result-reasoning button,.chat-studio .cs-earlier-result>button{min-height:44px;display:inline-flex;align-items:center;gap:8px;font-size:12px;color:#405936}
 .chat-studio .cs-recommendation-preview button:focus-visible,.chat-studio .cs-action-drawer button:focus-visible,.cs-result-reasoning summary:focus-visible,.cs-earlier-result summary:focus-visible{outline:2px solid #98723f;outline-offset:3px}
-.chat-studio .cs-result-toast{position:fixed;top:78px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;max-width:calc(100% - 28px);padding:10px 14px;border:1px solid #d3dfc8;border-radius:12px;background:#f4f8ef;color:#37522f;font-size:12px;line-height:1.5;box-shadow:0 5px 20px #33472515;z-index:90;pointer-events:none}
+.chat-studio .cs-result-toast{position:fixed;top:78px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;max-width:calc(100% - 28px);padding:10px 14px;border:1px solid #d3dfc8;border-radius:12px;background:#f4f8ef;color:#37522f;font-size:12px;line-height:1.5;box-shadow:0 5px 20px #33472515;z-index:90;pointer-events:auto}
 .cs-result-toast svg{flex-shrink:0}
 /* A short burst behind the existing control, never a persistent unread dot. */
-.chat-studio .cs-view-day>.cs-result-sparkles{position:absolute;inset:-5px;pointer-events:none;overflow:visible}
-.chat-studio .cs-view-day .cs-result-sparkles i{position:absolute;left:50%;top:50%;width:4px;height:4px;border-radius:50%;background:#799467;opacity:0;--burst-x:-38px;--burst-y:-18px;animation:cs-result-burst .85s ease-out both}
-.chat-studio .cs-view-day .cs-result-sparkles i:nth-child(2){--burst-x:38px;--burst-y:-18px;animation-delay:.05s}
-.chat-studio .cs-view-day .cs-result-sparkles i:nth-child(3){--burst-x:-32px;--burst-y:19px;animation-delay:.1s}
-.chat-studio .cs-view-day .cs-result-sparkles i:nth-child(4){--burst-x:32px;--burst-y:19px;animation-delay:.05s}
+.chat-studio .cs-results-signal>.cs-result-sparkles{position:absolute;inset:-5px;pointer-events:none;overflow:visible}
+.chat-studio .cs-results-signal .cs-result-sparkles i{position:absolute;left:50%;top:50%;width:4px;height:4px;border-radius:50%;background:#799467;opacity:0;--burst-x:-38px;--burst-y:-18px;animation:cs-result-burst .85s ease-out both}
+.chat-studio .cs-results-signal .cs-result-sparkles i:nth-child(2){--burst-x:38px;--burst-y:-18px;animation-delay:.05s}
+.chat-studio .cs-results-signal .cs-result-sparkles i:nth-child(3){--burst-x:-32px;--burst-y:19px;animation-delay:.1s}
+.chat-studio .cs-results-signal .cs-result-sparkles i:nth-child(4){--burst-x:32px;--burst-y:19px;animation-delay:.05s}
 .cs-result-sparkles b{position:absolute;inset:0;border:2px solid #91aa77;border-radius:12px;opacity:0;animation:cs-result-ring .85s ease-out both}
 @keyframes cs-result-burst{0%{opacity:0;transform:translate(-50%,-50%) scale(.4)}25%{opacity:.8}100%{opacity:0;transform:translate(var(--burst-x),var(--burst-y)) scale(.7)}}
 @keyframes cs-result-ring{0%{opacity:0;transform:scale(.9)}20%{opacity:.55}100%{opacity:0;transform:scale(1.18)}}
@@ -51,3 +51,7 @@
 @media(max-height:450px){.chat-studio .cs-action-content{max-height:22dvh}.chat-studio .cs-action-toggle{min-height:44px}.chat-studio .cs-result-toast{top:auto;bottom:8px}}
 @media(prefers-reduced-motion:reduce){.chat-studio .cs-result-sparkles{display:none}.chat-studio .cs-result-sparkles *{animation:none!important}.chat-studio .cs-result-toast{animation:none!important;transition:none!important}}
 @media print{.cs-result-toast,.cs-result-sparkles{display:none!important}}
+
+.chat-studio .cs-results-access{display:flex;align-items:center;gap:8px;min-height:44px;padding:8px 12px;margin:0 auto 6px;color:var(--cs-ink);font-size:12px;border-radius:24px;background:var(--cs-surface,#f5f7ef);border:1px solid var(--cs-line)}
+.cs-results-signal{position:relative;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.chat-studio .cs-result-toast button{display:inline-flex;align-items:center;gap:4px;min-height:36px;padding:4px 8px;border-radius:8px;background:#e3ecd9;color:#37522f;white-space:nowrap;font-size:12px}

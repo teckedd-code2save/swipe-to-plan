@@ -14,6 +14,8 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
   const pending=useRef(null),lease=useRef(null);
   const [browserView,setBrowserView]=useState(null),[open,setOpen]=useState(false),[searchingWeb,setSearchingWeb]=useState(false);
   const workspace=useRef(null),trigger=useRef(null);
+  const [detailsOpen,setDetailsOpen]=useState(false),[zoomed,setZoomed]=useState(false);
+  useEffect(()=>{if(error||discovery||preview)setDetailsOpen(true);},[error,discovery,preview]);
   useEffect(()=>{
     if(!open)return;
     const el=workspace.current;el.showModal();
@@ -93,13 +95,15 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
     {!open&&!fillAllowed&&onTiming&&<button type="button" className="pg-link" onClick={onTiming}>Set visit time</button>}
     {open&&createPortal(<dialog ref={workspace} className="booking-workspace" aria-label={`Booking browser for ${snapshot.name}`} onCancel={e=>{e.preventDefault();e.stopPropagation();cancel();}} onKeyDown={e=>e.stopPropagation()}>
       <header className="booking-browser-bar"><Icon name="lock" size={18}/><div><strong>{snapshot.name}</strong><span>{discovery?.sourceUrl?new URL(discovery.sourceUrl).hostname:'Booking browser'} · No booking submitted</span></div><button type="button" className="booking-icon" onClick={discover} disabled={locked} aria-label="Find booking form" title="Retry search"><Icon name="undo"/></button><button type="button" className="booking-icon" onClick={cancel} aria-label="Close form preview" title="Close"><Icon name="close"/></button></header>
-      <div className="booking-workspace-body">{searchingWeb?<BookingWebsiteSearch snapshot={snapshot} onSelected={useSearchDestination} onCancel={cancel}/>:<>
-      <section className="booking-browser-canvas" aria-label="Read-only browser view">
+      <div className={`booking-workspace-body ${detailsOpen?'booking-details-open':''}`}>{searchingWeb?<BookingWebsiteSearch snapshot={snapshot} onSelected={useSearchDestination} onCancel={cancel}/>:<>
+      <section className={`booking-browser-canvas ${zoomed?'booking-canvas-zoomed':''}`} aria-label="Read-only browser view">
         <div className="booking-browser-status" role="status">{busy?({waiting:'Waiting briefly for a booking browser…',connecting:'Connecting to the browser…',loading:'Opening the venue website…',inspecting:'Looking for booking fields…',freezing:'Disconnecting the form before filling…',filling:'Filling your reviewed details…',ready:'Browser preview ready.'}[browserView?.stage]||'Viewing the browser…'):preview?'Prepared for review · not submitted':discovery?.forms.length?'Booking form found':error?'Could not open the booking page':'Search complete'}</div>
+        {(browserView?.imageDataUrl||preview?.screenshotDataUrl)&&<button type="button" className="booking-view-zoom" aria-pressed={zoomed} onClick={()=>setZoomed(v=>!v)}>{zoomed?'Fit page':'Zoom page'}</button>}
         {browserView?.imageDataUrl||preview?.screenshotDataUrl?<img src={preview?.screenshotDataUrl||browserView.imageDataUrl} alt="Actual remote browser page, read-only preview"/>:<div className="booking-browser-empty"><Icon name={busy?'clock':'search'} size={36}/><h2>{busy?'Opening the booking page':error?'Let’s try another way':discovery?.forms.length?'Your form is ready to prepare':'No preview available'}</h2><p>{busy?'You’ll see the website here as the browser works.':'Choose the next step alongside this view.'}</p></div>}
         {preview?.liveViewUrl&&<a className="pl-button booking-open-live" href={preview.liveViewUrl} target="_blank" rel="noopener noreferrer">Open filled form<Icon name="arrowUpRight" size={18}/></a>}
       </section>
-      <aside className="booking-browser-controls" aria-label="Booking details">
+      <button type="button" className="booking-details-toggle" aria-expanded={detailsOpen} aria-controls="booking-details-panel" onClick={()=>setDetailsOpen(v=>!v)}>{detailsOpen?'Hide booking details':'Show booking details'}<Icon name={detailsOpen?"close":"list"} size={16}/></button>
+      <aside id="booking-details-panel" className="booking-browser-controls" aria-label="Booking details">
     {busy==='inspecting' &&<p role="status">Inspecting the selected booking page…</p>}
     {!fillAllowed&&<p className="pg-note">You can find the form now. Add your visit time and party size before filling. {onTiming&&<button type="button" className="pg-link" disabled={locked} onClick={onTiming}>Set visit time</button>}</p>}
     {error&&<div className="booking-error"><p role="alert">{error}</p><button type="button" className="pl-secondary-button" disabled={locked} onClick={discover}>Try again</button>{secureBookingWebsite(snapshot.contacts?.website)&&<a className="pg-link" href={secureBookingWebsite(snapshot.contacts.website)} target="_blank" rel="noopener noreferrer">Open venue website <Icon name="arrowUpRight" size={16}/></a>}<button type="button" className="pg-link" disabled={locked} onClick={startWebSearch}>Search web for booking <Icon name="search" size={16}/></button><button type="button" className="pg-link" onClick={cancel}>Back to booking options</button></div>}

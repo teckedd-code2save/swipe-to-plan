@@ -32,3 +32,11 @@ Browser checks also exposed coffee offerings incorrectly qualifying a fast-food 
 A reservation, venue-contact or booking-tracking request opens `show_ui bookings` for the exact selected stop, without changing the itinerary. Show supplied facts and prepared text before the contact step. Ask for missing timing only when it is required for a reservation; an undated general enquiry is still useful. Do not ask the same questions again in prose when the card already handles them.
 
 This release can save preparation and user-reported outcomes, but cannot send venue messages, submit bookings, charge the customer or independently verify a confirmation. Never turn a copied enquiry, opened website, call link, reported outcome or payment into a provider-confirmed booking claim. Private messages and references are not included in the model context. The intended next step is customer-approved execution through supported providers and channels, not permanent manual handoff; see `OUTING-ACTIONS.md`.
+
+## Named venue lookup
+
+`find_venue` is a read-only action for a place the person names. It queries Qloo place search, not taste/category insights, then retrieves genuine entity-bound details. Accent/punctuation-normalized names and provider aliases may yield candidates; they are not automatic identity confirmations. Up to eight candidates show the name and address, with a location-review notice when the address does not substantiate the requested area. Missing matches stay missing; nearby recommendations never silently replace the requested venue.
+
+The studio keeps the current outing unchanged. A person can open a candidate in the existing place-details/booking flow and separately review local visit date, time, time zone and headcount before safe form preparation. It does not silently inherit an existing outing's confirmed schedule, add the candidate to that outing, submit a booking or claim availability.
+
+Regression coverage: `backend/test/named-venue.test.js` plus named lookup cases in `frontend/test/planner-location-integration.test.js`. Test genuine full-name/partial-name matches, ambiguous branches, wrong/unknown location, no matches, provider ID mismatch, unchanged existing outing, and explicit local visit setup before filling.

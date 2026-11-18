@@ -111,8 +111,21 @@ test('unmount aborts capability lookup and ignores late availability',async()=>{
  });
 test('missing website opens in-app candidates then reviewed selection uses booking browser',async()=>{
  const baseFetch=globalThis.fetch;
- const results={venueName:'Test venue',venueAddress:'Accra, Ghana',candidates:[{candidateId:'result-1',title:'Test venue',url:'https://venue.example/',snippet:'Test venue Accra Ghana'}]};
+ const results={expiresAt:new Date(Date.now()+60000).toISOString(),venueName:'Test venue',venueAddress:'Accra, Ghana',candidates:[{candidateId:'result-1',title:'Test venue',url:'https://venue.example/',snippet:'Test venue Accra Ghana'}]};
  globalThis.fetch=async(url,options={})=>{if(url.includes('/booking-websites')){requests.push({url,body:JSON.parse(options.body||'{}')});return new Response(JSON.stringify(url.endsWith('/select')?{candidateId:'e81234ab-4123-4123-8123-123456789def'}:results));}return baseFetch(url,options);};
  await render({snapshot:{...props.snapshot,contacts:{}}});await click('Search web for booking');assert.ok(document.querySelector('[aria-label="Website search results"]'));assert.equal(document.querySelector('a[target="_blank"]'),null);assert.match(document.body.textContent,/Accra, Ghana/);
- await act(async()=>document.querySelector('input[type=radio]').click());assert.equal(button('Open selected website').disabled,true);await act(async()=>document.querySelector('.booking-identity-review input').click());await click('Open selected website');const destination=requests.find(r=>r.url.endsWith('/destination'));assert.deepEqual(destination.body,{candidateId:'e81234ab-4123-4123-8123-123456789def'});assert.equal(document.querySelector('[aria-label="Website search results"]'),null);assert.ok(document.querySelector('input[type=date]'));assert.equal(button('Fill form without submitting').disabled,true);
+ await act(async()=>document.querySelector('.booking-website-candidate').click());const destination=requests.find(r=>r.url.endsWith('/destination'));assert.deepEqual(destination.body,{candidateId:'e81234ab-4123-4123-8123-123456789def'});assert.equal(document.querySelector('[aria-label="Website search results"]'),null);assert.ok(document.querySelector('input[type=date]'));assert.equal(button('Fill form without submitting').disabled,true);
+});
+
+test('booking details can collapse without losing form or reviewed consent',async()=>{
+ await render();await click('Find booking form');
+ const toggle=document.querySelector('.booking-details-toggle');
+ assert.equal(toggle.getAttribute('aria-expanded'),'true');
+ await act(async()=>document.querySelector('input[type=checkbox]').click());
+ await act(async()=>toggle.click());
+ assert.equal(toggle.getAttribute('aria-expanded'),'false');
+ assert.equal(document.querySelector('.booking-workspace-body').classList.contains('booking-details-open'),false);
+ await act(async()=>toggle.click());
+ assert.equal(document.querySelector('input[type=checkbox]').checked,true);
+ assert.equal(button('Fill form without submitting').disabled,false);
 });

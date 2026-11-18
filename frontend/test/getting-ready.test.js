@@ -184,7 +184,7 @@ test('ready chrome is scoped to its open plan and returning to chat retains acco
   await click('Back to chat');assert.equal(dismissed,1);await studio({planOpen:false});
   assert.equal(document.querySelector('.chat-studio.ready-open'),null);assert.equal(document.querySelector('.cs-header').hasAttribute('inert'),false);
   assert.equal(document.activeElement,outside,'Closing restores the previous focus');
-  await click('Sign in');await click('Saved days');await click('Your day');assert.deepEqual([account,saved,opened],[1,1,1]);
+  await click('Sign in');await click('Saved days');await click('Open current results');assert.deepEqual([account,saved,opened],[1,1,1]);
   await studio({planOpen:true,planView:'itinerary'});assert.equal(document.querySelector('.chat-studio.ready-open'),null);
   await studio({planView:'checklist',discovery:{},discoveryPanel:React.createElement('p',null,'Synthetic discovery')});assert.equal(document.querySelector('.chat-studio.ready-open'),null);
 });
