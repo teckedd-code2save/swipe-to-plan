@@ -5,6 +5,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import puppeteer from 'puppeteer-core';
 import {menuUrl,publicAddress} from './menu-evidence.js';
 import {lookup} from 'node:dns/promises';
+import {setTimeout as waitFor} from 'node:timers/promises';
 import {canonicalContactRedirect} from './contact-evidence.js';
 import {locationId} from './locations.js';
 
@@ -17,6 +18,8 @@ const discoveryMessages={
  no_website:'No provider-linked website is available for this venue. Use its contact details instead.',
  provider_unavailable:'Venue website details could not be loaded. Try again shortly.',
  visual_unavailable:'This browser could not start a live visual stream. No reservation details were sent. Try again or use the venue website.',
+ browser_rate_limited:'The booking browser is busy. Please try again shortly; no reservation details were sent.',
+ browser_quota_exceeded:'The booking browser has reached its usage allowance. Use the venue website for now; no reservation details were sent.',
  browser_unavailable:'The booking-form browser is unavailable. Try again shortly; no reservation details were sent.',
  page_unavailable:'The booking browser could not load this website. It may still open in your browser. No reservation details were sent.',
  page_timeout:'The venue website took too long to load. Try again or open it in your browser. No reservation details were sent.',
@@ -79,10 +82,28 @@ export function inspectForms(){
  const inputs='input,select,textarea';
  return [...document.forms].slice(0,12).map((form,index)=>({index,action:form.action,method:form.method,fields:[...form.querySelectorAll(inputs)].map((el,elementIndex)=>({elementIndex,name:el.name,type:el.tagName==='SELECT'?'select':el.tagName==='TEXTAREA'?'textarea':el.type,label:[...(el.labels||[])].map(l=>l.textContent.trim()).join(' ')||el.getAttribute('aria-label')||el.placeholder||el.name,autocomplete:el.autocomplete,required:el.required,disabled:el.disabled,readOnly:el.readOnly===true||el.getAttribute('aria-readonly')==='true',visible:!!(el.getClientRects().length)&&getComputedStyle(el).visibility!=='hidden',options:el.tagName==='SELECT'?[...el.options].slice(0,100).map(o=>({value:o.value,label:o.text})):undefined})).filter(f=>f.visible&&!f.disabled&&!/leave (?:this )?(?:field )?(?:empty|blank)|do not fill/i.test(f.label)&&!['hidden','submit','button','reset','file','password','checkbox','radio','image'].includes(f.type))})).filter(f=>f.fields.length>0&&f.fields.length<=30);
 }
+export async function connectReservationBrowser(connect,connection,{signal,emit,wait=waitFor}={}){
+ for(let attempt=0;attempt<2;attempt++){
+  signal?.throwIfAborted();
+  try{return await connect({...connection,protocolTimeout:20000});}
+  catch(error){
+   signal?.throwIfAborted();
+   const message=String(error?.message||'');
+   const limited=error?.status===429||/(?:response|status|code)[: =]+429\b/i.test(message);
+   if(!limited)throw error;
+   if(/(?:daily|today|time limit exceeded|quota exceeded)/i.test(message))throw new ReservationFormError('browser_quota_exceeded');
+   if(attempt)throw new ReservationFormError('browser_rate_limited');
+   // Cloudflare's free plan permits one new browser every 20 seconds.
+   // Retry only session creation, never page navigation or form actions.
+   emit?.({type:'progress',stage:'waiting',message:'Waiting briefly for a booking browser…'});
+   await wait(21000,undefined,{signal});
+  }
+ }
+}
 export async function browserSession(config,job){
  const {resolve=lookup,liveView=false,retainReadOnly=false,emit,signal,connect=puppeteer.connect.bind(puppeteer),...connection}=config;
  signal?.throwIfAborted();
- const browser=await connect({...connection,protocolTimeout:20000});
+ const browser=await connectReservationBrowser(connect,connection,{signal,emit});
  let page,retained=false,stopFrames,releasePromise;
  // These sessions are owned by this operation, not a shared browser pool.
  // Disconnect alone leaves Cloudflare's session alive until its idle timeout.

@@ -1,4 +1,4 @@
-const stages=new Set(['connecting','loading','inspecting','freezing','filling','ready']);
+const stages=new Set(['waiting','connecting','loading','inspecting','freezing','filling','ready']);
 export function reservationStreamEvent(event){
  if(event?.type==='progress'&&stages.has(event.stage))return {type:'progress',stage:event.stage};
  if(event?.type==='frame'&&typeof event.imageDataUrl==='string'&&event.imageDataUrl.length<=12000000&&/^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(event.imageDataUrl))return {type:'frame',imageDataUrl:event.imageDataUrl};
