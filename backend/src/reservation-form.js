@@ -1,3 +1,4 @@
+import {resolveReservationHost,reservationGuardFailure,recordReservationGuardFailure} from './reservation-dns.js';
 import {createReservationSearch} from './reservation-search.js';
 import {inspectWixForms,fillWixForm,installReservationClickGate} from '../../shared/reservation-wix.js';
 import {startReservationScreencast} from './reservation-stream.js';
@@ -22,6 +23,8 @@ const discoveryMessages={
  browser_quota_exceeded:'The booking browser has reached its usage allowance. Use the venue website for now; no reservation details were sent.',
  browser_unavailable:'The booking-form browser is unavailable. Try again shortly; no reservation details were sent.',
  page_unavailable:'The booking browser could not load this website. It may still open in your browser. No reservation details were sent.',
+ page_dns_failed:'The booking browser could not resolve this website’s address. Try again later or open the venue website; no reservation details were sent.',
+ page_unsafe_destination:'This destination could not be opened safely. No reservation details were sent.',
  page_timeout:'The venue website took too long to load. Try again or open it in your browser. No reservation details were sent.',
  page_connection_failed:'The booking browser could not connect to this website. It may still open in your browser. No reservation details were sent.',
  page_tls_failed:'The booking browser could not verify this website’s secure connection. No reservation details were sent.',
@@ -42,9 +45,9 @@ export function reservationPageFailure(error){
  return new ReservationFormError('page_unavailable');
 }
 async function navigateReservation(page,url){
- let response;
+ let response;recordReservationGuardFailure(page,null);
  try{response=await page.goto(url,{waitUntil:'domcontentloaded',timeout:20000});}
- catch(error){throw reservationPageFailure(error);}
+ catch(error){const guard=reservationGuardFailure(page);throw guard?new ReservationFormError(guard):reservationPageFailure(error);}
  if(response?.status?.()>=400)throw new ReservationFormError('page_http_error');
 }
 export function reservationPageUrl(value){
@@ -129,17 +132,20 @@ export async function browserSession(config,job){
   });
   let frozen=false;const blocked=[],checked=new Map();
   page.on('request',async req=>{
+   const mainNavigation=req.isNavigationRequest?.()&&req.frame?.()===page.mainFrame();
+   if(mainNavigation){recordReservationGuardFailure(page,null);try{checked.delete(new URL(req.url()).hostname);}catch{}}
    const safe=(()=>{try{const u=menuUrl(req.url());return u.protocol==='https:';}catch{return false;}})();
-   if(frozen||req.method()!=='GET'||!safe){blocked.push({method:req.method(),type:req.resourceType()});return req.abort().catch(()=>{});}
+   if(frozen||req.method()!=='GET'||!safe){if(mainNavigation&&!safe)recordReservationGuardFailure(page,'page_unsafe_destination');blocked.push({method:req.method(),type:req.resourceType()});return req.abort().catch(()=>{});}
    // Reject hostnames resolving to local/link-local/private addresses. The
    // managed browser is fresh and receives no application cookies or secrets.
    try{
     const host=new URL(req.url()).hostname;
-    if(!checked.has(host)){let timer;const pending=Promise.race([resolve(host,{all:true}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('DNS timeout')),8000);})]).finally(()=>clearTimeout(timer));checked.set(host,pending);}
+    if(!checked.has(host))checked.set(host,resolveReservationHost(host,{resolve,signal}));
     const addresses=await checked.get(host);
-    if(frozen||!addresses.length||addresses.some(a=>!publicAddress(a.address)))return req.abort().catch(()=>{});
+    if(frozen)return req.abort().catch(()=>{});
+    if(!addresses.length||addresses.some(a=>!publicAddress(a.address))){if(mainNavigation)recordReservationGuardFailure(page,addresses.length?'page_unsafe_destination':'page_dns_failed');return req.abort().catch(()=>{});}
     return req.continue().catch(()=>{});
-   }catch{return req.abort().catch(()=>{});}
+   }catch{if(mainNavigation)recordReservationGuardFailure(page,'page_dns_failed');return req.abort().catch(()=>{});}
   });
   if(emit){try{stopFrames=await startReservationScreencast(page,emit);}catch{throw new ReservationFormError("visual_unavailable");}}
   signal?.throwIfAborted();
@@ -267,7 +273,7 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
   progress("connecting","Opening a secure review browser…");
   const result=await runBound(async(page,freeze)=>{
    progress("loading","Loading the reviewed booking page…");
-   await page.goto(saved.sourceUrl,{waitUntil:'domcontentloaded',timeout:20000});
+   await navigateReservation(page,saved.sourceUrl);
    let form;
    for(let attempt=0;attempt<4;attempt++){
     options.signal?.throwIfAborted();
