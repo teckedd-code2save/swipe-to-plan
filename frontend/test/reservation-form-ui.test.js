@@ -48,8 +48,8 @@ test('published partner can be inspected with no native form and without sending
 });
 test('untimed enquiry can discover forms but cannot fill and offers timing action',async()=>{
  let timing=0;await render({fillAllowed:false,onTiming:()=>{assert.equal(document.querySelector('dialog')?.open,false);timing++;},snapshot:{...props.snapshot,date:null,localTime:null}});
- assert.ok(button('Find booking form'));assert.ok(button('Set visit time'));await click('Find booking form');assert.equal(document.querySelector('input[type=checkbox]').disabled,true);assert.equal(button('Fill form without submitting').disabled,true);assert.match(document.body.textContent,/You can find the form now/);
- await click('Set visit time');assert.equal(timing,1);assert.equal(document.querySelector('dialog'),null);assert.equal(requests.some(r=>r.url.endsWith('/preview')),false);
+ assert.ok(button('Find booking form'));assert.ok(button('Set visit time'));await click('Find booking form');assert.equal(document.querySelector('input[type=checkbox]').disabled,true);assert.equal(button('Fill form without submitting').disabled,true);assert.doesNotMatch(document.body.textContent,/You can find the form now/);
+ await click('Add visit details');assert.equal(timing,1);assert.equal(document.querySelector('dialog'),null);assert.equal(requests.some(r=>r.url.endsWith('/preview')),false);
  await render({fillAllowed:true,snapshot:{...props.snapshot,date:'2026-12-01',localTime:'19:00'}});await click('Find booking form');assert.equal(document.querySelector('input[type=checkbox]').disabled,false);assert.equal(document.querySelector('input[type=checkbox]').checked,false);
 });
 test('discovery renders actual streamed frames read-only and clears them on close',async()=>{
@@ -132,7 +132,20 @@ test('booking details can collapse without losing form or reviewed consent',asyn
 test('visit timing handoff releases an existing preview and clears browser consent',async()=>{
  interactive=true;let timing=0;const onTiming=()=>{assert.equal(document.querySelector('dialog')?.open,false);assert.ok(requests.some(r=>r.url.endsWith('/close')));timing++;};
  await render({onTiming});await click('Find booking form');await act(async()=>document.querySelector('input[type=checkbox]').click());await click('Fill form without submitting');
- await render({fillAllowed:false,onTiming});await click('Set visit time');
+ await render({fillAllowed:false,onTiming});await click('Add visit details');
  assert.equal(timing,1);assert.equal(document.querySelector('dialog'),null);assert.equal(requests.filter(r=>r.url.endsWith('/close')).length,1);
  await render({fillAllowed:true,onTiming});await click('Find booking form');assert.equal(document.querySelector('input[type=checkbox]').checked,false);
+});
+
+test('completed page without a form has no redundant sidebar or completion copy',async()=>{
+ const base=globalThis.fetch;globalThis.fetch=async(url,options)=>url.endsWith('/reservation-form')?new Response(JSON.stringify({status:'no_supported_form',sourceUrl:'https://example.com/book',forms:[],candidates:[]})):base(url,options);
+ await render({fillAllowed:false,onTiming:()=>{}});await click('Find booking form');
+ assert.equal(document.querySelector('[aria-label="Booking details"]'),null);
+ assert.equal(document.querySelector('.booking-details-toggle'),null);
+ assert.equal(document.querySelector('.booking-browser-status'),null);
+ assert.equal(document.querySelector('.booking-workspace-body').classList.contains('has-booking-stage'),false);
+ assert.ok(button('Search another booking website'));
+ assert.ok(document.querySelector('a[aria-label="Open venue website in a new tab"]'));
+ for(const copy of ['Hide booking details','You can find the form now','Search for another website','Venue booking page','Search complete','Preview only. Nothing is submitted.'])assert.equal(document.querySelector('dialog').textContent.includes(copy),false);
+ assert.equal(button('Fill form without submitting'),undefined);
 });
