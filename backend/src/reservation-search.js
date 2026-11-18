@@ -1,3 +1,4 @@
+import {reservationGuardFailure,recordReservationGuardFailure} from './reservation-dns.js';
 import {randomUUID} from 'node:crypto';
 import {menuUrl} from './menu-evidence.js';
 import {locationId} from './locations.js';
@@ -44,8 +45,8 @@ export function createReservationSearch({places,runBound,config,registerDestinat
  }
  function currentFrame(session,sequence){return Number.isInteger(sequence)&&sequence===session.sequence&&session.page.url()===session.url;}
  async function navigate(session,url){
-  const target=safeUrl(url);let response;
-  try{response=await session.page.goto(target,{waitUntil:'domcontentloaded',timeout:20000});}catch(error){throw pageFailure(error);}
+  const target=safeUrl(url);let response;recordReservationGuardFailure(session.page,null);
+  try{response=await session.page.goto(target,{waitUntil:'domcontentloaded',timeout:20000});}catch(error){const guard=reservationGuardFailure(session.page);throw guard?new ErrorType(guard):pageFailure(error);}
   if(response?.status?.()>=400)throw new ErrorType('page_http_error');
   safeUrl(session.page.url());
  }
