@@ -1,8 +1,17 @@
 // Shared by the executable probe and deterministic MOCK tests. Not production.
+// CDP defines browser_ui as internal Chrome WebUI, not web content.
+// https://chromedevtools.github.io/devtools-protocol/index.html
+// Keep the final catch-all: unknown executable targets must still fail closed.
+export const targetFilter=Object.freeze([
+ Object.freeze({type:'browser',exclude:true}),
+ Object.freeze({type:'tab',exclude:true}),
+ Object.freeze({type:'browser_ui',exclude:true}),
+ Object.freeze({})
+]);
 export async function armTarget(send,state,isFrozen){
  if(!['page','iframe','worker'].includes(state.type))throw Error(`unsupported target ${state.type}`);
  if(!state.paused)throw Error('target did not pause');
- await send('Target.setAutoAttach',{autoAttach:true,waitForDebuggerOnStart:true,flatten:true},state.id);
+ await send('Target.setAutoAttach',{autoAttach:true,waitForDebuggerOnStart:true,flatten:true,filter:targetFilter},state.id);
  await send('Fetch.enable',{patterns:[{urlPattern:'*',requestStage:'Request'}]},state.id);
  state.ready=true;
  if(isFrozen())throw Error('created after freeze');

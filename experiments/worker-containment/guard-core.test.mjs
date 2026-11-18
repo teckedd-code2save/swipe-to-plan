@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {armTarget,allowFixtureRequest,acknowledgeOffline,dispatchRequest} from './guard-core.mjs';
+import {armTarget,allowFixtureRequest,acknowledgeOffline,dispatchRequest,targetFilter} from './guard-core.mjs';
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject};};
 const origin='http://127.0.0.1:9999',request={method:'GET',url:origin+'/immediate'};
 test('MOCK: first execution is not resumed before Fetch acknowledgement',async()=>{
@@ -45,4 +45,13 @@ test('MOCK: freeze between policy resolution and actual dispatch denies request'
 test('MOCK: revoked then rearmed target epoch cannot reuse old approval',async()=>{
  const calls=[],state={ready:true,epoch:0};const proposed=await allowFixtureRequest(request,state,()=>false,origin);state.epoch++;
  await dispatchRequest(async method=>calls.push(method),'req','worker',proposed,state,0,()=>false);assert.deepEqual(calls,['Fetch.failRequest']);
+});
+
+test('MOCK: root and recursive filters exclude only browser containers/internal UI',async()=>{
+ assert.deepEqual(targetFilter,[{type:'browser',exclude:true},{type:'tab',exclude:true},{type:'browser_ui',exclude:true},{}]);
+ for(const type of ['page','iframe','worker','shared_worker','service_worker','unknown_executable']){
+  const rule=targetFilter.find(r=>!r.type||r.type===type);assert.notEqual(rule.exclude,true);
+ }
+ const calls=[];await armTarget(async(method,params)=>calls.push({method,params}),{id:'worker',type:'worker',paused:true},()=>false);
+ assert.deepEqual(calls[0].params.filter,targetFilter);
 });

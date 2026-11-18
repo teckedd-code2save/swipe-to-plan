@@ -39,7 +39,7 @@ Node/Debian package sources. The **run** has no network beyond its own loopback:
 
 ```sh
 docker build -t worker-containment-probe ./experiments/worker-containment
-docker run --rm --network=none --read-only --tmpfs /tmp:rw,nosuid,size=512m --shm-size=256m --cap-drop=ALL --security-opt=no-new-privileges --pids-limit=128 --memory=1g --cpus=2 worker-containment-probe
+docker run --rm --network=none --read-only --tmpfs /tmp:rw,nosuid,size=512m --shm-size=256m --cap-drop=ALL --security-opt=no-new-privileges --pids-limit=512 --memory=1g --cpus=2 worker-containment-probe
 ```
 
 No secrets, Docker socket mounts, host mounts, credentials or production services.
@@ -53,3 +53,11 @@ and deny decisions, not real Chromium/CDP capabilities. In particular worker
 protocol commands may not acknowledge until execution resumes. This experiment
 intentionally times out/fails closed rather than resume blindly. It does not
 claim that pre-resume Fetch.enable is actually supported.
+
+### First CI harness correction
+The first networkless CI run started Chromium but hit its 128-process/thread cap
+(`pthread_create EAGAIN`) before worker execution. The fixture cap is now bounded
+at 512; network isolation, memory/CPU bounds and dropped capabilities remain.
+Root and recursive target filters exclude only browser/tab containers and CDP's
+`browser_ui` (internal Chrome WebUI), retaining the catch-all for unknown targets.
+No worker class is filtered out. Source: https://chromedevtools.github.io/devtools-protocol/index.html

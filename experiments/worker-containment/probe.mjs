@@ -1,5 +1,5 @@
 // Isolated experiment. No production imports or provider navigation.
-import {armTarget,allowFixtureRequest,acknowledgeOffline,dispatchRequest} from './guard-core.mjs';
+import {armTarget,allowFixtureRequest,acknowledgeOffline,dispatchRequest,targetFilter} from './guard-core.mjs';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {mkdtemp,rm,writeFile} from 'node:fs/promises';
@@ -41,7 +41,7 @@ try{
  const endpoint=await new Promise((resolve,reject)=>{let stderr='';const t=setTimeout(()=>reject(Error('browser startup timeout')),10000);chrome.stderr.on('data',b=>{stderr+=b;chromeErrors+=b;const match=stderr.match(/DevTools listening on (ws:\/\/[^\s]+)/);if(match){clearTimeout(t);resolve(match[1]);}});chrome.once('exit',code=>{clearTimeout(t);reject(Error(`chromium exited ${code}`));});});
  ws=new WebSocket(endpoint);await new Promise((r,j)=>{ws.addEventListener('open',r,{once:true});ws.addEventListener('error',j,{once:true});});
  ws.addEventListener('message',({data:raw})=>{const msg=JSON.parse(raw);if(msg.id){const item=pending.get(msg.id);if(item){pending.delete(msg.id);clearTimeout(item.timer);msg.error?item.reject(Error(`${msg.error.code}: ${msg.error.message}`)):item.resolve(msg.result);}return;}if(msg.method==='Target.attachedToTarget')void attach(msg.params);if(msg.method==='Target.detachedFromTarget'){const state=sessions.get(msg.params.sessionId);if(state){state.ready=false;state.epoch++;}}if(msg.method==='Fetch.requestPaused')void request(msg.params,msg.sessionId);});
- await send('Target.setAutoAttach',{autoAttach:true,waitForDebuggerOnStart:true,flatten:true,filter:[{type:'browser',exclude:true},{type:'tab',exclude:true},{}]});
+ await send('Target.setAutoAttach',{autoAttach:true,waitForDebuggerOnStart:true,flatten:true,filter:targetFilter});
  const {targetId}=await send('Target.createTarget',{url:'about:blank'});
  let page;for(let n=0;n<50;n++){page=[...sessions.values()].find(s=>s.targetId===targetId&&s.ready&&!s.paused);if(page)break;await sleep(50);}if(!page)throw Error('guarded page unavailable');
  await send('Page.navigate',{url:origin+'/'},page.id);await sleep(3000);
