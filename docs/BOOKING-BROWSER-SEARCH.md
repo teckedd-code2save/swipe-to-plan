@@ -1,4 +1,6 @@
-# In-app booking website search
+# Legacy constrained browser search
+
+This implementation is no longer the default booking-search UI. Google returned a human-verification challenge in the deployed remote browser. Do not retry or bypass that challenge. The prepared replacement is the disabled-by-default licensed API flow in [BOOKING-WEBSITE-SEARCH.md](BOOKING-WEBSITE-SEARCH.md); it needs owner-approved configuration and live validation. The notes below describe the retained internal browser implementation, not a claim of working search.
 
 When a venue has no provider-linked website, **Search web for booking** opens a real isolated Cloudflare browser inside Unstressed. It also appears after form discovery fails. The existing Browser Run configuration is reused; no new search API key or subscription is required. Browser runtime usage still applies.
 
