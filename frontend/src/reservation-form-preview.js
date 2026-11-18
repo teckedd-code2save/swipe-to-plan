@@ -12,7 +12,8 @@ export function normalizeReservationForms(value) {
   const forms=value.forms.map(form=>{
     if(!text(form.id,200)||seen.has(form.id)||!Array.isArray(form.fields)||form.fields.length>60)throw Error('Invalid form.');seen.add(form.id);
     const ids=new Set();
-    return {id:form.id,fields:form.fields.map(field=>{
+    if(form.availabilityProvider!=null&&(form.availabilityProvider!=='tableagent'||new URL(sourceUrl).origin!=='https://tableagent.com'))throw Error('Invalid availability provider.');
+    return {id:form.id,...(form.availabilityProvider?{availabilityProvider:form.availabilityProvider}:{}),fields:form.fields.map(field=>{
       if(!text(field.id,200)||ids.has(field.id)||!text(field.label,300)||!text(field.type,40)||!text(field.semantic||'',40))throw Error('Invalid form field.');ids.add(field.id);
       const options=field.options||[];
       if(!Array.isArray(options)||options.length>250||options.some(o=>!text(o.value,500)||!text(o.label,500)))throw Error('Invalid form options.');

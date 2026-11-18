@@ -1,0 +1,14 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {JSDOM} from 'jsdom';
+import {inspectTableagentForms} from '../../shared/reservation-tableagent.js';import {fillTableagent} from '../../backend/src/reservation-tableagent.js';
+const url='https://tableagent.com/accra/frontback-accra-icfmrvax/';
+function fixture(fn){const dom=new JSDOM(`<form id="findtableform" method="post" action="${url}table-search/"><input name="restaurant" value="123" type="hidden"><input name="reservationdate" id="reservationdate"><select id="id_hours" name="hours"></select><select disabled name="reservationtime" id="reservationtime"></select><select disabled name="partysize" id="partysize"></select><button type="submit">Continue</button></form>`,{url});const keys=['document','location','Option'];const prior=keys.map(k=>globalThis[k]);keys.forEach(k=>globalThis[k]=dom.window[k]);try{return fn(dom.window);}finally{keys.forEach((k,i)=>{if(prior[i]===undefined)delete globalThis[k];else globalThis[k]=prior[i];});dom.window.close();}}
+const prepared={restaurantId:'123',visit:{date:'11/20/2026',time:'19:00',party:'2'},service:{value:'42',label:'Dinner',min:'1',max:'6'},time:{value:'19:00',label:'7 PM'}};
+test('Tableagent exact form yields only three timing fields and fills native controls without events',()=>fixture(w=>{let events=0;for(const name of ['change','input','submit'])w.document.addEventListener(name,()=>events++);assert.equal(inspectTableagentForms()[0].fields.length,3);const results=fillTableagent({index:0,prepared});assert.deepEqual(results.map(x=>x.status),['filled','filled','filled']);assert.equal(events,0);assert.equal(w.document.querySelector('#reservationtime').value,'19:00');}));
+test('changed identity, disabled party option or extra required details fail closed',()=>{for(const mutation of [w=>w.document.querySelector('[name=restaurant]').value='999',w=>w.document.querySelector('#partysize').innerHTML='<option disabled value="2">2 people</option>',w=>{const e=w.document.createElement('input');e.required=true;e.name='email';w.document.forms[0].append(e);}])fixture(w=>{mutation(w);assert.throws(()=>fillTableagent({index:0,prepared}));});});
+test('availability disclosure is retained only for actual Tableagent sources',async()=>{
+ const {normalizeReservationForms}=await import('../src/reservation-form-preview.js');
+ const payload={status:'forms_found',sourceUrl:url,forms:[{id:'test',availabilityProvider:'tableagent',fields:[]}],candidates:[],unsupported:[]};
+ assert.equal(normalizeReservationForms(payload).forms[0].availabilityProvider,'tableagent');
+ assert.throws(()=>normalizeReservationForms({...payload,sourceUrl:'https://evil.example/'}));
+ assert.throws(()=>normalizeReservationForms({...payload,forms:[{...payload.forms[0],availabilityProvider:'other'}]}));
+});
