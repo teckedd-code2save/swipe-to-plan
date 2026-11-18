@@ -47,9 +47,9 @@ test('published partner can be inspected with no native form and without sending
  await click('Inspect this booking page');const destination=requests.find(r=>r.url.endsWith('/destination'));assert.deepEqual(destination.body,{candidateId:'e81234ab-4123-4123-8123-123456789abc'});assert.equal(document.querySelector('input[type=checkbox]').checked,false);assert.equal(button('Fill form without submitting').disabled,true);assert.equal(document.querySelector('input[type=date]').value,'2026-12-01');
 });
 test('untimed enquiry can discover forms but cannot fill and offers timing action',async()=>{
- let timing=0;await render({fillAllowed:false,onTiming:()=>{timing++;},snapshot:{...props.snapshot,date:null,localTime:null}});
+ let timing=0;await render({fillAllowed:false,onTiming:()=>{assert.equal(document.querySelector('dialog')?.open,false);timing++;},snapshot:{...props.snapshot,date:null,localTime:null}});
  assert.ok(button('Find booking form'));assert.ok(button('Set visit time'));await click('Find booking form');assert.equal(document.querySelector('input[type=checkbox]').disabled,true);assert.equal(button('Fill form without submitting').disabled,true);assert.match(document.body.textContent,/You can find the form now/);
- await click('Set visit time');assert.equal(timing,1);assert.equal(requests.some(r=>r.url.endsWith('/preview')),false);
+ await click('Set visit time');assert.equal(timing,1);assert.equal(document.querySelector('dialog'),null);assert.equal(requests.some(r=>r.url.endsWith('/preview')),false);
  await render({fillAllowed:true,snapshot:{...props.snapshot,date:'2026-12-01',localTime:'19:00'}});await click('Find booking form');assert.equal(document.querySelector('input[type=checkbox]').disabled,false);assert.equal(document.querySelector('input[type=checkbox]').checked,false);
 });
 test('discovery renders actual streamed frames read-only and clears them on close',async()=>{
@@ -128,4 +128,11 @@ test('booking details can collapse without losing form or reviewed consent',asyn
  await act(async()=>toggle.click());
  assert.equal(document.querySelector('input[type=checkbox]').checked,true);
  assert.equal(button('Fill form without submitting').disabled,false);
+});
+test('visit timing handoff releases an existing preview and clears browser consent',async()=>{
+ interactive=true;let timing=0;const onTiming=()=>{assert.equal(document.querySelector('dialog')?.open,false);assert.ok(requests.some(r=>r.url.endsWith('/close')));timing++;};
+ await render({onTiming});await click('Find booking form');await act(async()=>document.querySelector('input[type=checkbox]').click());await click('Fill form without submitting');
+ await render({fillAllowed:false,onTiming});await click('Set visit time');
+ assert.equal(timing,1);assert.equal(document.querySelector('dialog'),null);assert.equal(requests.filter(r=>r.url.endsWith('/close')).length,1);
+ await render({fillAllowed:true,onTiming});await click('Find booking form');assert.equal(document.querySelector('input[type=checkbox]').checked,false);
 });

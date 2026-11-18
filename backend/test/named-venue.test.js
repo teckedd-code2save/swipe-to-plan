@@ -60,3 +60,48 @@ test('location evidence prioritizes the requested branch before bounded detail h
  const rows=Array.from({length:12},(_,i)=>row(`${String(i).padStart(8,'0')}-1111-4111-8111-111111111111`,'La Lune Café',i===11?'Accra, Ghana':'London, United Kingdom'));
  const result=await lookup(rows)({query:'La Lune Café',area:'Accra'});assert.equal(result.candidates.length,8);assert.equal(result.candidates[0].entityId,rows[11].entity_id);assert.equal(result.candidates[0].locationMatch,'matched');
 });
+
+test('address evidence normalizes common street suffixes in either direction',async()=>{
+ for(const [full,short] of [['Street','St.'],['Road','Rd'],['Avenue','Ave'],['Boulevard','Blvd'],['Lane','Ln'],['Drive','Dr'],['Court','Ct'],['Place','Pl'],['Terrace','Ter']]){
+  for(const [requested,actual] of [[full,short],[short,full]]){
+   const result=await lookup([row(ids[0],'La Lune Café',`6 Koi ${actual} Accra Ghana`)])({query:'La Lune Cafe',area:`6 Koi ${requested}, Accra, Ghana`});
+   assert.equal(result.candidates[0].locationMatch,'matched',`${requested} vs ${actual}`);
+   assert.equal(result.candidates[0].verified,undefined);
+  }
+ }
+});
+test('suffix normalization does not hide different numbers, streets, cities or leading Saint',async()=>{
+ for(const [area,address] of [
+  ['6 Koi Street, Accra, Ghana','7 Koi St Accra Ghana'],
+  ['6 Koi Street, Accra, Ghana','6 Palm St Accra Ghana'],
+  ['6 Koi Street, Accra, Ghana','6 Koi St Kumasi Ghana'],
+  ['St John, Accra','Street John Accra'],
+  ['Dr Mensah, Accra','Drive Mensah Accra']
+ ]){
+  const result=await lookup([row(ids[0],'La Lune Café',address)])({query:'La Lune Cafe',area});
+  assert.equal(result.candidates[0].locationMatch,'needs_review',`${area} vs ${address}`);
+ }
+});
+test('abbreviated requested branch is ranked before bounded detail hydration',async()=>{
+ const rows=Array.from({length:12},(_,i)=>row(`${String(i).padStart(8,'0')}-1111-4111-8111-111111111111`,'La Lune Café',i===11?'6 Koi St Accra Ghana':'6 Other Street Accra Ghana'));
+ const result=await lookup(rows)({query:'La Lune Café',area:'6 Koi Street, Accra, Ghana'});
+ assert.equal(result.candidates[0].entityId,rows[11].entity_id);assert.equal(result.candidates[0].locationMatch,'matched');
+});
+
+test('broad provider aliases and address terms cannot admit an unrelated primary name',async()=>{
+ const unrelated=row(ids[1],'The Garden Grill','825 La Lune Highway, London');
+ unrelated.properties.akas=['La Lune Café',{value:'La Lune Café'}];
+ const result=await lookup([unrelated,row(ids[0],'La Lune & Champagne Café')])({query:'La Lune Cafe',area:'Accra'});
+ assert.deepEqual(result.candidates.map(item=>item.entityId),[ids[0]]);
+ assert.equal(result.candidates[0].nameMatch,'partial');
+ const rejected=await lookup([unrelated])({query:'La Lune Cafe',area:'London'});
+ assert.equal(rejected.matchStatus,'not_found');
+});
+test('hydrated primary name is independently checked and mismatches are not provider errors',async()=>{
+ const result=await lookup([row(ids[0])],{getPlace:async()=>row(ids[0],'The Garden Grill')})({query:'La Lune Cafe',area:'Accra'});
+ assert.equal(result.matchStatus,'not_found');assert.deepEqual(result.candidates,[]);
+ const partial=await lookup([row(ids[0])],{getPlace:async()=>row(ids[0],'La Lune & Champagne Café')})({query:'La Lune Cafe',area:'Accra'});
+ assert.equal(partial.candidates[0].nameMatch,'partial');assert.equal(partial.candidates[0].name,'La Lune & Champagne Café');
+ const exact=await lookup([row(ids[0],'La Lune & Champagne Cafe')],{getPlace:async()=>row(ids[0],'La Lune Café')})({query:'La Lune Cafe',area:'Accra'});
+ assert.equal(exact.candidates[0].nameMatch,'exact');
+});

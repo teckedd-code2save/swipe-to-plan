@@ -83,6 +83,7 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
     catch(e){closeLease(returnedId);if(!abort.signal.aborted)setError(e.message||'Could not prepare this form. No booking is confirmed.');}
     finally{if(!abort.signal.aborted){pending.current=null;setBusy('');}}
   }
+  function editVisitTime(){workspace.current?.close();cancel();onTiming?.();}
   function cancel(){setSearchingWeb(false);setOpen(false);setBrowserView(null);pending.current?.abort();pending.current=null;setBusy('');setConsent(false);clearPreview();setDiscovery(null);setFields({});setError('');}
   if(capability==='disabled')return <p className="pg-note">The in-app booking browser is unavailable. <a href={venueSearchUrl(snapshot)} target="_blank" rel="noopener noreferrer">Open search in your browser</a></p>;
   if(capability!=='available')return <section className="pg-form-preview" aria-label="Booking form preview">
@@ -105,7 +106,7 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
       <button type="button" className="booking-details-toggle" aria-expanded={detailsOpen} aria-controls="booking-details-panel" onClick={()=>setDetailsOpen(v=>!v)}>{detailsOpen?'Hide booking details':'Show booking details'}<Icon name={detailsOpen?"close":"list"} size={16}/></button>
       <aside id="booking-details-panel" className="booking-browser-controls" aria-label="Booking details">
     {busy==='inspecting' &&<p role="status">Inspecting the selected booking page…</p>}
-    {!fillAllowed&&<p className="pg-note">You can find the form now. Add your visit time and party size before filling. {onTiming&&<button type="button" className="pg-link" disabled={locked} onClick={onTiming}>Set visit time</button>}</p>}
+    {!fillAllowed&&<p className="pg-note">You can find the form now. Add your visit time and party size before filling. {onTiming&&<button type="button" className="pg-link" disabled={locked} onClick={editVisitTime}>Set visit time</button>}</p>}
     {error&&<div className="booking-error"><p role="alert">{error}</p><button type="button" className="pl-secondary-button" disabled={locked} onClick={discover}>Try again</button>{secureBookingWebsite(snapshot.contacts?.website)&&<a className="pg-link" href={secureBookingWebsite(snapshot.contacts.website)} target="_blank" rel="noopener noreferrer">Open venue website <Icon name="arrowUpRight" size={16}/></a>}<button type="button" className="pg-link" disabled={locked} onClick={startWebSearch}>Search web for booking <Icon name="search" size={16}/></button><button type="button" className="pg-link" onClick={cancel}>Back to booking options</button></div>}
     {discovery&&<div><button type="button" className="pg-link" disabled={locked} onClick={startWebSearch}>Search for another website <Icon name="search" size={16}/></button>
       {discovery.sourceUrl&&<a className="pg-link" href={discovery.sourceUrl} target="_blank" rel="noopener noreferrer">Venue booking page <Icon name="arrowUpRight" size={16}/></a>}
