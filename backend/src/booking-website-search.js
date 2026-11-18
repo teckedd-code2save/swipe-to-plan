@@ -6,9 +6,16 @@ const ttl=180000;
 const clean=(value,max)=>typeof value==='string'?load(value.slice(0,10000)).text().replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,max):'';
 function failure(code){const error=new Error(code);error.code=code;return error;}
 function strict(body,keys){if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(key=>!keys.includes(key)))throw failure('search_failed');}
-export function createBraveSearch({apiKey=process.env.BRAVE_SEARCH_API_KEY,fetchImpl=fetch,now=Date.now}={}){
+export function createBraveSearch({apiKey=process.env.BRAVE_SEARCH_API_KEY,...options}={}){return createProviderSearch({provider:'brave',apiKey,...options});}
+export function createSerperSearch({apiKey=process.env.SERPER_API_KEY,...options}={}){return createProviderSearch({provider:'serper',apiKey,...options});}
+export function configuredWebsiteSearch(env=process.env){
+ if(env.SERPER_SEARCH_ENABLED==='true')return createSerperSearch({apiKey:env.SERPER_API_KEY});
+ if(env.BRAVE_SEARCH_ENABLED==='true')return createBraveSearch({apiKey:env.BRAVE_SEARCH_API_KEY});
+ return null;
+}
+function createProviderSearch({provider,apiKey,fetchImpl=fetch,now=Date.now}){
  let active=0,minute=[],day=[],cooldown=0;
- return {enabled:Boolean(apiKey),async search(query,{signal}={}){
+ return {provider,enabled:Boolean(apiKey),async search(query,{signal}={}){
   if(!apiKey)throw failure('search_unavailable');
   const time=now();minute=minute.filter(t=>time-t<60000);day=day.filter(t=>time-t<86400000);
   if(active>=2||minute.length>=10||day.length>=100||time<cooldown)throw failure('search_rate_limited');
@@ -16,8 +23,15 @@ export function createBraveSearch({apiKey=process.env.BRAVE_SEARCH_API_KEY,fetch
   active++;minute.push(time);day.push(time);
   const timeout=AbortSignal.timeout(10000),combined=signal?AbortSignal.any([signal,timeout]):timeout;
   try{
-   const url=new URL('https://api.search.brave.com/res/v1/web/search');url.searchParams.set('q',query);url.searchParams.set('count','6');url.searchParams.set('text_decorations','false');url.searchParams.set('safesearch','moderate');
-   const response=await fetchImpl(url,{headers:{accept:'application/json','X-Subscription-Token':apiKey},signal:combined,redirect:'error'});
+   let url,request;
+   if(provider==='serper'){
+    url=new URL('https://google.serper.dev/search');
+    request={method:'POST',headers:{accept:'application/json','content-type':'application/json','X-API-KEY':apiKey},body:JSON.stringify({q:query,num:6})};
+   }else{
+    url=new URL('https://api.search.brave.com/res/v1/web/search');url.searchParams.set('q',query);url.searchParams.set('count','6');url.searchParams.set('text_decorations','false');url.searchParams.set('safesearch','moderate');
+    request={headers:{accept:'application/json','X-Subscription-Token':apiKey}};
+   }
+   const response=await fetchImpl(url,{...request,signal:combined,redirect:'error'});
    if(response.status===429){cooldown=now()+60000;throw failure('search_rate_limited');}
    if(!response.ok)throw failure(response.status===401||response.status===403?'search_unavailable':'search_failed');
    if(Number(response.headers?.get('content-length'))>500000)throw failure('search_failed');
@@ -25,6 +39,7 @@ export function createBraveSearch({apiKey=process.env.BRAVE_SEARCH_API_KEY,fetch
    let data;
    if(response.body?.getReader){const reader=response.body.getReader(),chunks=[];let size=0;try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>500000)throw failure('search_failed');chunks.push(Buffer.from(value));}data=JSON.parse(Buffer.concat(chunks).toString('utf8'));}finally{await reader.cancel().catch(()=>{});}}
    else data=await response.json();
+   if(provider==='serper')return Array.isArray(data?.organic)?data.organic.slice(0,6).map(item=>({title:item.title,url:item.link,description:item.snippet})):[];
    return Array.isArray(data?.web?.results)?data.web.results.slice(0,6):[];
   }catch(error){if(signal?.aborted)throw failure('expired');if(timeout.aborted||error?.name==='TimeoutError')throw failure('search_timeout');if(['search_rate_limited','search_unavailable','search_failed'].includes(error?.code))throw error;throw failure('search_failed');}
   finally{active--;}
@@ -49,7 +64,7 @@ export function createBookingWebsiteSearch({places,registerDestination,search,no
    const candidateId=randomUUID();while(candidates.size>=120)candidates.delete(candidates.keys().next().value);candidates.set(candidateId,{entityId:id,url:url.href,expires});items.push({candidateId,title,url:url.href,snippet});
   }
   if(candidates.size&&!timer){timer=setInterval(prune,30000);timer.unref?.();}
-  return {provider:'brave',venueName,venueAddress,candidates:items,expiresAt:new Date(expires).toISOString(),submitted:false};
+  return {provider:search.provider==='serper'?'serper':'brave',venueName,venueAddress,candidates:items,expiresAt:new Date(expires).toISOString(),submitted:false};
  },async select(entityId,body,options={}){
   strict(body,['candidateId']);prune();const candidate=candidates.get(body.candidateId);
   if(options.signal?.aborted||!candidate||candidate.entityId!==locationId(entityId))throw new ErrorType('expired');

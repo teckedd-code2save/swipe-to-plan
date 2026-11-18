@@ -35,3 +35,23 @@ test('concurrency and provider rate-limit cooldown cap outbound calls',async()=>
  const first=api.search('q'),second=api.search('q');await assert.rejects(api.search('q'),e=>e.code==='search_rate_limited');assert.equal(calls,2);releases.forEach(release=>release());await Promise.all([first,second]);
  let blockedCalls=0;const limited=createBraveSearch({apiKey:'x',fetchImpl:async()=>{blockedCalls++;return new Response('',{status:429});}});await assert.rejects(limited.search('q'));await assert.rejects(limited.search('q'));assert.equal(blockedCalls,1);
 });
+test('Serper uses fixed POST endpoint and original organic results only',async()=>{
+ const {createSerperSearch}=await import('../src/booking-website-search.js');let request;
+ const api=createSerperSearch({apiKey:'private-test-key',fetchImpl:async(url,options)=>{request={url,options};return new Response(JSON.stringify({organic:[{title:'Republic',link:'https://venue.example/',snippet:'Osu'}],knowledgeGraph:{website:'https://unreviewed.example/'}}));}});
+ assert.equal(api.provider,'serper');assert.deepEqual(await api.search('Republic Osu'),[{title:'Republic',url:'https://venue.example/',description:'Osu'}]);
+ assert.equal(request.url.href,'https://google.serper.dev/search');assert.equal(request.options.method,'POST');assert.equal(request.options.headers['X-API-KEY'],'private-test-key');assert.equal(request.options.redirect,'error');assert.deepEqual(JSON.parse(request.options.body),{q:'Republic Osu',num:6});assert.ok(!request.url.href.includes('private-test-key'));
+});
+test('Serper remains off without explicit flag; enabled missing key never falls through to Brave',async()=>{
+ const {configuredWebsiteSearch}=await import('../src/booking-website-search.js');assert.equal(configuredWebsiteSearch({SERPER_API_KEY:'x'}),null);
+ const api=configuredWebsiteSearch({SERPER_SEARCH_ENABLED:'true',BRAVE_SEARCH_ENABLED:'true',BRAVE_SEARCH_API_KEY:'y'});assert.equal(api.provider,'serper');assert.equal(api.enabled,false);await assert.rejects(api.search('q'),e=>e.code==='search_unavailable');
+});
+test('Serper protects credentials on failures and caps requests',async()=>{
+ const {createSerperSearch}=await import('../src/booking-website-search.js');
+ for(const [status,code]of [[401,'search_unavailable'],[403,'search_unavailable'],[429,'search_rate_limited'],[500,'search_failed']])await assert.rejects(createSerperSearch({apiKey:'secret',fetchImpl:async()=>new Response('',{status})}).search('q'),e=>e.code===code);
+ await assert.rejects(createSerperSearch({apiKey:'secret',fetchImpl:async()=>{throw Error('secret');}}).search('q'),e=>e.message==='search_failed');
+ let calls=0;const api=createSerperSearch({apiKey:'x',fetchImpl:async()=>{calls++;return new Response('{}');}});for(let i=0;i<10;i++)await api.search('q');await assert.rejects(api.search('q'),e=>e.code==='search_rate_limited');assert.equal(calls,10);
+});
+test('Serper candidate response identifies source without verifying ownership',async()=>{
+ const api=createBookingWebsiteSearch({places,search:{provider:'serper',enabled:true,search:async()=>[{title:'Republic',url:'https://venue.example/',description:'Osu'}]},registerDestination:()=>assert.fail()});
+ const data=await api.find(id,{});assert.equal(data.provider,'serper');assert.equal(data.submitted,false);assert.equal(data.candidates.length,1);assert.equal(data.candidates[0].verified,undefined);
+});
