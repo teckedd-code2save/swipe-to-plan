@@ -128,6 +128,14 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     try{await transport.result(await reservationForms.discover(req.params.id,transport.options));}
     catch(error){transport.error(reservationDiscoveryFailure(error));}
   }));
+  for(const [suffix,method] of [['','findWebsites'],['/select','selectWebsite']]){
+    app.post(`/api/places/:id/booking-websites${suffix}`,limit(4,`booking_websites_${method}`),route(async(req,res)=>{
+      if(req.get('origin')!==accounts.origin||!req.is('application/json'))return res.status(403).json({error:'Use website search from Unstressed.'});
+      const controller=new AbortController(),abort=()=>{if(!res.writableEnded)controller.abort();};res.on('close',abort);res.set('Cache-Control','no-store');
+      try{const result=await reservationForms[method](req.params.id,req.body,{signal:controller.signal});if(!controller.signal.aborted)res.json(result);}
+      catch(error){if(!controller.signal.aborted)res.status(422).json(reservationDiscoveryFailure(error));}finally{res.off('close',abort);}
+    }));
+  }
   for(const [suffix,method,quota] of [['','startSearch',4],['/action','searchAction',90],['/select','selectSearch',6]]){
     app.post(`/api/places/:id/reservation-search${suffix}`,limit(quota,`reservation_search_${method}`),route(async(req,res)=>{
       if(req.get('origin')!==accounts.origin||!req.is('application/json'))return res.status(403).json({error:'Use the booking search from Unstressed.'});

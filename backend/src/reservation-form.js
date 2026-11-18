@@ -1,4 +1,5 @@
 import {resolveReservationHost,reservationGuardFailure,recordReservationGuardFailure} from './reservation-dns.js';
+import {createBookingWebsiteSearch,createBraveSearch} from './booking-website-search.js';
 import {createReservationSearch} from './reservation-search.js';
 import {inspectWixForms,fillWixForm,installReservationClickGate} from '../../shared/reservation-wix.js';
 import {startReservationScreencast} from './reservation-stream.js';
@@ -14,6 +15,10 @@ export class ReservationFormError extends Error {
  constructor(code){super(code);this.code=code;}
 }
 const discoveryMessages={
+ search_unavailable:'In-app website search is not configured on this instance. Use your own browser or the venue’s contact options.',
+ search_rate_limited:'Website search has reached its current limit. Try later or use the venue’s contact options.',
+ search_timeout:'Website search took too long. Try later.',
+ search_failed:'Website search could not return results. Try later or use the venue’s contact options.',
  search_challenge:'The search site is asking this browser to verify it is human. In-app search cannot continue here. Open search in your own browser or use the venue’s contact options. No booking was submitted.',
  search_changed:'The page changed. Refresh the search view and review it before selecting.',
  search_select:'Open and review the venue website before using it for booking.',
@@ -182,7 +187,7 @@ export function chromiumPreviewConfig(config,enabled=process.env.RESERVATION_FOR
  return {...config,browserWSEndpoint:url.href,liveView:true};
 }
 const cleanForms=(raw,url)=>raw.map(form=>({...form,fields:form.fields.map(field=>({...field,id:field.id||`field-${field.elementIndex}`,semantic:semanticField(field)}))})).filter(form=>form.fields.some(f=>['date','time','dateTime','partySize'].includes(f.semantic))).map(form=>({...form,sourceUrl:url}));
-export function createReservationForms({places,config=configuredKitesurf(),run=browserSession,now=Date.now,previewConfig=chromiumPreviewConfig(config)}={}){
+export function createReservationForms({places,config=configuredKitesurf(),run=browserSession,now=Date.now,previewConfig=chromiumPreviewConfig(config),websiteSearch=process.env.BRAVE_SEARCH_ENABLED==='true'?createBraveSearch():null}={}){
  const discoveries=new Map(),destinations=new Map(),leases=new Map();let active=0;
  async function closePreview(id){const lease=leases.get(id);if(!lease)return;leases.delete(id);clearTimeout(lease.timer);await lease.release();}
  async function runBound(job,selected=config,options={}){options.signal?.throwIfAborted();if(active+leases.size+search.size>=2)throw new ReservationFormError('busy');active++;try{return await run({...selected,...options},job);}finally{active--;}}
@@ -190,6 +195,7 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
   const candidateId=randomUUID();destinations.set(candidateId,{entityId,url,expires:now()+5*60000});expire();
   return {candidateId,url,label:'Website selected by you',relationship:'user_selected_search',submitted:false};
  }});
+ const websites=createBookingWebsiteSearch({places,search:websiteSearch,now,ErrorType:ReservationFormError,registerDestination(entityId,url){const candidateId=randomUUID();destinations.set(candidateId,{entityId,url,expires:now()+5*60000});expire();return {candidateId,url,label:'Website selected by you',relationship:'user_selected_search',submitted:false};}});
  async function source(entityId){
   const id=locationId(entityId);let place;
   try{place=await places.details(id);}catch{throw new ReservationFormError('provider_unavailable');}
@@ -254,7 +260,7 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
    return {status:forms.length?'forms_found':'no_supported_form',previewAvailable:true,sourceUrl:url,forms:forms.map(({id,fields})=>({id,fields})),candidates,unsupported,submitted:false};
   },options.emit?(previewConfig||chromiumPreviewConfig(config,true)||config):config,options);}catch(error){if(error instanceof ReservationFormError)throw error;throw new ReservationFormError(started?'page_unavailable':'browser_unavailable');}
  }
- return {enabled:!!config,closePreview,startSearch:search.start,searchAction:search.action,selectSearch:search.select,closeSearch:search.close,async discover(entityId,options={}){
+ return {enabled:!!config,websiteSearchEnabled:websites.enabled,findWebsites:websites.find,selectWebsite:websites.select,closePreview,startSearch:search.start,searchAction:search.action,selectSearch:search.select,closeSearch:search.close,async discover(entityId,options={}){
   if(!config)return {status:'disabled',previewAvailable:false,forms:[],candidates:[]};
   return discoverAt(entityId,await source(entityId),true,options);
  },async inspectDestination(entityId,body,options={}){
