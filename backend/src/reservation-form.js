@@ -16,7 +16,7 @@ export class ReservationFormError extends Error {
 }
 const discoveryMessages={
  search_unavailable:'In-app website search is not configured on this instance. Use your own browser or the venue’s contact options.',
- search_rate_limited:'Website search has reached its current limit. Try later or use the venue’s contact options.',
+ search_rate_limited:'The search provider has reached its current limit. Try later or use the venue’s contact options.',
  search_timeout:'Website search took too long. Try later.',
  search_failed:'Website search could not return results. Try later or use the venue’s contact options.',
  search_challenge:'The search site is asking this browser to verify it is human. In-app search cannot continue here. Open search in your own browser or use the venue’s contact options. No booking was submitted.',

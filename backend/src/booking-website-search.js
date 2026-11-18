@@ -13,14 +13,10 @@ export function configuredWebsiteSearch(env=process.env){
  if(env.BRAVE_SEARCH_ENABLED==='true')return createBraveSearch({apiKey:env.BRAVE_SEARCH_API_KEY});
  return null;
 }
-function createProviderSearch({provider,apiKey,fetchImpl=fetch,now=Date.now}){
- let active=0,minute=[],day=[],cooldown=0;
+function createProviderSearch({provider,apiKey,fetchImpl=fetch}){
  return {provider,enabled:Boolean(apiKey),async search(query,{signal}={}){
   if(!apiKey)throw failure('search_unavailable');
-  const time=now();minute=minute.filter(t=>time-t<60000);day=day.filter(t=>time-t<86400000);
-  if(active>=2||minute.length>=10||day.length>=100||time<cooldown)throw failure('search_rate_limited');
   if(signal?.aborted)throw failure('expired');
-  active++;minute.push(time);day.push(time);
   const timeout=AbortSignal.timeout(10000),combined=signal?AbortSignal.any([signal,timeout]):timeout;
   try{
    let url,request;
@@ -32,7 +28,7 @@ function createProviderSearch({provider,apiKey,fetchImpl=fetch,now=Date.now}){
     request={headers:{accept:'application/json','X-Subscription-Token':apiKey}};
    }
    const response=await fetchImpl(url,{...request,signal:combined,redirect:'error'});
-   if(response.status===429){cooldown=now()+60000;throw failure('search_rate_limited');}
+   if(response.status===429)throw failure('search_rate_limited');
    if(!response.ok)throw failure(response.status===401||response.status===403?'search_unavailable':'search_failed');
    if(Number(response.headers?.get('content-length'))>500000)throw failure('search_failed');
    // Bound response memory; never retain raw response/search results beyond this call.
@@ -42,7 +38,6 @@ function createProviderSearch({provider,apiKey,fetchImpl=fetch,now=Date.now}){
    if(provider==='serper')return Array.isArray(data?.organic)?data.organic.slice(0,6).map(item=>({title:item.title,url:item.link,description:item.snippet})):[];
    return Array.isArray(data?.web?.results)?data.web.results.slice(0,6):[];
   }catch(error){if(signal?.aborted)throw failure('expired');if(timeout.aborted||error?.name==='TimeoutError')throw failure('search_timeout');if(['search_rate_limited','search_unavailable','search_failed'].includes(error?.code))throw error;throw failure('search_failed');}
-  finally{active--;}
  }};
 }
 // Search API results remain transient. No venue-ownership claim is made: a person
