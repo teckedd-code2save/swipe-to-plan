@@ -47,7 +47,7 @@ export function createReservationSearch({places,runBound,config,registerDestinat
  async function navigate(session,url){
   const target=safeUrl(url);let response;recordReservationGuardFailure(session.page,null);
   try{response=await session.page.goto(target,{waitUntil:'domcontentloaded',timeout:20000});}catch(error){const guard=reservationGuardFailure(session.page);throw guard?new ErrorType(guard):pageFailure(error);}
-  if(response?.status?.()>=400)throw new ErrorType('page_http_error');
+  if(response?.status?.()>=400){if(await session.page.evaluate(searchIsBlocked))throw new ErrorType('search_challenge');throw new ErrorType('page_http_error');}
   safeUrl(session.page.url());
  }
  return {get size(){return sessions.size;},close,

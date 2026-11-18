@@ -4,13 +4,15 @@ import {venueSearchUrl} from './booking-contact-links.js';
 import {Icon} from './PlannerIcons.jsx';
 import {normalizeSearchFrame,searchPoint} from './booking-web-search.js';
 
+function searchError(error){return error?.code==='page_http_error'?'The search page returned an error. No venue website has been selected. Try later or use your own browser.':error?.message;}
+
 export default function BookingWebSearch({snapshot,onSelected,onCancel}){
- const [frame,setFrame]=useState(null),[busy,setBusy]=useState(true),[error,setError]=useState(''),[attempt,setAttempt]=useState(0);
+ const [frame,setFrame]=useState(null),[busy,setBusy]=useState(true),[error,setError]=useState(''),[attempt,setAttempt]=useState(0),[challenge,setChallenge]=useState(false);
  const lease=useRef(null),pending=useRef(null),mounted=useRef(false);
  function close(id=lease.current){if(!id)return;if(lease.current===id)lease.current=null;api.closeReservationSearch(snapshot.entityId,id).catch(()=>{});}
  useEffect(()=>{
-  mounted.current=true;const abort=new AbortController();pending.current=abort;setBusy(true);setError('');setFrame(null);
-  api.reservationSearch(snapshot.entityId,abort.signal).then(raw=>{if(abort.signal.aborted){close(raw?.searchId);return;}lease.current=raw?.searchId;const next=normalizeSearchFrame(raw);setFrame(next);}).catch(e=>{if(!abort.signal.aborted){close();setError(e.message||'Search could not open. Try again shortly.');}}).finally(()=>{if(!abort.signal.aborted){pending.current=null;setBusy(false);}});
+  mounted.current=true;const abort=new AbortController();pending.current=abort;setBusy(true);setError('');setChallenge(false);setFrame(null);
+  api.reservationSearch(snapshot.entityId,abort.signal).then(raw=>{if(abort.signal.aborted){close(raw?.searchId);return;}lease.current=raw?.searchId;const next=normalizeSearchFrame(raw);setFrame(next);}).catch(e=>{if(!abort.signal.aborted){close();setChallenge(e.code==='search_challenge');setError(searchError(e)||'Search could not open. Try again shortly.');}}).finally(()=>{if(!abort.signal.aborted){pending.current=null;setBusy(false);}});
   return()=>{mounted.current=false;abort.abort();pending.current?.abort();close();};
  },[snapshot.entityId,attempt]);
  useEffect(()=>{if(!frame)return;const timer=setTimeout(()=>{pending.current?.abort();pending.current=null;close();setBusy(false);setFrame(null);setError('This search session expired. Start again.');},Math.max(0,Date.parse(frame.expiresAt)-Date.now()));return()=>clearTimeout(timer);},[frame?.searchId,frame?.expiresAt]);
@@ -34,7 +36,7 @@ export default function BookingWebSearch({snapshot,onSelected,onCancel}){
  </section>
  <aside className="booking-browser-controls" aria-label="Website search controls"><h3>Find the right website</h3><p><strong>{frame?.venueName||snapshot.name}</strong></p>{frame?.venueAddress&&<p className="pg-note">{frame.venueAddress}</p>}<p className="pg-note">Click a website link in the browser, then compare the venue and location before continuing. Search results are not verified venue records.</p>{frame&&<><p className="booking-current-address">{frame.url}</p>{frame.notice&&<p role="status">{frame.notice}</p>}</>}{busy&&<p role="status">Updating the browser…</p>}{frame?.status==='challenge'&&<p role="alert">This search provider requires a check that cannot be completed here. No bypass is attempted. Use the venue’s contact options.</p>}{error&&<p role="alert">{error}</p>}
  {frame?.canUse&&<button className="pl-button" disabled={blocked} onClick={select}>Use this website<Icon name="arrow" size={16}/></button>}
- {!frame&&!busy&&<button className="pl-secondary-button" onClick={()=>setAttempt(n=>n+1)}>Start search again</button>}
+ {!frame&&!busy&&!challenge&&<button className="pl-secondary-button" onClick={()=>setAttempt(n=>n+1)}>Start search again</button>}
  {(error||frame?.status==='challenge')&&<a className="pg-link" href={venueSearchUrl(snapshot)} target="_blank" rel="noopener noreferrer">Open search in your browser <Icon name="arrowUpRight" size={14}/></a>}<button className="pg-link" onClick={onCancel}>Back to booking options</button><p className="booking-safety"><Icon name="lock" size={14}/>Navigation only. No typing or booking submission here.</p></aside>
  </>;
 }
