@@ -1,3 +1,4 @@
+import {createNamedVenueLookup} from './named-venue.js';
 import {reservationTransport} from './reservation-stream.js';
 import {createReservationForms,reservationDiscoveryFailure} from './reservation-form.js';
 import {executionCapabilities} from './execution-ledger.js';
@@ -31,6 +32,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
   app.set('trust proxy', trustProxy);
   const discovery = createDiscovery({ provider, now,reviewCandidates:agent?.configured?.()&&agent.reviewCandidates?agent.reviewCandidates:undefined });
   const places = createPlaceGuide({provider,now});
+  const findVenue=createNamedVenueLookup({provider,places,now});
   const menuEvidence=createMenuEvidence({places,now});
   reservationForms??=createReservationForms({places,now});
   const contactEvidence=createContactEvidence({places,now,readPage:contactEvidenceReader});
@@ -206,6 +208,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     const [audienceCatalog,planningPeople]=await Promise.all([provider.audienceCatalog?provider.audienceCatalog().catch(()=>[]):Promise.resolve([]),accounts.planningPeople(req)]);
     let interpretation=await agent.interpret({...req.body,...planningPeople,audienceCatalog});
     if(agent.auditContext)interpretation=await agent.auditContext(interpretation,{...req.body,...planningPeople,audienceCatalog});
+    if(interpretation.status==='action'&&interpretation.action==='find_venue')return res.json(await findVenue({query:interpretation.query,area:interpretation.area}));
     if(['needs_input','action','show_ui','reply','autopilot'].includes(interpretation.status))return res.json(interpretation);
     const plan=await buildItinerary(discovery,interpretation.request);
     const user=await accounts.identity(req);if(visitorId(req))await metrics.record('plan_created',{userId:user?.id,visitor:visitorId(req)}).catch(()=>{});

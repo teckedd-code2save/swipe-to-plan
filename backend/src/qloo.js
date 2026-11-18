@@ -128,6 +128,11 @@ export function createQlooClient({ fetchImpl = globalThis.fetch, getKey = () => 
       if (!place) throw new ProviderError('provider_response_invalid');
       return place;
     },
+    async searchPlaces(query){
+      // A named venue is a place search, never a locality or taste recommendation.
+      if(typeof query!=='string'||!query.trim()||query.length>160||/[\x00-\x1f<>]/.test(query))throw new ProviderError('provider_response_invalid');
+      return (await call('/search',{query:query.trim(),types:'urn:entity:place',take:20})).filter(e=>Array.isArray(e.types)&&e.types.includes('urn:entity:place')).slice(0,20);
+    },
     async searchLocations(query){
       const key=norm(query),cached=searchCache.get(key);if(cached&&now()-cached.at<3600000)return cached.value;
       const value=(await call('/search',{query,types:'urn:entity:locality',take:8})).map(locationOption).filter(Boolean);

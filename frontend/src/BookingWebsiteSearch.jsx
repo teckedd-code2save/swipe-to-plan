@@ -2,11 +2,45 @@ import {useEffect,useRef,useState} from 'react';
 import {api} from './api.js';
 import {venueSearchUrl} from './booking-contact-links.js';
 import {Icon} from './PlannerIcons.jsx';
+import './booking-website-search.css';
 
+function domain(value){try{return new URL(value).hostname.replace(/^www\./,'');}catch{return 'Website';}}
 export default function BookingWebsiteSearch({snapshot,onSelected,onCancel}){
- const [results,setResults]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(true),[selected,setSelected]=useState(''),[reviewed,setReviewed]=useState(false),[attempt,setAttempt]=useState(0),[configured,setConfigured]=useState(true);const pending=useRef(null);
- useEffect(()=>{const controller=new AbortController();pending.current=controller;setBusy(true);setResults(null);setError('');setSelected('');setReviewed(false);api.bookingWebsites(snapshot.entityId,controller.signal).then(data=>{if(!controller.signal.aborted)setResults(data);}).catch(e=>{if(!controller.signal.aborted){setConfigured(e.code!=='search_unavailable');setError(e.message||'Website search could not load.');}}).finally(()=>{if(!controller.signal.aborted)setBusy(false);});return()=>{controller.abort();pending.current?.abort();};},[snapshot.entityId,attempt]);
- useEffect(()=>{if(!results?.expiresAt)return;const timer=setTimeout(()=>{setResults(null);setSelected('');setReviewed(false);setError('These results expired. Search again for current links.');},Math.max(0,Date.parse(results.expiresAt)-Date.now()));return()=>clearTimeout(timer);},[results?.expiresAt]);
- async function choose(){if(!selected||!reviewed||busy)return;const controller=new AbortController();pending.current=controller;setBusy(true);setError('');try{const candidate=await api.selectBookingWebsite(snapshot.entityId,selected,controller.signal);if(!controller.signal.aborted)await onSelected(candidate,null);}catch(e){if(!controller.signal.aborted)setError(e.message||'This result could not be opened.');}finally{if(!controller.signal.aborted)setBusy(false);}}
- return <><section className="booking-browser-canvas booking-website-results" aria-label="Website search results"><h2>Find the right website</h2>{busy&&!results&&<p role="status">Searching the web…</p>}{results&&<><p className="pg-note">{results.provider==='serper'?'Search results via Serper.':'Website search results.'} These are leads, not verified booking providers.</p><div className="booking-website-candidates">{results.candidates.map(candidate=><label className={`booking-website-candidate ${selected===candidate.candidateId?'is-selected':''}`} key={candidate.candidateId}><input type="radio" name="booking-website" checked={selected===candidate.candidateId} onChange={()=>{setSelected(candidate.candidateId);setReviewed(false);}}/><span><strong>{candidate.title}</strong><small>{candidate.url}</small><p>{candidate.snippet}</p></span></label>)}</div>{!results.candidates.length&&<p>No website results were found. Use the venue’s contact options instead.</p>}</>}{error&&<p role="alert">{error}</p>}{!busy&&configured&&<button className="pg-link" onClick={()=>setAttempt(n=>n+1)}>Search again</button>}</section><aside className="booking-browser-controls"><h3>{results?.venueName||snapshot.name}</h3>{results?.venueAddress&&<p>{results.venueAddress}</p>}<p className="pg-note">Compare the name and location. Choose a result to open it in the booking browser; selecting a result does not verify the business or make a reservation.</p>{selected&&<><label className="booking-identity-review"><input type="checkbox" checked={reviewed} onChange={e=>setReviewed(e.target.checked)}/>I compared this result with the venue and location.</label><button className="pl-button" disabled={busy||!reviewed} onClick={choose}>Open selected website<Icon name="arrow" size={16}/></button></>}{error&&<a className="pg-link" href={venueSearchUrl(snapshot)} target="_blank" rel="noopener noreferrer">Search in your own browser<Icon name="arrowUpRight" size={14}/></a>}<button className="pg-link" onClick={onCancel}>Back to booking options</button><p className="pg-note">Only the venue’s public details are sent to {results?.provider==='serper'?'Serper':results?.provider==='brave'?'Brave Search':'the configured search provider'}. No guest details or reservation request are sent.</p><p className="booking-safety"><Icon name="lock" size={14}/>Nothing is booked or sent.</p></aside></>;
+ const [results,setResults]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(true),[opening,setOpening]=useState(''),[attempt,setAttempt]=useState(0),[configured,setConfigured]=useState(true);
+ const pending=useRef(null),choosing=useRef(false),generation=useRef(0);
+ useEffect(()=>{
+  const current=++generation.current,controller=new AbortController();pending.current=controller;choosing.current=false;
+  setBusy(true);setResults(null);setError('');setOpening('');setConfigured(true);
+  api.bookingWebsites(snapshot.entityId,controller.signal).then(data=>{if(!controller.signal.aborted&&current===generation.current)setResults(data);}).catch(e=>{if(!controller.signal.aborted&&current===generation.current){setConfigured(e.code!=='search_unavailable');setError(e.message||'Website search could not load.');}}).finally(()=>{if(!controller.signal.aborted&&current===generation.current)setBusy(false);});
+  return()=>{generation.current++;controller.abort();pending.current?.abort();choosing.current=false;};
+ },[snapshot.entityId,attempt]);
+ useEffect(()=>{
+  if(!results?.expiresAt)return;
+  const timer=setTimeout(()=>{pending.current?.abort();choosing.current=false;setBusy(false);setOpening('');setResults(null);setError('These results expired. Search again for current links.');},Math.max(0,Date.parse(results.expiresAt)-Date.now()));
+  return()=>clearTimeout(timer);
+ },[results?.expiresAt]);
+ async function choose(candidateId){
+  if(choosing.current||busy||!results?.candidates.some(candidate=>candidate.candidateId===candidateId))return;
+  if(!Number.isFinite(Date.parse(results.expiresAt))||Date.parse(results.expiresAt)<=Date.now()){setResults(null);setError('These results expired. Search again for current links.');return;}
+  choosing.current=true;const current=generation.current,controller=new AbortController();pending.current=controller;setBusy(true);setOpening(candidateId);setError('');
+  try{const candidate=await api.selectBookingWebsite(snapshot.entityId,candidateId,controller.signal);if(!controller.signal.aborted&&current===generation.current)await onSelected(candidate,null);}
+  catch(e){if(!controller.signal.aborted&&current===generation.current)setError(e.message||'This result could not be opened.');}
+  finally{if(!controller.signal.aborted&&current===generation.current){choosing.current=false;setOpening('');setBusy(false);}}
+ }
+ function cancel(){generation.current++;pending.current?.abort();choosing.current=false;onCancel();}
+ const provider=results?.provider==='serper'?'Serper':results?.provider==='brave'?'Brave Search':'web search';
+ return <section className="booking-website-search" aria-label="Website search results" aria-busy={busy}>
+  <div className="booking-website-heading"><div><h2>{results?.venueName||snapshot.name}</h2><p>{results?.venueAddress||snapshot.address||'Choose a website to open'}</p></div><button type="button" className="booking-website-back" onClick={cancel} aria-label="Back to booking options"><Icon name="arrow" size={17}/></button></div>
+  <div className="booking-website-scroll">
+   {busy&&!results&&<p className="booking-website-status" role="status">Searching the web…</p>}
+   {results&&<><p className="booking-website-hint">Check the place and location, then tap a result.</p><div className="booking-website-candidates">{results.candidates.map(candidate=><button type="button" className="booking-website-candidate" disabled={busy} onClick={()=>choose(candidate.candidateId)} key={candidate.candidateId} aria-label={`Open ${candidate.title} — ${domain(candidate.url)}`}>
+    <span className="booking-website-copy"><small>{domain(candidate.url)}</small><strong>{candidate.title}</strong>{candidate.snippet&&<span className="booking-website-snippet">{candidate.snippet}</span>}</span><span className="booking-website-open" aria-hidden="true">{opening===candidate.candidateId?<span className="booking-website-spinner"/>:<Icon name="arrowUpRight" size={20}/>}</span>
+   </button>)}</div>{!results.candidates.length&&<p>No website results found. Try the venue’s contact options.</p>}</>}
+   {opening&&<p className="sr-only" role="status">Opening selected website…</p>}
+   {error&&<p className="booking-website-error" role="alert">{error}</p>}
+   {!busy&&configured&&<button type="button" className="booking-website-retry" onClick={()=>setAttempt(n=>n+1)}>Search again</button>}
+   {error&&<a className="booking-website-retry" href={venueSearchUrl(snapshot)} target="_blank" rel="noopener noreferrer">Search in your browser<Icon name="arrowUpRight" size={14}/></a>}
+  </div>
+  <details className="booking-website-disclosure"><summary>Results via {provider} · Nothing booked</summary><p>Search results are leads, not verified booking providers. Only the venue’s public details are used for search. No guest details or reservation request are sent.</p></details>
+ </section>;
 }

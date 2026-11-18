@@ -97,7 +97,7 @@ test('only successful settled refreshes announce once, including a same-place re
  await render({busy:true});assert.equal(document.querySelector('.cs-result-toast'),null);
  await render({busy:false});const first=document.querySelector('.cs-result-toast');assert.ok(first);const glints=document.querySelector('.cs-result-sparkles');assert.ok(glints);
  await render({plan:{...props.plan,qualityReview:{status:'complete'},savedPlan:{id:'saved',revision:1}}});assert.equal(document.querySelector('.cs-result-toast'),first);assert.equal(document.querySelector('.cs-result-sparkles'),glints);
- await render({planOpen:true});assert.equal(document.querySelector('.cs-view-day').classList.contains('fresh'),false);assert.equal(document.querySelector('.cs-result-toast'),first);
+ await render({planOpen:true});assert.equal(document.querySelector('.cs-results-access'),null);assert.equal(document.querySelector('.cs-result-toast'),first);
  await render({busy:true,planOpen:false});assert.equal(document.querySelector('.cs-result-toast'),null);
  await render({busy:false,revisionFailed:true,resultRevision:2});assert.equal(document.querySelector('.cs-result-toast'),null);
  await render({busy:true,revisionFailed:false});await render({busy:false,resultRevision:3});const refreshed=document.querySelector('.cs-result-toast');assert.ok(refreshed);assert.notEqual(refreshed,first);assert.match(refreshed.textContent,/Results updated/);
@@ -163,7 +163,7 @@ test('a comparison lead preserves complete source sentences, grounding and all c
 
 test('Your day preserves the selected result tab while a new first-plan preview is discoverable',async()=>{
  let opened=0,selected;await render({chat:[],planView:'checklist',busy:true,onOpenPlan:()=>opened++,onPlanView:tab=>{selected=tab;}});
- assert.ok(document.querySelector('[data-current-result-preview]'));assert.equal(document.querySelector('.cs-result-toast'),null);await click('Your day');assert.equal(opened,1);assert.equal(selected,undefined);
+ assert.ok(document.querySelector('[data-current-result-preview]'));assert.equal(document.querySelector('.cs-result-toast'),null);await click('Open current results');assert.equal(opened,1);assert.equal(selected,undefined);
  await click('View results');assert.equal(opened,2);assert.equal(selected,'itinerary');
 });
 
@@ -241,10 +241,10 @@ test('shared-day connection status exists only while connecting and never delays
 test('desktop keeps the inline outing, opens details on request and restores focus after repeated dismissals',async()=>{
  let closed=0;await render({chat:[],onClosePlan:()=>closed++});
  assert.ok(document.querySelector('[data-current-result-preview]'));assert.equal(document.querySelector('.cs-opening'),null);assert.equal(document.querySelector('.cs-welcome'),null);
- const panel=document.querySelector('.cs-day-panel');assert.equal(panel.hidden,true);assert.equal(button('Your day').getAttribute('aria-expanded'),'false');
+ const panel=document.querySelector('.cs-day-panel');assert.equal(panel.hidden,true);assert.equal(button('Open current results').getAttribute('aria-expanded'),'false');
  for(let i=0;i<2;i++){
   const more=await click('View results');await render({planOpen:true});assert.equal(panel.hidden,false);assert.equal(panel.getAttribute('aria-modal'),null);assert.equal(document.activeElement,button('Back to chat'));
-  assert.equal(button('Your day').getAttribute('aria-expanded'),'true');
+  assert.equal(button('Open current results'),undefined);
   await act(async()=>panel.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));assert.equal(closed,i+1);
   await render({planOpen:false});assert.equal(panel.hidden,true);assert.ok(document.activeElement===more,'Focus returns to the result trigger');
  }
@@ -285,8 +285,8 @@ test('results contain no next-step dashboard or sticky budget footer',async()=>{
 test('new results use a transient toast and burst, never the persistent orange dot',async()=>{
  await render({busy:true});await render({busy:false});
  assert.ok(document.querySelector('.cs-result-toast[role="status"]'));
- assert.ok(document.querySelector('.cs-view-day .cs-result-sparkles[aria-hidden="true"]'));
- assert.equal(document.querySelector('.cs-view-day > i'),null);
+ assert.ok(document.querySelector('.cs-results-access .cs-result-sparkles[aria-hidden="true"]'));
+ assert.equal(document.querySelector('.cs-header .cs-view-day'),null);assert.equal(document.querySelector('.cs-header [aria-label="Your day"]'),null);
  assert.equal(document.querySelector('[aria-label="Updated results"]'),null);
  const css=await readFile(new URL('../src/recommendation-preview.css',import.meta.url),'utf8');
  assert.match(css,/@media\(prefers-reduced-motion:reduce\).*cs-result-sparkles\{display:none\}/);
@@ -297,4 +297,47 @@ test('ready and autopilot flows do not automatically open the saved-tastes recap
  assert.doesNotMatch(source,/if\((?:pendingRun|result)\.tasteCards\?\.length\)openTaste/);
  assert.match(source,/if\(kind==='tastes'\)openTaste\(\)/,'Explicit taste editing remains available');
  assert.match(source,/planner\.current\.enqueue\(withPeopleIds\(request\)\)/,'The full request, including people and tastes, still drives planning');
+});
+
+
+test('a saved identity assigned during generation does not swallow completion feedback',async()=>{
+ await render({resultScope:'draft',plan:null,busy:true,resultRevision:0});
+ await render({resultScope:'saved',plan:syntheticRoutePlan(),busy:true,resultRevision:1});
+ assert.equal(document.querySelector('.cs-result-toast'),null);
+ await render({busy:false});
+ assert.ok(document.querySelector('.cs-result-toast'));
+ assert.ok(document.querySelector('.cs-results-access .cs-result-sparkles'));
+});
+
+test('identity and completion arriving together announce once and toast opens results',async()=>{
+ let opened=0;await render({resultScope:'draft',plan:null,busy:true,resultRevision:0});
+ await render({resultScope:'saved',plan:syntheticRoutePlan(),busy:false,resultRevision:1,onOpenPlan:()=>opened++});
+ const toast=document.querySelector('.cs-result-toast');assert.ok(toast);
+ await act(async()=>toast.querySelector('button').click());assert.equal(opened,1);
+ await render({plan:{...props.plan,qualityReview:{status:'complete'}}});
+ assert.equal(document.querySelector('.cs-result-toast'),toast);
+});
+
+test('each later successful prompt replaces both cues, even when the venue list repeats',async()=>{
+ await render();let toast=document.querySelector('.cs-result-toast'),burst=document.querySelector('.cs-results-access .cs-result-sparkles');
+ for(const revision of [2,3,4]){
+  await render({busy:true});assert.equal(document.querySelector('.cs-result-toast'),null);
+  await render({busy:false,resultRevision:revision});
+  const nextToast=document.querySelector('.cs-result-toast'),nextBurst=document.querySelector('.cs-results-access .cs-result-sparkles');
+  assert.ok(nextToast);assert.ok(nextBurst);assert.notEqual(nextToast,toast);assert.notEqual(nextBurst,burst);
+  assert.match(nextToast.textContent,/Results updated/);toast=nextToast;burst=nextBurst;
+ }
+});
+
+
+test('loaded account or day with a reset revision does not announce a new completion',async()=>{
+ await render({resultRevision:4});
+ await render({resultScope:'another-account',resultRevision:0});
+ assert.equal(document.querySelector('.cs-result-toast'),null);
+ assert.equal(document.querySelector('.cs-result-sparkles'),null);
+ await render({resultScope:'another-loaded-day',resultRevision:7});
+ assert.equal(document.querySelector('.cs-result-toast'),null);
+ await render({busy:true});
+ await render({resultScope:'reset-during-request',busy:false,resultRevision:0});
+ assert.equal(document.querySelector('.cs-result-toast'),null);
 });

@@ -263,3 +263,6 @@ body:has(.chat-studio){overflow:hidden;background:#faf9f5}.chat-studio{--cs-pape
 .cs-tastes-open-layout{display:block}.cs-tastes-open-layout>div{width:100%}
 
 .agent-reply p{white-space:pre-line;margin:0 0 .85em}.agent-reply p:last-child{margin-bottom:0}.agent-reply strong{font-weight:650}
+.named-venue-results{max-width:680px}.named-venue-results h3{margin:0 0 5px;font-size:1rem}.named-venue-results .named-venue-area{display:flex;align-items:center;gap:5px;font-size:.82rem;color:var(--gray-11,#647064)}.named-venue-results ul{list-style:none;padding:0;margin:12px 0}.named-venue-results li{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--gray-5,#dfe4db)}.named-venue-results li>div{display:grid;gap:4px;flex:1;min-width:0}.named-venue-results li span{font-size:.83rem;color:var(--gray-11,#647064)}.named-venue-results small{font-size:.75rem;color:var(--gray-11,#647064)}
+
+.named-venue-visit{border-bottom:1px solid var(--gray-5,#dfe4db);padding-bottom:16px;margin-bottom:16px}.named-venue-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.named-venue-fields label{display:grid;gap:5px;font-size:.85rem}.named-venue-fields input{min-width:0;width:100%;box-sizing:border-box;padding:8px;border:1px solid #cbd5c4;border-radius:8px;background:transparent;color:inherit}

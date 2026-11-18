@@ -24,7 +24,7 @@ before(async () => {
   const frontend = fileURLToPath(new URL('..', import.meta.url));
   bundleDir = await mkdtemp(join(frontend, 'node_modules/.location-test-'));
   const outfile = join(bundleDir, 'planner.mjs');
-  await build({ entryPoints: [join(frontend, 'src/PlannerApp.jsx')], outfile, bundle: true, platform: 'node', format: 'esm', jsx: 'automatic', packages: 'external', loader: { '.css': 'empty' } });
+  await build({ entryPoints: [join(frontend, 'src/PlannerApp.jsx')], outfile, bundle: true, platform: 'node', format: 'esm', jsx: 'automatic', packages: 'external', loader: { '.css': 'empty' },define:{'import.meta.env.VITE_RESERVATION_FORM_PREVIEW':'"true"'} });
   PlannerApp = (await import(pathToFileURL(outfile).href)).default;
 });
 
@@ -69,7 +69,7 @@ beforeEach(() => {
     else if (url.pathname === '/api/account/plans' || url.pathname === '/api/account/circle-plans') result = { plans: [] };
     else if (url.pathname === '/api/account/plans/saved-day') result = state.savedPlan;
     else if (url.pathname.startsWith('/api/days/')) result = state.shared;
-    else if (url.pathname === '/api/agent') { state.requests.push(data); result = { status: 'reply', text: 'Synthetic test response.' }; }
+    else if (url.pathname === '/api/agent') { state.requests.push(data); result = state.agentResult || { status: 'reply', text: 'Synthetic test response.' }; }
     return new Response(JSON.stringify(result), { headers: { 'content-type': 'application/json' } });
   };
 });
@@ -336,12 +336,12 @@ for(const transition of ['Back to chat','New day','account switch','sign out','d
   }else {await closeReadySheet();await click(transition);}
   assert.equal(pending[0].signal.aborted,true);await act(async()=>pending[0].resolve());assert.equal(document.querySelector('.pg-route-estimate'),null);
   if(transition==='Back to chat'){
-    await click('Your day');await click('Choose your starting point');assert.equal(document.querySelector('.gr-sheet input[type=text]').value,'');assert.equal(document.querySelector('.pg-route-estimate'),null);
+    await click('Open current results');await click('Choose your starting point');assert.equal(document.querySelector('.gr-sheet input[type=text]').value,'');assert.equal(document.querySelector('.pg-route-estimate'),null);
   }
   assert.deepEqual(state.savedPlan.stops.map(stop=>stop.id),['first-drinks','second-drinks']);assert.equal(state.savedPlan.request.pins['first-drinks'],'catalog-item');
 });
 test('route integration: a guest can explicitly estimate a shared day; shared revision cancels evidence',async()=>{
-  const pending=await installRouteFixture({sharedRole:'member'});await mount();await click('Your day');await openRouteFixture();
+  const pending=await installRouteFixture({sharedRole:'member'});await mount();await click('Open current results');await openRouteFixture();
   assert.equal(pending.length,1);
   state.shared={...state.shared,revision:2,planRevision:1,status:'updating',request:{...state.shared.request,date:'2027-02-13'}};
   await act(async()=>document.dispatchEvent(new Event('visibilitychange')));
@@ -399,7 +399,7 @@ for(const signedIn of [false,true])test(`${signedIn?'account':'guest'}: partial 
   await installRouteFixture(signedIn?{}:{sharedRole:'member'});if(!signedIn)guestDefault(london);else{state.savedPlan.request.people=[profile];state.savedPlan.people=[profile];}
   state.savedPlan.request={...state.savedPlan.request,area:paris.label,locationId:paris.id};if(state.shared)state.shared.request=state.savedPlan.request;
   const base=globalThis.fetch,lookups=[];globalThis.fetch=async(url,options)=>{if(url===`/api/locations/${paris.id}`){lookups.push(url);return new Response(JSON.stringify(paris));}return base(url,options);};
-  await mount();if(!state.user)await click('Your day');await click('Getting ready');await click('Choose your starting point');await click(`Use ${paris.label} · approximate area`);await click('Save area as default');assert.equal(lookups.length,1);
+  await mount();if(!state.user)await click('Open current results');await click('Getting ready');await click('Choose your starting point');await click(`Use ${paris.label} · approximate area`);await click('Save area as default');assert.equal(lookups.length,1);
   assert.equal(area(),`Planning area: ${paris.label}`);assert.match(document.body.textContent,/Area saved as your default/);
   if(!signedIn)assert.deepEqual(JSON.parse(localStorage.getItem('unstressed.planning-area')),paris);
   await closeReadySheet();await click('New day');assert.equal(area(),`Planning area: ${paris.label}`);assert.equal((await send()).context.currency,'EUR');
@@ -408,7 +408,7 @@ for(const signedIn of [false,true])test(`${signedIn?'account':'guest'}: partial 
 for(const response of [{id:'paris',label:'Paris'},london])test(`unusable or mismatched catalog does not replace guest default: ${response.id}/${!!response.currency}`,async()=>{
   await installRouteFixture({sharedRole:'member'});guestDefault(london);state.savedPlan.request={...state.savedPlan.request,area:paris.label,locationId:paris.id};if(state.shared)state.shared.request=state.savedPlan.request;
   const base=globalThis.fetch;globalThis.fetch=async(url,options)=>url===`/api/locations/${paris.id}`?new Response(JSON.stringify(response)):base(url,options);
-  await mount();if(!state.user)await click('Your day');await click('Getting ready');await click('Choose your starting point');await click(`Use ${paris.label} · approximate area`);await click('Save area as default');assert.match(document.body.textContent,/could not be verified/);assert.doesNotMatch(document.body.textContent,/Area saved as your default/);assert.deepEqual(JSON.parse(localStorage.getItem('unstressed.planning-area')),london);
+  await mount();if(!state.user)await click('Open current results');await click('Getting ready');await click('Choose your starting point');await click(`Use ${paris.label} · approximate area`);await click('Save area as default');assert.match(document.body.textContent,/could not be verified/);assert.doesNotMatch(document.body.textContent,/Area saved as your default/);assert.deepEqual(JSON.parse(localStorage.getItem('unstressed.planning-area')),london);
 });
 
 test('account switch during catalog resolution prevents saving into the new account',async()=>{
@@ -729,4 +729,41 @@ test('adding a connected person keeps People open and enables named Invite only 
  globalThis.fetch=async(input,options={})=>{const path=new URL(input,location.origin).pathname;if(path==='/api/account')return new Response(JSON.stringify({user:state.user,circles:[{id:'friends',name:'Friends',accountIds:[profile.id,friend.id],people:[profile,friend]}],configured:true}));if(path==='/api/itineraries'){const request=JSON.parse(options.body);await gate;return new Response(JSON.stringify({...initial,request,savedPlan:{id:'saved-day',revision:4}}));}if(path==='/api/account/plans/saved-day/invitations'){if(options.method==='POST')writes.push(JSON.parse(options.body));return new Response(JSON.stringify({revision:4,invitations:[]}));}return base(input,options);};
  await mount();await click('Add to the conversation');await click('Add people');await click('Add Ama to the draft');assert.ok(document.querySelector('[aria-label="People in this day"]'));assert.equal(button('Invite Ama').disabled,true);assert.match(document.body.textContent,/Save the updated day first/);assert.equal(writes.length,0);
  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,1200));});await act(async()=>release());assert.equal(button('Invite Ama').disabled,false);await click('Invite Ama');assert.match(document.querySelector('.pi-review').textContent,/Invite Ama/);assert.match(document.querySelector('.pi-review').textContent,/Revision 4/);assert.equal(writes.length,0);await click('Confirm invitation');assert.deepEqual(writes,[{recipientId:'friend',revision:4}]);
+});
+
+const namedEntity='12345678-1234-1234-1234-123456789ABC';
+const namedCandidate=()=>({id:`qloo:${namedEntity}`,entityId:namedEntity,name:'Café Sample',address:'6 Example Street, Accra',provenance:{provider:'qloo',retrievedAt:'2026-11-18T10:00:00Z'},links:{},facts:{},nameMatch:'partial',locationMatch:'needs_review'});
+const namedResponse=(candidates=[namedCandidate()])=>({status:'action',action:'find_venue',query:'Cafe Sample',area:'Accra',source:'qloo',matchStatus:candidates.length?'candidates':'not_found',candidates});
+
+test('named lookup before an outing shows candidates and opens real place details without planning',async()=>{
+ state.agentResult=namedResponse();const base=globalThis.fetch;let plans=0;
+ globalThis.fetch=async(input,options={})=>{const path=new URL(input,location.origin).pathname;if(path==='/api/itineraries')plans++;if(path===`/api/places/${namedEntity}`)return new Response(JSON.stringify(namedCandidate()));if(path==='/api/actions/capabilities')return new Response(JSON.stringify({reservationFormPreview:true}));return base(input,options);};
+ await mount();await send();assert.match(document.querySelector('[aria-label="Named place results"]').textContent,/Café Sample/);assert.match(document.body.textContent,/Check location/);assert.equal(document.querySelector('.pg-place-sheet'),null);assert.equal(plans,0);
+ await click('Open details for Café Sample at 6 Example Street, Accra');assert.match(document.querySelector('.pg-place-sheet').textContent,/Café Sample/);await click('Booking');assert.match(document.querySelector('.pg-place-sheet').textContent,/Search web for booking/);assert.doesNotMatch(document.querySelector('.pg-place-sheet').textContent,/Add this place to your day/);assert.match(document.querySelector('.pg-place-sheet').textContent,/Set visit time/);assert.equal(plans,0);
+ await click('Close place details');assert.equal(document.querySelector('.pg-place-sheet'),null);assert.equal(area(),'Planning area: Not set');
+});
+
+test('named lookup keeps an existing saved outing intact and does not select ambiguous candidates',async()=>{
+ account(london);const saved={...repeatedPlan(),savedPlan:{id:'saved-day',revision:3}};state.savedPlan=saved;history.replaceState(null,'','/#/plan/saved-day');const original=JSON.stringify(saved);const second={...namedCandidate(),entityId:'87654321-1234-1234-1234-123456789ABC',address:'Different city'};state.agentResult=namedResponse([namedCandidate(),second]);
+ await mount();await input('textarea[aria-label="Message Unstressed"]','Find Cafe Sample');await act(async()=>document.querySelector('form.cs-composer').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));assert.match(document.querySelector('[aria-label="Named place results"]').textContent,/Check the name and address/);assert.equal(document.querySelectorAll('.named-venue-results li').length,2);assert.equal(document.querySelector('.pg-place-sheet'),null);assert.equal(JSON.stringify(state.savedPlan),original);assert.equal(area(),'Planning area: London, United Kingdom');
+});
+
+test('named lookup no match is explicit and never displays a nearby substitute',async()=>{
+ state.agentResult=namedResponse([]);await mount();await send();const result=document.querySelector('[aria-label="Named place results"]');assert.match(result.textContent,/No matching name candidates/);assert.match(result.textContent,/Nearby alternatives have not replaced/);assert.equal(result.querySelectorAll('button').length,0);
+});
+
+test('unbound named candidates are rejected rather than opened',async()=>{
+ state.agentResult=namedResponse([{...namedCandidate(),provenance:{provider:'invented'}}]);await mount();await send();assert.equal(document.querySelector('[aria-label="Named place results"]'),null);assert.match(document.body.textContent,/named-place results could not be verified/);
+});
+
+test('named venue visit details are explicit and enable consent-gated safe fill without changing the saved day',async()=>{
+ account(london);state.savedPlan={...repeatedPlan({date:'2030-01-01',timing:{dateConfirmed:true,timeConfirmed:true,mode:'fixed'},party:{adults:8,children:2}}),savedPlan:{id:'saved-day',revision:3}};history.replaceState(null,'','/#/plan/saved-day');const original=JSON.stringify(state.savedPlan),candidate={...namedCandidate(),links:{website:'https://venue.example/book'}};state.agentResult=namedResponse([candidate]);const base=globalThis.fetch,writes=[];
+ globalThis.fetch=async(input,options={})=>{const path=new URL(input,location.origin).pathname;if(path==='/api/actions/capabilities')return new Response(JSON.stringify({reservationFormPreview:true}));if(path===`/api/places/${namedEntity}/reservation-form`)return new Response(JSON.stringify({status:'forms_found',previewAvailable:true,sourceUrl:'https://venue.example/book',forms:[{id:'form-1',fields:[{id:'date',type:'date',label:'Booking date',semantic:'date'},{id:'time',type:'time',label:'Booking time',semantic:'time'},{id:'guests',type:'number',label:'Guests',semantic:'partySize'}]}]}));if(path===`/api/places/${namedEntity}/reservation-form/preview`){const body=JSON.parse(options.body);writes.push({path,body});return new Response(JSON.stringify({status:'filled',submitted:false,sourceUrl:'https://venue.example/book',fields:[{label:'Booking date',value:body.fields.date,status:'filled'}]}));}if(options.method&&options.method!=='GET'&&!['/api/agent','/api/usage'].includes(path))writes.push({path});return base(input,options);};
+ await mount();await input('textarea[aria-label="Message Unstressed"]','Find Cafe Sample');await act(async()=>document.querySelector('form.cs-composer').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+ await click('Open details for Café Sample at 6 Example Street, Accra');await click('Booking');await click('Set visit details');assert.equal(document.querySelector('.named-venue-fields input[type=date]').value,'');assert.equal(document.querySelector('.named-venue-fields input[type=time]').value,'');assert.equal(document.querySelector('.named-venue-fields input[type=number]').value,'1');
+ await input('.named-venue-fields input[type=date]','2030-12-01');await input('.named-venue-fields input[type=time]','19:30');await input('input[aria-label="Visit time zone"]','Africa/Accra');await input('.named-venue-fields input[type=number]','3');await click('Use these visit details');
+ await click('Find booking form');assert.equal(button('Fill form without submitting').disabled,true);assert.equal(document.querySelector('.booking-browser-controls input[type=date]').value,'2030-12-01');assert.equal(document.querySelector('.booking-browser-controls input[type=time]').value,'19:30');assert.equal(document.querySelector('.booking-browser-controls input[type=number]').value,'3');
+ await act(async()=>document.querySelector('.booking-browser-controls input[type=checkbox]').click());await click('Fill form without submitting');assert.deepEqual(writes,[{path:`/api/places/${namedEntity}/reservation-form/preview`,body:{formId:'form-1',fields:{date:'2030-12-01',time:'19:30',guests:'3'},consent:true}}]);assert.equal(JSON.stringify(state.savedPlan),original);
+ await click('Close form preview');await click('Edit visit details');await input('.named-venue-fields input[type=date]','2020-01-01');await click('Use these visit details');assert.match(document.querySelector('.named-venue-visit').textContent,/Choose a future date/);assert.doesNotMatch(document.querySelector('.pg-enquiry').textContent,/Add this place to your day/);assert.match(document.querySelector('.pg-enquiry').textContent,/Set visit time/);
+ await click('Close place details');await click('Open details for Café Sample at 6 Example Street, Accra');await click('Booking');await click('Set visit details');assert.equal(document.querySelector('.named-venue-fields input[type=date]').value,'');assert.equal(JSON.stringify(state.savedPlan),original);
 });
