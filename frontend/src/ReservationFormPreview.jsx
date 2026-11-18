@@ -1,4 +1,4 @@
-import BookingWebSearch from './BookingWebSearch.jsx';
+import BookingWebsiteSearch from './BookingWebsiteSearch.jsx';
 import {venueSearchUrl} from './booking-contact-links.js';
 import {useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
@@ -93,7 +93,7 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
     {!open&&!fillAllowed&&onTiming&&<button type="button" className="pg-link" onClick={onTiming}>Set visit time</button>}
     {open&&createPortal(<dialog ref={workspace} className="booking-workspace" aria-label={`Booking browser for ${snapshot.name}`} onCancel={e=>{e.preventDefault();e.stopPropagation();cancel();}} onKeyDown={e=>e.stopPropagation()}>
       <header className="booking-browser-bar"><Icon name="lock" size={18}/><div><strong>{snapshot.name}</strong><span>{discovery?.sourceUrl?new URL(discovery.sourceUrl).hostname:'Booking browser'} · No booking submitted</span></div><button type="button" className="booking-icon" onClick={discover} disabled={locked} aria-label="Find booking form" title="Retry search"><Icon name="undo"/></button><button type="button" className="booking-icon" onClick={cancel} aria-label="Close form preview" title="Close"><Icon name="close"/></button></header>
-      <div className="booking-workspace-body">{searchingWeb?<BookingWebSearch snapshot={snapshot} onSelected={useSearchDestination} onCancel={cancel}/>:<>
+      <div className="booking-workspace-body">{searchingWeb?<BookingWebsiteSearch snapshot={snapshot} onSelected={useSearchDestination} onCancel={cancel}/>:<>
       <section className="booking-browser-canvas" aria-label="Read-only browser view">
         <div className="booking-browser-status" role="status">{busy?({waiting:'Waiting briefly for a booking browser…',connecting:'Connecting to the browser…',loading:'Opening the venue website…',inspecting:'Looking for booking fields…',freezing:'Disconnecting the form before filling…',filling:'Filling your reviewed details…',ready:'Browser preview ready.'}[browserView?.stage]||'Viewing the browser…'):preview?'Prepared for review · not submitted':discovery?.forms.length?'Booking form found':error?'Could not open the booking page':'Search complete'}</div>
         {browserView?.imageDataUrl||preview?.screenshotDataUrl?<img src={preview?.screenshotDataUrl||browserView.imageDataUrl} alt="Actual remote browser page, read-only preview"/>:<div className="booking-browser-empty"><Icon name={busy?'clock':'search'} size={36}/><h2>{busy?'Opening the booking page':error?'Let’s try another way':discovery?.forms.length?'Your form is ready to prepare':'No preview available'}</h2><p>{busy?'You’ll see the website here as the browser works.':'Choose the next step alongside this view.'}</p></div>}
