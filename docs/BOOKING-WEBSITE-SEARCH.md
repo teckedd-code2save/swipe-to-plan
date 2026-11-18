@@ -1,8 +1,8 @@
-# Licensed website search (conditional, not activated)
+# Provider-backed website search
 
-The default in-app fallback uses the Brave **Web Search API**, not an embedded search-engine page or automated scraping. Six original result titles, URLs and snippets appear inside Unstressed. The user compares the provider-bound venue name/address, chooses a result, and explicitly acknowledges that review before opening the existing booking browser. Search hits are leads, not verified ownership, availability or reservations. No first-result auto-selection, form submission or guest details in search queries.
+The in-app fallback supports Serper and the Brave **Web Search API**, not an embedded search-engine page. Serper supplies scraped search data through its API; Brave uses its search API. Both require explicit operator configuration. Six original result titles, URLs and snippets appear inside Unstressed. The user compares the provider-bound venue name/address, chooses a result, and explicitly acknowledges that review before opening the existing booking browser. Search hits are leads, not verified ownership, availability or reservations. No first-result auto-selection, form submission or guest details in search queries.
 
-## Operator prerequisites
+## Brave operator prerequisites
 
 1. Create an owner-controlled Brave Search API account and activate an appropriate Web Search plan. Official quickstart requires a payment card/plan; this change does not do that.
 2. Review current API terms, approve permitted spending, and provide applicable end-user terms/privacy disclosures covering API result-use restrictions before activation. The existing privacy page describes public venue queries. This code does not create a legal agreement for the operator or its customers.
@@ -16,3 +16,13 @@ Results remain in the current UI only; backend candidate URLs expire after three
 Sources: [pricing](https://api-dashboard.search.brave.com/documentation/pricing), [quickstart](https://api-dashboard.search.brave.com/documentation/quickstart), [Web Search](https://api-dashboard.search.brave.com/documentation/services/web-search), [API terms](https://api-dashboard.search.brave.com/terms-of-service). Attribution is optional under the checked terms; branded attribution must follow its approved logo/wording rules.
 
 Google remote-browser search returned a human-verification challenge in testing. No retry/bypass is used. DuckDuckGo embedding and Bing consumer product-use terms were not suitable substitutes. Older constrained browser-search code remains isolated and is not the default UI.
+
+## Serper free-trial adapter
+
+Serper is an alternative API source, not the official Google Places/Search API. Enable only after the owner creates their account and approves its terms: `SERPER_SEARCH_ENABLED=true` plus server-only `SERPER_API_KEY`. When explicitly enabled it takes precedence over Brave, even if its key is absent or invalid; there is no silent fallback that could spend another provider's credits.
+
+The adapter sends only the venue name/address query to `https://google.serper.dev/search` and renders up to six original organic titles, links and snippets, labelled as supplied via Serper. User identity review, public HTTPS URL validation, opaque entity-bound selection tokens, expiry, DNS checks, and no-submission behavior remain unchanged. Knowledge panels and advertisements are not treated as verified destinations. Serper does not guarantee website identity or booking availability.
+
+The public offer checked 18 November 2026 is 2,500 free queries, no card required. This integration does not buy credits, set up automatic payments, or create an account. Keep the account trial-only unless the owner separately approves spending. In-process limits are not a durable billing cap; provider credit balance is the ultimate trial limit. Do not create multiple accounts or circumvent limits.
+
+Sources: [Serper](https://serper.dev/), [terms](https://serper.dev/terms). Terms describe publicly scraped data and require respecting third-party rights/source notices; this is not a claim that Serper is affiliated with Google. Configure and test real venue results before describing search as live.
