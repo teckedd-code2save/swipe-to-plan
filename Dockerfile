@@ -3,6 +3,8 @@ WORKDIR /build/frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
+# DOM adapter tests import this dependency-free module only, not the backend.
+COPY backend/src/reservation-tableagent.js /build/backend/src/reservation-tableagent.js
 COPY shared /build/shared
 # Brand parity test needs only this native reference, not the mobile app.
 COPY mobile/assets/brand/unstressed-mark.svg /build/mobile/assets/brand/unstressed-mark.svg
