@@ -16,3 +16,10 @@ test('JSON compatibility retained, duplicate terminal result rejected',async()=>
  assert.deepEqual(await readReservationStream(new Response('{"status":"ok"}')),{status:'ok'});
  await assert.rejects(readReservationStream(response('{"type":"result","result":{}}\n{"type":"result","result":{}}\n')),/Unexpected/);
 });
+
+test('provider cooldown progress survives stream parsing until successful result',async()=>{
+ const seen=[];
+ const events=[{type:'progress',stage:'waiting',message:'untrusted provider detail'},{type:'progress',stage:'loading'},{type:'result',result:{status:'forms_found'}}];
+ const result=await readReservationStream(response(events.map(e=>JSON.stringify(e)).join('\n')),event=>seen.push(event));
+ assert.deepEqual(seen,[{type:'progress',stage:'waiting'},{type:'progress',stage:'loading'}]);assert.equal(result.status,'forms_found');
+});

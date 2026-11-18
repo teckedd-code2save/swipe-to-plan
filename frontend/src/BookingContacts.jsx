@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {DialerLink} from './VenueContact.jsx';
 import {Icon} from './PlannerIcons.jsx';
 import {api} from './api.js';
-import {publishedWhatsapp,venueSearchUrl} from './booking-contact-links.js';
+import {publishedWhatsapp} from './booking-contact-links.js';
 export default function BookingContacts({snapshot,place,message,disabled=false}){
  const [checking,setChecking]=useState(false),[whatsapp,setWhatsapp]=useState(null),[notice,setNotice]=useState('');
  const abort=useRef(null);
@@ -16,7 +16,7 @@ export default function BookingContacts({snapshot,place,message,disabled=false})
  return <div className="booking-contact-options"><div className="booking-contact-actions">
  <DialerLink place={{...place,entityId:snapshot.entityId,name:snapshot.name}} contact={snapshot.contactEvidence} allowedUrl={snapshot.contacts.phone} className="pg-link"/>
  {whatsapp?<a className="pg-link" href={`${whatsapp}?text=${encodeURIComponent(message)}`} target="_blank" rel="noopener noreferrer"><Icon name="chat" size={16}/>WhatsApp</a>:<button className="pg-link" type="button" disabled={disabled||checking||!snapshot.contacts.website} onClick={check}><Icon name="chat" size={16}/>{checking?'Checking WhatsApp…':'Find WhatsApp contact'}</button>}
- {!snapshot.contacts.website&&<a className="pg-link" href={venueSearchUrl(place)} target="_blank" rel="noopener noreferrer"><Icon name="search" size={16}/>Search web for booking <Icon name="arrowUpRight" size={14}/></a>}
- </div>{!snapshot.contacts.website&&<p className="pg-note">No website is listed. Search opens in a new tab; check the venue’s location before using a booking link.</p>}
+
+ </div>
  {whatsapp&&<p className="pg-note">Review the prepared message in WhatsApp and send it yourself. A reply is needed to confirm your booking.</p>}{notice&&<p role="status" className="pg-note">{notice}</p>}</div>;
 }

@@ -1,3 +1,4 @@
+import BookingWebSearch from './BookingWebSearch.jsx';
 import {venueSearchUrl} from './booking-contact-links.js';
 import {useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
@@ -11,7 +12,7 @@ export default function ReservationFormPreview({snapshot,message,disabled=false,
 function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
   const [capability,setCapability]=useState('loading'),[capabilityAttempt,setCapabilityAttempt]=useState(0),[discovery,setDiscovery]=useState(null),[formId,setFormId]=useState(''),[fields,setFields]=useState({}),[consent,setConsent]=useState(false),[preview,setPreview]=useState(null),[busy,setBusy]=useState(''),[error,setError]=useState('');
   const pending=useRef(null),lease=useRef(null);
-  const [browserView,setBrowserView]=useState(null),[open,setOpen]=useState(false);
+  const [browserView,setBrowserView]=useState(null),[open,setOpen]=useState(false),[searchingWeb,setSearchingWeb]=useState(false);
   const workspace=useRef(null),trigger=useRef(null);
   useEffect(()=>{
     if(!open)return;
@@ -42,7 +43,16 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
   const form=discovery?.forms.find(item=>item.id===formId);
   const locked=disabled||!!busy;
   function selectForm(next){setFormId(next.id);setFields(seedReservationFields(next,snapshot,message));setConsent(false);clearPreview();}
+  function startWebSearch(){pending.current?.abort();pending.current=null;clearPreview();setDiscovery(null);setError('');setBusy('');setSearchingWeb(true);setOpen(true);}
+  async function useSearchDestination(candidate,imageDataUrl){
+    if(!candidate?.candidateId)throw Error('This search destination expired. Search again.');
+    setSearchingWeb(false);setBrowserView({imageDataUrl,stage:'connecting'});setBusy('inspecting');const abort=new AbortController();pending.current=abort;
+    try{const result=normalizeReservationForms(await api.reservationFormDestination(snapshot.entityId,{candidateId:candidate.candidateId},abort.signal,receiveProgress(abort)));if(abort.signal.aborted)return;setDiscovery(result);if(result.forms[0])selectForm(result.forms[0]);}
+    catch(e){if(!abort.signal.aborted)setError(e.message||'Could not inspect this website.');}
+    finally{if(!abort.signal.aborted){pending.current=null;setBusy('');}}
+  }
   async function discover(){
+    if(!snapshot.contacts?.website){startWebSearch();return;}setSearchingWeb(false);
     if(pending.current||disabled)return;setOpen(true);const abort=new AbortController();pending.current=abort;setBrowserView({stage:'connecting'});setBusy('finding');setError('');setDiscovery(null);clearPreview();setConsent(false);setFormId('');setFields({});
     try{const result=normalizeReservationForms(await api.reservationForm(snapshot.entityId,abort.signal,receiveProgress(abort)));if(abort.signal.aborted)return;setDiscovery(result);if(result.forms[0])selectForm(result.forms[0]);}
     catch(e){if(!abort.signal.aborted)setError(e.message||'Could not find a booking form.');}
@@ -71,29 +81,29 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
     catch(e){closeLease(returnedId);if(!abort.signal.aborted)setError(e.message||'Could not prepare this form. No booking is confirmed.');}
     finally{if(!abort.signal.aborted){pending.current=null;setBusy('');}}
   }
-  function cancel(){setOpen(false);setBrowserView(null);pending.current?.abort();pending.current=null;setBusy('');setConsent(false);clearPreview();setDiscovery(null);setFields({});setError('');}
-  if(capability==='disabled')return null;
+  function cancel(){setSearchingWeb(false);setOpen(false);setBrowserView(null);pending.current?.abort();pending.current=null;setBusy('');setConsent(false);clearPreview();setDiscovery(null);setFields({});setError('');}
+  if(capability==='disabled')return <p className="pg-note">The in-app booking browser is unavailable. <a href={venueSearchUrl(snapshot)} target="_blank" rel="noopener noreferrer">Open search in your browser</a></p>;
   if(capability!=='available')return <section className="pg-form-preview" aria-label="Booking form preview">
     <h4>Find a booking form</h4>
     <button type="button" className="pl-secondary-button" disabled>Find booking form</button>
-    {capability==='loading'?<p role="status">Checking whether booking form preview is available…</p>:<><p role="status">Could not check booking form preview availability. Try again to check before opening a venue page.</p><button type="button" className="pl-secondary-button" disabled={disabled} onClick={()=>{setCapability('loading');setCapabilityAttempt(value=>value+1);}}>Retry availability check</button></>}
+    {capability==='loading'?<p role="status">Checking whether booking form preview is available…</p>:<><p role="status">Could not check booking form preview availability. Try again to check before opening a venue page.</p><button type="button" className="pl-secondary-button" disabled={disabled} onClick={()=>{setCapability('loading');setCapabilityAttempt(value=>value+1);}}>Retry availability check</button><a className="pg-link" href={venueSearchUrl(snapshot)} target="_blank" rel="noopener noreferrer">Open search in your browser</a></>}
   </section>;
   return <>
-    <div className="booking-launch"><div><strong>Book online</strong><span>Find and prepare the venue’s booking form.</span></div><button ref={trigger} type="button" className="pl-button" onClick={discover} disabled={locked||!snapshot.entityId}><Icon name="arrowUpRight" size={18}/>Find booking form</button></div>
+    <div className="booking-launch"><div><strong>Book online</strong><span>{snapshot.contacts?.website?"Find and prepare the venue’s booking form.":"Find the venue’s website without leaving Unstressed."}</span></div><button ref={trigger} type="button" className="pl-button" onClick={discover} disabled={locked||!snapshot.entityId}><Icon name={snapshot.contacts?.website?"arrowUpRight":"search"} size={18}/>{snapshot.contacts?.website?"Find booking form":"Search web for booking"}</button></div>
     {!open&&!fillAllowed&&onTiming&&<button type="button" className="pg-link" onClick={onTiming}>Set visit time</button>}
     {open&&createPortal(<dialog ref={workspace} className="booking-workspace" aria-label={`Booking browser for ${snapshot.name}`} onCancel={e=>{e.preventDefault();e.stopPropagation();cancel();}} onKeyDown={e=>e.stopPropagation()}>
-      <header className="booking-browser-bar"><Icon name="lock" size={18}/><div><strong>{snapshot.name}</strong><span>{discovery?.sourceUrl?new URL(discovery.sourceUrl).hostname:'Booking browser'} · No request sent</span></div><button type="button" className="booking-icon" onClick={discover} disabled={locked} aria-label="Find booking form" title="Retry search"><Icon name="undo"/></button><button type="button" className="booking-icon" onClick={cancel} aria-label="Close form preview" title="Close"><Icon name="close"/></button></header>
-      <div className="booking-workspace-body">
+      <header className="booking-browser-bar"><Icon name="lock" size={18}/><div><strong>{snapshot.name}</strong><span>{discovery?.sourceUrl?new URL(discovery.sourceUrl).hostname:'Booking browser'} · No booking submitted</span></div><button type="button" className="booking-icon" onClick={discover} disabled={locked} aria-label="Find booking form" title="Retry search"><Icon name="undo"/></button><button type="button" className="booking-icon" onClick={cancel} aria-label="Close form preview" title="Close"><Icon name="close"/></button></header>
+      <div className="booking-workspace-body">{searchingWeb?<BookingWebSearch snapshot={snapshot} onSelected={useSearchDestination} onCancel={cancel}/>:<>
       <section className="booking-browser-canvas" aria-label="Read-only browser view">
-        <div className="booking-browser-status" role="status">{busy?({connecting:'Connecting to the browser…',loading:'Opening the venue website…',inspecting:'Looking for booking fields…',freezing:'Disconnecting the form before filling…',filling:'Filling your reviewed details…',ready:'Browser preview ready.'}[browserView?.stage]||'Viewing the browser…'):preview?'Prepared for review · not submitted':discovery?.forms.length?'Booking form found':error?'Could not open the booking page':'Search complete'}</div>
+        <div className="booking-browser-status" role="status">{busy?({waiting:'Waiting briefly for a booking browser…',connecting:'Connecting to the browser…',loading:'Opening the venue website…',inspecting:'Looking for booking fields…',freezing:'Disconnecting the form before filling…',filling:'Filling your reviewed details…',ready:'Browser preview ready.'}[browserView?.stage]||'Viewing the browser…'):preview?'Prepared for review · not submitted':discovery?.forms.length?'Booking form found':error?'Could not open the booking page':'Search complete'}</div>
         {browserView?.imageDataUrl||preview?.screenshotDataUrl?<img src={preview?.screenshotDataUrl||browserView.imageDataUrl} alt="Actual remote browser page, read-only preview"/>:<div className="booking-browser-empty"><Icon name={busy?'clock':'search'} size={36}/><h2>{busy?'Opening the booking page':error?'Let’s try another way':discovery?.forms.length?'Your form is ready to prepare':'No preview available'}</h2><p>{busy?'You’ll see the website here as the browser works.':'Choose the next step alongside this view.'}</p></div>}
         {preview?.liveViewUrl&&<a className="pl-button booking-open-live" href={preview.liveViewUrl} target="_blank" rel="noopener noreferrer">Open filled form<Icon name="arrowUpRight" size={18}/></a>}
       </section>
       <aside className="booking-browser-controls" aria-label="Booking details">
     {busy==='inspecting' &&<p role="status">Inspecting the selected booking page…</p>}
     {!fillAllowed&&<p className="pg-note">You can find the form now. Add your visit time and party size before filling. {onTiming&&<button type="button" className="pg-link" disabled={locked} onClick={onTiming}>Set visit time</button>}</p>}
-    {error&&<div className="booking-error"><p role="alert">{error}</p><button type="button" className="pl-secondary-button" disabled={locked} onClick={discover}>Try again</button>{secureBookingWebsite(snapshot.contacts?.website)&&<a className="pg-link" href={secureBookingWebsite(snapshot.contacts.website)} target="_blank" rel="noopener noreferrer">Open venue website <Icon name="arrowUpRight" size={16}/></a>}<a className="pg-link" href={venueSearchUrl({name:snapshot.name,contact:snapshot.contactEvidence})} target="_blank" rel="noopener noreferrer">Search web for booking <Icon name="arrowUpRight" size={16}/></a><button type="button" className="pg-link" onClick={cancel}>Back to booking options</button></div>}
-    {discovery&&<div>
+    {error&&<div className="booking-error"><p role="alert">{error}</p><button type="button" className="pl-secondary-button" disabled={locked} onClick={discover}>Try again</button>{secureBookingWebsite(snapshot.contacts?.website)&&<a className="pg-link" href={secureBookingWebsite(snapshot.contacts.website)} target="_blank" rel="noopener noreferrer">Open venue website <Icon name="arrowUpRight" size={16}/></a>}<button type="button" className="pg-link" disabled={locked} onClick={startWebSearch}>Search web for booking <Icon name="search" size={16}/></button><button type="button" className="pg-link" onClick={cancel}>Back to booking options</button></div>}
+    {discovery&&<div><button type="button" className="pg-link" disabled={locked} onClick={startWebSearch}>Search for another website <Icon name="search" size={16}/></button>
       {discovery.sourceUrl&&<a className="pg-link" href={discovery.sourceUrl} target="_blank" rel="noopener noreferrer">Venue booking page <Icon name="arrowUpRight" size={16}/></a>}
       {!!discovery.candidates.length&&<div><h4>Choose a booking page</h4><ul>{discovery.candidates.map(candidate=><li key={candidate.id}>
         <strong>{candidate.label}</strong> · {candidate.relationship==='website_redirect'?'Redirected website':candidate.relationship==='booking_partner'?'External booking provider':'Venue website'}<br/>
@@ -112,7 +122,7 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
     </div>}
     {preview&&<div className="booking-prepared" role="status"><h4>Prepared for review · not submitted</h4><p>Review the filled form in its browser tab. It is disconnected from the venue, so no booking can be sent.</p>{preview.status!=='filled'&&<p>Some fields need your review.</p>}<details><summary>Filled details</summary><dl>{preview.fields.map((field,index)=><div key={index}><dt>{field.label}</dt><dd>{field.status==='filled'?field.value||'Filled':'Needs review'}</dd></div>)}</dl></details>{preview.expiresAt&&<small>Available until {new Date(preview.expiresAt).toLocaleTimeString()}.</small>}</div>}
       <p className="booking-safety"><Icon name="lock" size={14}/> Preview only. Nothing is submitted.</p>
-      </aside></div>
+      </aside></>}</div>
     </dialog>,document.body)}
   </>;
 }

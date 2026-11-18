@@ -128,6 +128,26 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     try{await transport.result(await reservationForms.discover(req.params.id,transport.options));}
     catch(error){transport.error(reservationDiscoveryFailure(error));}
   }));
+  for(const [suffix,method,quota] of [['','startSearch',4],['/action','searchAction',90],['/select','selectSearch',6]]){
+    app.post(`/api/places/:id/reservation-search${suffix}`,limit(quota,`reservation_search_${method}`),route(async(req,res)=>{
+      if(req.get('origin')!==accounts.origin||!req.is('application/json'))return res.status(403).json({error:'Use the booking search from Unstressed.'});
+      const controller=new AbortController();
+      const abort=()=>{if(!res.writableEnded){controller.abort();if(req.body?.searchId)reservationForms.closeSearch(req.body.searchId).catch(()=>{});}};
+      res.on('close',abort);res.set('Cache-Control','no-store');
+      try{
+        const result=await reservationForms[method](req.params.id,req.body,{signal:controller.signal});
+        if(controller.signal.aborted){if(result.searchId)await reservationForms.closeSearch(result.searchId);return;}
+        res.json(result);
+      }catch(error){if(!controller.signal.aborted)res.status(422).json(reservationDiscoveryFailure(error));}
+      finally{res.off('close',abort);}
+    }));
+  }
+  app.post('/api/places/:id/reservation-search/close',limit(30,'reservation_search_close'),route(async(req,res)=>{
+    if(req.get('origin')!==accounts.origin||!req.is('application/json'))return res.status(403).json({error:'Close the search from Unstressed.'});
+    strictFields(req.body,['searchId']);
+    if(typeof req.body.searchId!=='string'||!/^[a-f0-9-]{36}$/.test(req.body.searchId))throw new InputError('Invalid search.');
+    await reservationForms.closeSearch(req.body.searchId);res.json({closed:true});
+  }));
   app.post('/api/places/:id/reservation-form/destination',limit(4,'reservation_destination'),route(async(req,res)=>{
     if(req.get('origin')!==accounts.origin||!req.is('application/json'))return res.status(403).json({error:'Select this booking page from Unstressed.'});
     const transport=reservationTransport(req,res);

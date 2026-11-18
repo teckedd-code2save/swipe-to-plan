@@ -1,0 +1,7 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {normalizeSearchFrame,searchPoint} from '../src/booking-web-search.js';
+const frame={searchId:'e81234ab-4123-4123-8123-123456789abc',sequence:0,submitted:false,url:'https://www.google.com/search?q=public+venue',title:'Search',status:'ready',width:1100,height:900,imageDataUrl:'data:image/png;base64,YQ==',expiresAt:new Date(Date.now()+60000).toISOString(),canUse:true};
+test('search accepts actual bounded frame with separate user selection',()=>{assert.equal(normalizeSearchFrame(frame).canUse,true);assert.equal(normalizeSearchFrame({...frame,status:'challenge'}).canUse,false);});
+test('search rejects malformed frame, secret/unsafe address and expired session',()=>{for(const change of [{sequence:-1},{submitted:true},{url:'javascript:alert(1)'},{url:'http://site.example/'},{url:'https://user:pass@site.example/'},{imageDataUrl:'data:image/svg+xml,x'},{width:1},{expiresAt:'2000-01-01T00:00:00Z'},{searchId:'guess'}])assert.throws(()=>normalizeSearchFrame({...frame,...change}));});
+test('click coordinate uses rendered image size, rejects outside edges',()=>{const currentTarget={getBoundingClientRect:()=>({left:10,top:20,width:550,height:450})};assert.deepEqual(searchPoint({currentTarget,clientX:285,clientY:245},frame),{x:550,y:450});assert.equal(searchPoint({currentTarget,clientX:9,clientY:245},frame),null);assert.equal(searchPoint({currentTarget,clientX:560,clientY:245},frame),null);});

@@ -80,3 +80,20 @@ test('retained live view owns browser until its idempotent release; close failur
  assert.deepEqual(calls,[]);await Promise.all([result.release(),result.release()]);
  assert.deepEqual(calls,['page','browser','disconnect']);
 });
+
+test('provider 429 waits once before reconnecting without repeating a job or leaking errors',async()=>{
+ const {connectReservationBrowser}=await import('../src/reservation-form.js');let calls=0;const events=[],waits=[];
+ const browser={};
+ const result=await connectReservationBrowser(async()=>{calls++;if(calls===1)throw Error('Unexpected server response: 429 secret');return browser;},{},{emit:e=>events.push(e),wait:async ms=>waits.push(ms)});
+ assert.equal(result,browser);assert.equal(calls,2);assert.deepEqual(waits,[21000]);assert.equal(events[0].stage,'waiting');assert.equal(JSON.stringify(events).includes('secret'),false);
+});
+test('provider quota, repeated limits and non-rate errors do not create retry loops',async()=>{
+ const {connectReservationBrowser}=await import('../src/reservation-form.js');
+ for(const [message,code,count]of [['Unexpected server response: 429','browser_rate_limited',2],['code: 429 Browser time limit exceeded for today','browser_quota_exceeded',1],['Unexpected server response: 403',undefined,1]]){
+  let calls=0;await assert.rejects(connectReservationBrowser(async()=>{calls++;throw Error(message);},{},{wait:async()=>{}}),error=>code?error.code===code:error.message===message);assert.equal(calls,count);
+ }
+});
+test('cancelled provider cooldown cannot start another browser',async()=>{
+ const {connectReservationBrowser}=await import('../src/reservation-form.js');const abort=new AbortController();let calls=0;
+ await assert.rejects(connectReservationBrowser(async()=>{calls++;throw Error('Unexpected server response: 429');},{},{signal:abort.signal,wait:async()=>{abort.abort();}}),{name:'AbortError'});assert.equal(calls,1);
+});
