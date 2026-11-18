@@ -2,6 +2,8 @@ import {resolveReservationHost,reservationGuardFailure,recordReservationGuardFai
 import {createBookingWebsiteSearch,configuredWebsiteSearch} from './booking-website-search.js';
 import {createReservationSearch} from './reservation-search.js';
 import {inspectWixForms,fillWixForm,installReservationClickGate} from '../../shared/reservation-wix.js';
+import {inspectTableagentForms} from '../../shared/reservation-tableagent.js';
+import {prepareTableagent,fillTableagent} from './reservation-tableagent.js';
 import {startReservationScreencast} from './reservation-stream.js';
 import {createHash,randomUUID} from 'node:crypto';
 import puppeteer from 'puppeteer-core';
@@ -136,27 +138,29 @@ export async function browserSession(config,job){
    if(navigator.serviceWorker)Object.defineProperty(navigator.serviceWorker,'register',{value:()=>Promise.reject(Error('Unavailable in reservation preview')),configurable:false,writable:false});
    for(const name of ['WebSocket','WebTransport','RTCPeerConnection','Worker','SharedWorker'])Object.defineProperty(window,name,{value:class{constructor(){throw Error('Unavailable in reservation preview');}},configurable:false,writable:false});
   });
-  let frozen=false;const blocked=[],checked=new Map();
+  let frozen=false,availabilityPermit=null;const blocked=[],checked=new Map();
   page.on('request',async req=>{
    const mainNavigation=req.isNavigationRequest?.()&&req.frame?.()===page.mainFrame();
    if(mainNavigation){recordReservationGuardFailure(page,null);try{checked.delete(new URL(req.url()).hostname);}catch{}}
    const safe=(()=>{try{const u=menuUrl(req.url());return u.protocol==='https:';}catch{return false;}})();
-   if(frozen||req.method()!=='GET'||!safe){if(mainNavigation&&!safe)recordReservationGuardFailure(page,'page_unsafe_destination');blocked.push({method:req.method(),type:req.resourceType()});return req.abort().catch(()=>{});}
+   const requestPermit=availabilityPermit;
+   const allowedAvailability=!frozen&&req.frame?.()===page.mainFrame()&&requestPermit?.(req)===true;
+   if(frozen||(req.method()!=='GET'&&!allowedAvailability)||!safe){if(mainNavigation&&!safe)recordReservationGuardFailure(page,'page_unsafe_destination');blocked.push({method:req.method(),type:req.resourceType()});return req.abort().catch(()=>{});}
    // Reject hostnames resolving to local/link-local/private addresses. The
    // managed browser is fresh and receives no application cookies or secrets.
    try{
     const host=new URL(req.url()).hostname;
     if(!checked.has(host))checked.set(host,resolveReservationHost(host,{resolve,signal}));
     const addresses=await checked.get(host);
-    if(frozen)return req.abort().catch(()=>{});
+    if(frozen||(allowedAvailability&&availabilityPermit!==requestPermit))return req.abort().catch(()=>{});
     if(!addresses.length||addresses.some(a=>!publicAddress(a.address))){if(mainNavigation)recordReservationGuardFailure(page,addresses.length?'page_unsafe_destination':'page_dns_failed');return req.abort().catch(()=>{});}
     return req.continue().catch(()=>{});
    }catch{if(mainNavigation)recordReservationGuardFailure(page,'page_dns_failed');return req.abort().catch(()=>{});}
   });
   if(emit){try{stopFrames=await startReservationScreencast(page,emit);}catch{throw new ReservationFormError("visual_unavailable");}}
   signal?.throwIfAborted();
-  // Keep all mutation methods blocked even during form discovery. A site requiring
-  // a POST for availability must report unsupported, not quietly submit it.
+  // Discovery stays GET-only. Reviewed provider adapters can grant a one-shot
+  // exact availability request; booking submission is never permitted.
   const result=await job(page,async()=>{
    frozen=true;
    // Disconnect the engine's network before touching personal fields, not only
@@ -164,7 +168,7 @@ export async function browserSession(config,job){
    await page.setOfflineMode(true);
    const gate=await page.evaluateHandle(installReservationClickGate);
    return {blocked,gate};
-  });
+  },permit=>{if(frozen&&permit)throw Error('Page is disconnected.');availabilityPermit=permit;});
   signal?.throwIfAborted();
   await stopFrames?.();
   if(retainReadOnly&&result.retainReadOnly===true){retained=true;return {...result,page,release};}
@@ -208,7 +212,8 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
  }
  async function readForms(page){
   const native=await page.evaluate(inspectForms),wix=await page.evaluate(inspectWixForms);
-  return cleanForms([...native.filter(f=>!wix.some(w=>w.index===f.index)),...wix],page.url());
+  const tableagent=new URL(page.url()).origin==='https://tableagent.com'?await page.evaluate(inspectTableagentForms):[];
+  return cleanForms([...native.filter(f=>![...wix,...tableagent].some(w=>w.index===f.index)),...wix,...tableagent],page.url());
  }
  async function scan(page){
   // Give client-rendered forms a short bounded opportunity to mount. No clicks.
@@ -257,7 +262,7 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
    if(!forms.length)unsupported.push('no_native_form');
    if(links.some(l=>l.label==='Embedded booking page'))unsupported.push('embedded_forms');
    if(forms.length&&forms.some(f=>!f.fields.some(x=>!x.readOnly&&['date','dateTime'].includes(x.semantic))||!f.fields.some(x=>!x.readOnly&&['time','dateTime'].includes(x.semantic))))unsupported.push('visit_time_not_mapped');
-   return {status:forms.length?'forms_found':'no_supported_form',previewAvailable:true,sourceUrl:url,forms:forms.map(({id,fields})=>({id,fields})),candidates,unsupported,submitted:false};
+   return {status:forms.length?'forms_found':'no_supported_form',previewAvailable:true,sourceUrl:url,forms:forms.map(({id,fields,adapter})=>({id,fields,...(adapter==='tableagent-availability-v1'?{availabilityProvider:'tableagent'}:{})})),candidates,unsupported,submitted:false};
   },options.emit?(previewConfig||chromiumPreviewConfig(config,true)||config):config,options);}catch(error){if(error instanceof ReservationFormError)throw error;throw new ReservationFormError(started?'page_unavailable':'browser_unavailable');}
  }
  return {enabled:!!config,websiteSearchEnabled:websites.enabled,findWebsites:websites.find,selectWebsite:websites.select,closePreview,startSearch:search.start,searchAction:search.action,selectSearch:search.select,closeSearch:search.close,async discover(entityId,options={}){
@@ -278,7 +283,7 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
   const fields=saved.form.fields;
   for(const [id,value] of Object.entries(body.fields))if(!fields.some(f=>f.id===id)||typeof value!=='string'||value.length>2000)throw Error('Invalid form field.');
   progress("connecting","Opening a secure review browser…");
-  const result=await runBound(async(page,freeze)=>{
+  const result=await runBound(async(page,freeze,permitAvailability)=>{
    progress("loading","Loading the reviewed booking page…");
    await navigateReservation(page,saved.sourceUrl);
    let form;
@@ -289,11 +294,13 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
     if(attempt<3)await new Promise(r=>setTimeout(r,250));
    }
    if(!form||hash(form)!==saved.fingerprint)throw Error('The form changed. Locate it again before filling.');
+   const prepared=form.adapter==='tableagent-availability-v1'?await prepareTableagent(page,form,body.fields,permitAvailability):null;
+   if(prepared){const refreshed=(await readForms(page)).find(f=>f.index===form.index);if(!refreshed||hash(refreshed)!==saved.fingerprint)throw Error('The form changed. Locate it again before filling.');}
    progress("freezing","Disconnecting the page before entering your details…");
    const frozen=await freeze();
    options.signal?.throwIfAborted();
    progress("filling","Filling reviewed details with networking disabled…");
-   const result=form.adapter==='wix-reservation-v1'
+   const result=form.adapter==='tableagent-availability-v1'?await page.evaluate(fillTableagent,{index:form.index,prepared}):form.adapter==='wix-reservation-v1'
     ?await page.evaluate(fillWixForm,{index:form.index,values:body.fields},frozen.gate)
     :await page.evaluate(({index,fields,values})=>{
     const form=document.forms[index],elements=form.querySelectorAll('input,select,textarea');
@@ -304,7 +311,7 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
     });
    },{index:form.index,fields,values:body.fields});
    const screenshot=await page.screenshot({type:'png'});
-   return {status:form.adapter==='wix-reservation-v1'&&result.length===3&&result.every(f=>f.status==='filled')?'filled':'preview_ready',sourceUrl:saved.sourceUrl,fields:result,screenshotDataUrl:`data:image/png;base64,${Buffer.from(screenshot).toString('base64')}`,submitted:false,networkDisconnected:true,notice:form.adapter?'Selected available widget values for review with networking disabled. No request sent.':'Filled for review with networking disabled. No request sent. Dynamic form handlers were not triggered.'};
+   return {status:form.adapter&&result.length===3&&result.every(f=>f.status==='filled')?'filled':'preview_ready',sourceUrl:saved.sourceUrl,fields:result,screenshotDataUrl:`data:image/png;base64,${Buffer.from(screenshot).toString('base64')}`,submitted:false,networkDisconnected:true,notice:form.adapter==='tableagent-availability-v1'?'Checked date availability with Tableagent, then filled visible fields offline. No booking submitted.':form.adapter?'Selected available widget values for review with networking disabled. No request sent.':'Filled for review with networking disabled. No request sent. Dynamic form handlers were not triggered.'};
   },previewConfig||config,options);
   progress("ready","The filled form is ready for review. Nothing was submitted.");
   if(result.release){

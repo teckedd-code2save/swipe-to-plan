@@ -1,4 +1,5 @@
 import {createNamedVenueLookup} from './named-venue.js';
+import {tableagentPreviewFailure} from './reservation-tableagent.js';
 import {reservationTransport} from './reservation-stream.js';
 import {createReservationForms,reservationDiscoveryFailure} from './reservation-form.js';
 import {executionCapabilities} from './execution-ledger.js';
@@ -168,7 +169,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     if(req.get('origin')!==accounts.origin||!req.is('application/json'))return res.status(403).json({error:'Open this preview from Unstressed.'});
     const transport=reservationTransport(req,res);
     try{await transport.result(await reservationForms.preview(req.params.id,req.body,transport.options),reservationForms.closePreview);}
-    catch{transport.error({code:'preview_failed',error:'Could not safely fill this form. Locate it again or use the venue website. Nothing was submitted.'});}
+    catch(error){transport.error(tableagentPreviewFailure(error)||{code:'preview_failed',error:'Could not safely fill this form. Locate it again or use the venue website. Nothing was submitted.'});}
   }));
   app.post('/api/places/:id/reservation-form/close',limit(12,'reservation_preview_close'),route(async(req,res)=>{
     if(req.get('origin')!==accounts.origin||!req.is('application/json'))return res.status(403).json({error:'Close this preview from Unstressed.'});
