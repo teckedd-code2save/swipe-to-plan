@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {createReservationForms,browserSession} from '../src/reservation-form.js';
 const id='12345678-1234-1234-1234-123456789ABC';
 function fixture(){
- let url='',pixels='frame',target='https://venue.example/',blocked=false,offset=0,closed=0,clock=1000,configs=[],visits=[];
- const page={goto:async value=>{url=value;visits.push(value);return {status:()=>200};},url:()=>url,title:async()=>url.includes('google')?'Google Search':'Venue',screenshot:async()=>Buffer.from(pixels),evaluate:async(fn,args)=>{const rect=target?{href:target,left:offset,top:0,right:500+offset,bottom:400}:null;if(fn.name==='searchTargets')return rect?[rect]:[];if(fn.name==='searchTargetAt')return rect;if(typeof args==='number'){pixels+='scroll';return;}return blocked;}};
+ let navigationError=null;let url='',pixels='frame',target='https://venue.example/',blocked=false,offset=0,closed=0,clock=1000,configs=[],visits=[];
+ const page={goto:async value=>{if(navigationError)throw navigationError;url=value;visits.push(value);return {status:()=>200};},url:()=>url,title:async()=>url.includes('google')?'Google Search':'Venue',screenshot:async()=>Buffer.from(pixels),evaluate:async(fn,args)=>{const rect=target?{href:target,left:offset,top:0,right:500+offset,bottom:400}:null;if(fn.name==='searchTargets')return rect?[rect]:[];if(fn.name==='searchTargetAt')return rect;if(typeof args==='number'){pixels+='scroll';return;}return blocked;}};
  const api=createReservationForms({places:{details:async()=>({entityId:id,name:'Republic Bar',address:'Osu Accra Ghana',contact:{phone:{display:'+233123456789',source:{entityId:id,field:'properties.phone'}}}})},config:{},previewConfig:null,now:()=>clock,run:async(config,job)=>{configs.push(config);const result=await job(page);return {...result,page,release:async()=>{closed++;}};}});
- return {api,configs,visits,closed:()=>closed,setPixels:v=>pixels=v,setTarget:v=>target=v,setOffset:v=>offset=v,setUrl:v=>url=v,setBlocked:v=>blocked=v,setClock:v=>clock=v};
+ return {api,configs,visits,setNavigationError:error=>navigationError=error,closed:()=>closed,setPixels:v=>pixels=v,setTarget:v=>target=v,setOffset:v=>offset=v,setUrl:v=>url=v,setBlocked:v=>blocked=v,setClock:v=>clock=v};
 }
 test('search uses exact provider identity, returns intact screenshot, keeps private fields out',async()=>{
  const f=fixture(),r=await f.api.startSearch(id,{});assert.equal(r.venueName,'Republic Bar');assert.equal(r.venueAddress,'Osu Accra Ghana');assert.equal(r.canUse,false);assert.equal(r.sequence,1);assert.equal(r.width,1100);assert.match(r.imageDataUrl,/^data:image\/png;base64,/);assert.equal(r.page,undefined);assert.equal(r.release,undefined);assert.equal(r.submitted,false);assert.match(new URL(f.visits[0]).searchParams.get('q'),/Republic Bar Osu Accra Ghana/);assert.equal(f.configs[0].retainReadOnly,true);await f.api.closeSearch(r.searchId);assert.equal(f.closed(),1);
@@ -50,4 +50,21 @@ test('HTTP search routes enforce same origin, exact operation and no-store respo
  const server=createApp({provider:createDemoProvider(),rateLimit:false,reservationForms}).listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)));
  const call=(suffix,origin,body={})=>new Promise((resolve,reject)=>{const req=http.request({host:'127.0.0.1',port:server.address().port,path:`/api/places/${id}/reservation-search${suffix}`,method:'POST',headers:{'content-type':'application/json',...(origin?{origin}:{})}},res=>{let text='';res.on('data',chunk=>text+=chunk);res.on('end',()=>resolve({status:res.statusCode,headers:res.headers,body:JSON.parse(text)}));});req.on('error',reject);req.end(JSON.stringify(body));});
  assert.equal((await call('','https://wrong.example')).status,403);assert.equal(calls.length,0);const result=await call('','http://127.0.0.1:5173');assert.equal(result.status,200);assert.equal(result.headers['cache-control'],'no-store');assert.equal(calls.length,1);assert.equal((await call('/close','http://127.0.0.1:5173',{searchId:'bad'})).status,400);
+});
+
+test('search startup and navigation failures have safe distinct codes',async()=>{
+ const {ReservationFormError,reservationDiscoveryFailure}=await import('../src/reservation-form.js');
+ const places={details:async()=>({entityId:id,name:'Republic Bar',address:'Osu Accra'})};
+ for(const error of [new Error('provider secret'),new ReservationFormError('busy')]){
+  const api=createReservationForms({places,config:{},run:async()=>{throw error;}});
+  await assert.rejects(api.startSearch(id,{}),e=>{assert.equal(e.code,error.code||'browser_unavailable');assert.doesNotMatch(JSON.stringify(reservationDiscoveryFailure(e)),/provider secret/);return true;});
+ }
+ for(const [error,code] of [[Object.assign(new Error('private target'),{name:'TimeoutError'}),'page_timeout'],[new Error('navigation failed secret'),'page_unavailable'],[new ReservationFormError('page_http_error'),'page_http_error']]){
+  const f=fixture();f.setNavigationError(error);
+  await assert.rejects(f.api.startSearch(id,{}),e=>e.code===code);
+  f.setNavigationError(null);const a=await f.api.startSearch(id,{});
+  f.setNavigationError(error);
+  await assert.rejects(f.api.searchAction(id,{searchId:a.searchId,sequence:a.sequence,action:{type:'click',x:100,y:100}}),e=>{assert.equal(e.code,code);assert.doesNotMatch(JSON.stringify(reservationDiscoveryFailure(e)),/private target|failed secret/);return true;});
+  await f.api.closeSearch(a.searchId);
+ }
 });

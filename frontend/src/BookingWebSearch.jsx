@@ -17,13 +17,13 @@ export default function BookingWebSearch({snapshot,onSelected,onCancel}){
  async function action(action){
   if(busy||!frame||(frame.status==='challenge'&&action.type!=='back'))return;const abort=new AbortController();pending.current=abort;setBusy(true);setError('');
   try{const raw=await api.reservationSearchAction(snapshot.entityId,{searchId:frame.searchId,sequence:frame.sequence,action},abort.signal);if(!abort.signal.aborted)setFrame(normalizeSearchFrame(raw));}
-  catch(e){if(!abort.signal.aborted)setError(e.message||'The browser could not update. Refresh the view before trying again.');}
+  catch(e){if(!abort.signal.aborted){if(e.code==='expired'||e.name==='TimeoutError'){close();setFrame(null);}setError(e.message||'The browser could not update. Refresh the view before trying again.');}}
   finally{if(!abort.signal.aborted){pending.current=null;setBusy(false);}}
  }
  async function select(){
   if(busy||!frame?.canUse)return;const abort=new AbortController();pending.current=abort;setBusy(true);setError('');
   try{const candidate=await api.selectReservationSearch(snapshot.entityId,{searchId:frame.searchId,sequence:frame.sequence},abort.signal);if(abort.signal.aborted)return;close();await onSelected(candidate,frame.imageDataUrl);}
-  catch(e){if(!abort.signal.aborted)setError(e.message||'This website could not be selected.');}
+  catch(e){if(!abort.signal.aborted){if(e.code==='expired'||e.name==='TimeoutError'){close();setFrame(null);}setError(e.message||'This website could not be selected.');}}
   finally{if(!abort.signal.aborted&&mounted.current){pending.current=null;setBusy(false);}}
  }
  const blocked=busy||frame?.status==='challenge';

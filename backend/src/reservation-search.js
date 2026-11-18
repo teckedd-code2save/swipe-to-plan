@@ -25,6 +25,7 @@ export function searchIsBlocked(){return /verify (?:that )?you are human|unusual
 // invisible clicks, typing or form submission. Coordinates resolve only links.
 export function createReservationSearch({places,runBound,config,registerDestination,now=Date.now,ErrorType=Error}){
  const sessions=new Map();
+ function pageFailure(error){if(ErrorType!==Error&&error instanceof ErrorType)return error;return new ErrorType(error?.name==='TimeoutError'||/Navigation timeout/i.test(String(error?.message||''))?'page_timeout':'page_unavailable');}
  async function close(searchId){const session=sessions.get(searchId);if(!session)return;sessions.delete(searchId);clearTimeout(session.timer);await session.release();}
  async function capture(session,notice){
   const url=safeUrl(session.page.url());
@@ -43,7 +44,8 @@ export function createReservationSearch({places,runBound,config,registerDestinat
  }
  function currentFrame(session,sequence){return Number.isInteger(sequence)&&sequence===session.sequence&&session.page.url()===session.url;}
  async function navigate(session,url){
-  const target=safeUrl(url);const response=await session.page.goto(target,{waitUntil:'domcontentloaded',timeout:20000});
+  const target=safeUrl(url);let response;
+  try{response=await session.page.goto(target,{waitUntil:'domcontentloaded',timeout:20000});}catch(error){throw pageFailure(error);}
   if(response?.status?.()>=400)throw new ErrorType('page_http_error');
   safeUrl(session.page.url());
  }
@@ -54,12 +56,14 @@ export function createReservationSearch({places,runBound,config,registerDestinat
    if(place.entityId?.toUpperCase()!==id||!place.name||!place.address)throw new ErrorType('provider_unavailable');
    const phone=place.contact?.phone,query=[place.name,place.address,phone?.source?.entityId?.toUpperCase()===id&&phone.source.field==='properties.phone'?phone.display:null,'official website reservations'].filter(Boolean).join(' ').slice(0,600);
    const target=`https://www.google.com/search?q=${encodeURIComponent(query)}`;
-   const retained=await runBound(async page=>{await page.goto(target,{waitUntil:'domcontentloaded',timeout:20000});return {retainReadOnly:true};},{...config,liveView:false,retainReadOnly:true},options);
+   let retained,started=false;
+   try{retained=await runBound(async page=>{started=true;await navigate({page},target);return {retainReadOnly:true};},{...config,liveView:false,retainReadOnly:true},options);}
+   catch(error){if(ErrorType!==Error&&error instanceof ErrorType)throw error;throw started?pageFailure(error):new ErrorType('browser_unavailable');}
    if(!retained.page||typeof retained.release!=='function')throw new ErrorType('browser_unavailable');
    if(options.signal?.aborted){await retained.release();throw new ErrorType('expired');}
    const searchId=randomUUID(),session={id:searchId,entityId:id,venueName:String(place.name).slice(0,500),venueAddress:String(place.address).slice(0,500),page:retained.page,release:retained.release,expires:now()+ttl,sequence:0,history:[target],busy:false};
    sessions.set(searchId,session);session.timer=setTimeout(()=>close(searchId).catch(()=>{}),ttl);session.timer.unref?.();
-   try{const result=await capture(session);if(options.signal?.aborted)throw new ErrorType('expired');return result;}catch(error){await close(searchId);throw error;}
+   try{const result=await capture(session);if(options.signal?.aborted)throw new ErrorType('expired');return result;}catch(error){await close(searchId);throw pageFailure(error);}
   },
   async action(entityId,body){
    strict(body,['searchId','sequence','action']);strict(body.action,['type','x','y','deltaY']);
