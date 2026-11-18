@@ -37,3 +37,12 @@
  .booking-workspace .booking-browser-bar{height:60px;padding:8px 12px;gap:8px}
  .booking-workspace .booking-browser-empty{padding:16px}
 }
+
+/* A page without actionable form controls owns the entire workspace. */
+.booking-workspace .booking-workspace-body:not(.has-booking-stage):not(:has(.booking-website-search)){display:flex}
+.booking-workspace-body:not(.has-booking-stage)>.booking-browser-canvas{flex:1;min-width:0}
+
+.booking-browser-bar .booking-icon{flex-shrink:0}
+.booking-next-action{position:sticky;bottom:10px;align-self:center;display:flex;align-items:center;gap:12px;padding:8px 12px;border:1px solid #dce4de;border-radius:24px;background:#fff;color:#65796e;font-size:12px;box-shadow:0 3px 14px #183b3510}
+.booking-next-action button{display:flex;align-items:center;gap:6px;min-height:32px;background:transparent;color:#245646;font-weight:600}
+@media(max-width:480px){.booking-browser-bar>svg{display:none}}
