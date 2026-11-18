@@ -31,3 +31,8 @@ test('Back cancels an in-flight selection before handoff',async()=>{
  let resolveSelect;globalThis.fetch=async(url)=>url.endsWith('/select')?new Promise(resolve=>{resolveSelect=()=>resolve(new Response(JSON.stringify({candidateId:'old'})));}):new Response(JSON.stringify(response));
  await render();await act(async()=>document.querySelector('.booking-website-candidate').click());await act(async()=>document.querySelector('[aria-label="Back to booking options"]').click());await act(async()=>resolveSelect());assert.equal(selected,null);
 });
+test('ten real search leads remain in the scrolling list and the last can be reviewed and selected',async()=>{
+ response.candidates=Array.from({length:10},(_,i)=>({candidateId:`candidate-${i}`,title:`Venue result ${i+1}`,url:`https://venue${i+1}.example/`,snippet:'Original search lead'}));
+ await render();const list=document.querySelector('.booking-website-scroll');assert.equal(list.querySelectorAll('.booking-website-candidate').length,10);assert.match(list.textContent,/Venue result 1/);assert.match(list.textContent,/Venue result 10/);
+ await act(async()=>list.querySelectorAll('.booking-website-candidate')[9].click());assert.deepEqual(requests[1].body,{candidateId:'candidate-9'});assert.deepEqual(selected,{candidateId:'bound-destination'});
+});

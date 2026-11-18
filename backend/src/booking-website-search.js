@@ -22,9 +22,9 @@ function createProviderSearch({provider,apiKey,fetchImpl=fetch}){
    let url,request;
    if(provider==='serper'){
     url=new URL('https://google.serper.dev/search');
-    request={method:'POST',headers:{accept:'application/json','content-type':'application/json','X-API-KEY':apiKey},body:JSON.stringify({q:query,num:6})};
+    request={method:'POST',headers:{accept:'application/json','content-type':'application/json','X-API-KEY':apiKey},body:JSON.stringify({q:query,num:10})};
    }else{
-    url=new URL('https://api.search.brave.com/res/v1/web/search');url.searchParams.set('q',query);url.searchParams.set('count','6');url.searchParams.set('text_decorations','false');url.searchParams.set('safesearch','moderate');
+    url=new URL('https://api.search.brave.com/res/v1/web/search');url.searchParams.set('q',query);url.searchParams.set('count','10');url.searchParams.set('text_decorations','false');url.searchParams.set('safesearch','moderate');
     request={headers:{accept:'application/json','X-Subscription-Token':apiKey}};
    }
    const response=await fetchImpl(url,{...request,signal:combined,redirect:'error'});
@@ -35,8 +35,8 @@ function createProviderSearch({provider,apiKey,fetchImpl=fetch}){
    let data;
    if(response.body?.getReader){const reader=response.body.getReader(),chunks=[];let size=0;try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>500000)throw failure('search_failed');chunks.push(Buffer.from(value));}data=JSON.parse(Buffer.concat(chunks).toString('utf8'));}finally{await reader.cancel().catch(()=>{});}}
    else data=await response.json();
-   if(provider==='serper')return Array.isArray(data?.organic)?data.organic.slice(0,6).map(item=>({title:item.title,url:item.link,description:item.snippet})):[];
-   return Array.isArray(data?.web?.results)?data.web.results.slice(0,6):[];
+   if(provider==='serper')return Array.isArray(data?.organic)?data.organic.slice(0,10).map(item=>({title:item.title,url:item.link,description:item.snippet})):[];
+   return Array.isArray(data?.web?.results)?data.web.results.slice(0,10):[];
   }catch(error){if(signal?.aborted)throw failure('expired');if(timeout.aborted||error?.name==='TimeoutError')throw failure('search_timeout');if(['search_rate_limited','search_unavailable','search_failed'].includes(error?.code))throw error;throw failure('search_failed');}
  }};
 }
@@ -53,7 +53,7 @@ export function createBookingWebsiteSearch({places,registerDestination,search,no
   const venueName=clean(place.name,200),venueAddress=clean(place.address,400);if(!venueName||!venueAddress)throw new ErrorType('provider_unavailable');
   let results;try{results=await search.search(`${venueName} ${venueAddress} reservations book a table`.slice(0,650),options);}catch(error){throw typed(error);}
   if(options.signal?.aborted)throw new ErrorType('expired');prune();const expires=now()+ttl,seen=new Set(),items=[];
-  for(const result of results.slice(0,6)){
+  for(const result of results.slice(0,10)){
    let url;try{url=menuUrl(result.url);if(url.protocol!=='https:')continue;}catch{continue;}
    url.hash='';if(seen.has(url.href))continue;seen.add(url.href);const title=clean(result.title,200),snippet=clean(result.description,600);if(!title)continue;
    const candidateId=randomUUID();while(candidates.size>=120)candidates.delete(candidates.keys().next().value);candidates.set(candidateId,{entityId:id,url:url.href,expires});items.push({candidateId,title,url:url.href,snippet});

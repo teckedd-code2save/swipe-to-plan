@@ -5,7 +5,7 @@ const id='12345678-1234-1234-1234-123456789ABC';
 const places={details:async()=>({entityId:id,name:'Republic Bar',address:'Osu, Accra'})};
 test('API uses fixed endpoint and safe auth, original web results, bounded request config',async()=>{
  let request;const api=createBraveSearch({apiKey:'secret',fetchImpl:async(url,options)=>{request={url,options};return new Response(JSON.stringify({web:{results:[{title:'Republic',url:'https://example.com'}]}}));}});
- assert.equal((await api.search('Republic Osu')).length,1);assert.equal(request.url.origin,'https://api.search.brave.com');assert.equal(request.url.searchParams.get('count'),'6');assert.equal(request.options.redirect,'error');assert.equal(request.options.headers['X-Subscription-Token'],'secret');
+ assert.equal((await api.search('Republic Osu')).length,1);assert.equal(request.url.origin,'https://api.search.brave.com');assert.equal(request.url.searchParams.get('count'),'10');assert.equal(request.options.redirect,'error');assert.equal(request.options.headers['X-Subscription-Token'],'secret');
 });
 test('no key, raw errors and HTTP errors produce safe distinct codes',async()=>{
  await assert.rejects(createBraveSearch({apiKey:''}).search('q'),e=>e.code==='search_unavailable');
@@ -38,7 +38,7 @@ test('Serper uses fixed POST endpoint and original organic results only',async()
  const {createSerperSearch}=await import('../src/booking-website-search.js');let request;
  const api=createSerperSearch({apiKey:'private-test-key',fetchImpl:async(url,options)=>{request={url,options};return new Response(JSON.stringify({organic:[{title:'Republic',link:'https://venue.example/',snippet:'Osu'}],knowledgeGraph:{website:'https://unreviewed.example/'}}));}});
  assert.equal(api.provider,'serper');assert.deepEqual(await api.search('Republic Osu'),[{title:'Republic',url:'https://venue.example/',description:'Osu'}]);
- assert.equal(request.url.href,'https://google.serper.dev/search');assert.equal(request.options.method,'POST');assert.equal(request.options.headers['X-API-KEY'],'private-test-key');assert.equal(request.options.redirect,'error');assert.deepEqual(JSON.parse(request.options.body),{q:'Republic Osu',num:6});assert.ok(!request.url.href.includes('private-test-key'));
+ assert.equal(request.url.href,'https://google.serper.dev/search');assert.equal(request.options.method,'POST');assert.equal(request.options.headers['X-API-KEY'],'private-test-key');assert.equal(request.options.redirect,'error');assert.deepEqual(JSON.parse(request.options.body),{q:'Republic Osu',num:10});assert.ok(!request.url.href.includes('private-test-key'));
 });
 test('Serper remains off without explicit flag; enabled missing key never falls through to Brave',async()=>{
  const {configuredWebsiteSearch}=await import('../src/booking-website-search.js');assert.equal(configuredWebsiteSearch({SERPER_API_KEY:'x'}),null);
@@ -66,4 +66,10 @@ test('website search endpoints have no local request quota while retaining origi
 test('booking intent uses provider name and address without preferring an official site',async()=>{
  let query;const api=createBookingWebsiteSearch({places:{details:async()=>({entityId:id,name:'A Venue / Branch',address:'12 First Lane Example City Country'})},search:{enabled:true,provider:'serper',search:async q=>{query=q;return [{title:'Venue reservations',url:'https://booking.example/venue/',description:'Book a table'}];}},registerDestination:()=>assert.fail('must review candidate')});
  const result=await api.find(id,{});assert.equal(query,'A Venue / Branch 12 First Lane Example City Country reservations book a table');assert.equal(result.candidates[0].url,'https://booking.example/venue/');assert.equal(result.submitted,false);
+});
+
+test('booking search preserves ten real candidates for review including later booking routes',async()=>{
+ const {createSerperSearch}=await import('../src/booking-website-search.js');const organic=Array.from({length:11},(_,i)=>({title:`Place ${i+1}`,link:`https://result${i+1}.example/`,snippet:'Original result'}));
+ const provider=createSerperSearch({apiKey:'x',fetchImpl:async()=>new Response(JSON.stringify({organic}))});const api=createBookingWebsiteSearch({places,search:provider,registerDestination:()=>assert.fail()});
+ const result=await api.find(id,{});assert.equal(result.candidates.length,10);assert.equal(result.candidates[9].title,'Place 10');assert.equal(result.candidates[9].url,'https://result10.example/');
 });
