@@ -14,6 +14,7 @@ export class ReservationFormError extends Error {
  constructor(code){super(code);this.code=code;}
 }
 const discoveryMessages={
+ search_challenge:'The search site is asking this browser to verify it is human. In-app search cannot continue here. Open search in your own browser or use the venue’s contact options. No booking was submitted.',
  search_changed:'The page changed. Refresh the search view and review it before selecting.',
  search_select:'Open and review the venue website before using it for booking.',
  no_website:'No provider-linked website is available for this venue. Use its contact details instead.',

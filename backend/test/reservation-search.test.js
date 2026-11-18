@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {createReservationForms,browserSession} from '../src/reservation-form.js';
 const id='12345678-1234-1234-1234-123456789ABC';
 function fixture(){
- let navigationError=null;let url='',pixels='frame',target='https://venue.example/',blocked=false,offset=0,closed=0,clock=1000,configs=[],visits=[];
- const page={goto:async value=>{if(navigationError)throw navigationError;url=value;visits.push(value);return {status:()=>200};},url:()=>url,title:async()=>url.includes('google')?'Google Search':'Venue',screenshot:async()=>Buffer.from(pixels),evaluate:async(fn,args)=>{const rect=target?{href:target,left:offset,top:0,right:500+offset,bottom:400}:null;if(fn.name==='searchTargets')return rect?[rect]:[];if(fn.name==='searchTargetAt')return rect;if(typeof args==='number'){pixels+='scroll';return;}return blocked;}};
+ let navigationError=null,status=200;let url='',pixels='frame',target='https://venue.example/',blocked=false,offset=0,closed=0,clock=1000,configs=[],visits=[];
+ const page={goto:async value=>{if(navigationError)throw navigationError;url=value;visits.push(value);return {status:()=>status};},url:()=>url,title:async()=>url.includes('google')?'Google Search':'Venue',screenshot:async()=>Buffer.from(pixels),evaluate:async(fn,args)=>{const rect=target?{href:target,left:offset,top:0,right:500+offset,bottom:400}:null;if(fn.name==='searchTargets')return rect?[rect]:[];if(fn.name==='searchTargetAt')return rect;if(typeof args==='number'){pixels+='scroll';return;}return blocked;}};
  const api=createReservationForms({places:{details:async()=>({entityId:id,name:'Republic Bar',address:'Osu Accra Ghana',contact:{phone:{display:'+233123456789',source:{entityId:id,field:'properties.phone'}}}})},config:{},previewConfig:null,now:()=>clock,run:async(config,job)=>{configs.push(config);const result=await job(page);return {...result,page,release:async()=>{closed++;}};}});
- return {api,configs,visits,setNavigationError:error=>navigationError=error,closed:()=>closed,setPixels:v=>pixels=v,setTarget:v=>target=v,setOffset:v=>offset=v,setUrl:v=>url=v,setBlocked:v=>blocked=v,setClock:v=>clock=v};
+ return {api,configs,visits,setStatus:v=>status=v,setNavigationError:error=>navigationError=error,closed:()=>closed,setPixels:v=>pixels=v,setTarget:v=>target=v,setOffset:v=>offset=v,setUrl:v=>url=v,setBlocked:v=>blocked=v,setClock:v=>clock=v};
 }
 test('search uses exact provider identity, returns intact screenshot, keeps private fields out',async()=>{
  const f=fixture(),r=await f.api.startSearch(id,{});assert.equal(r.venueName,'Republic Bar');assert.equal(r.venueAddress,'Osu Accra Ghana');assert.equal(r.canUse,false);assert.equal(r.sequence,1);assert.equal(r.width,1100);assert.match(r.imageDataUrl,/^data:image\/png;base64,/);assert.equal(r.page,undefined);assert.equal(r.release,undefined);assert.equal(r.submitted,false);assert.match(new URL(f.visits[0]).searchParams.get('q'),/Republic Bar Osu Accra Ghana/);assert.equal(f.configs[0].retainReadOnly,true);await f.api.closeSearch(r.searchId);assert.equal(f.closed(),1);
@@ -68,3 +68,5 @@ test('search startup and navigation failures have safe distinct codes',async()=>
   await f.api.closeSearch(a.searchId);
  }
 });
+
+test('HTTP challenge is classified separately from ordinary server error without retry',async()=>{for(const blocked of [false,true]){const f=fixture();f.setStatus(429);f.setBlocked(blocked);await assert.rejects(f.api.startSearch(id,{}),e=>e.code===(blocked?'search_challenge':'page_http_error'));assert.equal(f.visits.length,1);}});
