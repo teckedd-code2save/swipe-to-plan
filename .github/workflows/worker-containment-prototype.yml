@@ -1,0 +1,29 @@
+name: Worker containment prototype (isolated)
+on:
+  pull_request:
+    paths:
+      - 'experiments/worker-containment/**'
+      - '.github/workflows/worker-containment-prototype.yml'
+permissions:
+  contents: read
+jobs:
+  isolated-probe:
+    # Draft experiment branch only. Never a deployment or production gate.
+    if: github.head_ref == 'experiment/worker-containment-ci' && github.event.pull_request.draft == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build independent fixture image
+        run: docker build -t worker-containment-probe ./experiments/worker-containment
+      - name: Run adversarial fixture without external networking
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network=none --read-only \
+            --tmpfs /tmp:rw,nosuid,size=512m --shm-size=256m \
+            --cap-drop=ALL --security-opt=no-new-privileges \
+            --pids-limit=512 --memory=1g --cpus=2 \
+            worker-containment-probe 2>&1 | tee worker-containment-output.log

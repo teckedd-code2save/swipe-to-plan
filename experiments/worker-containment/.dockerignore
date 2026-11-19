@@ -1,0 +1,5 @@
+*
+!Dockerfile
+!guard-core.mjs
+!guard-core.test.mjs
+!probe.mjs
