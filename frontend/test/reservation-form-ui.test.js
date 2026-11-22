@@ -149,3 +149,23 @@ test('completed page without a form has no redundant sidebar or completion copy'
  for(const copy of ['Hide booking details','You can find the form now','Search for another website','Venue booking page','Search complete','Preview only. Nothing is submitted.'])assert.equal(document.querySelector('dialog').textContent.includes(copy),false);
  assert.equal(button('Fill form without submitting'),undefined);
 });
+
+test('public booking website search is available without an in-app booking browser',async()=>{
+ globalThis.fetch=async(url,options={})=>{
+  requests.push({url,body:options.body?JSON.parse(options.body):null,options});
+  if(url.endsWith('/capabilities'))return new Response(JSON.stringify({reservationFormPreview:false,bookingWebsiteSearch:true}));
+  if(url.endsWith('/booking-websites'))return new Response(JSON.stringify({provider:'contextfetch',venueName:'Test venue',venueAddress:'Accra, Ghana',expiresAt:new Date(Date.now()+180000).toISOString(),candidates:[{candidateId:'c-1',url:'https://reservations.example/book',title:'Test venue reservations',snippet:'Book a table in Accra'}]}));
+  throw Error('Unexpected URL: '+url);
+ };
+ await render();
+ assert.ok(button('Find booking website'));
+ await click('Find booking website');
+ const link=document.querySelector('a.booking-website-candidate');
+ assert.equal(link?.href,'https://reservations.example/book');
+ assert.equal(link?.target,'_blank');
+ assert.equal(link?.rel,'noopener noreferrer');
+ assert.match(document.body.textContent,/Results via ContextFetch/);
+ assert.equal(requests.filter(r=>r.url.endsWith('/booking-websites')).length,1);
+ assert.equal(requests.some(r=>r.url.includes('/select')),false);
+ assert.match(document.body.textContent,/Nothing booked/);
+});
