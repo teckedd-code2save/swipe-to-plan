@@ -192,7 +192,7 @@ export function chromiumPreviewConfig(config,enabled=process.env.RESERVATION_FOR
  return {...config,browserWSEndpoint:url.href,liveView:true};
 }
 const cleanForms=(raw,url)=>raw.map(form=>({...form,fields:form.fields.map(field=>({...field,id:field.id||`field-${field.elementIndex}`,semantic:semanticField(field)}))})).filter(form=>form.fields.some(f=>['date','time','dateTime','partySize'].includes(f.semantic))).map(form=>({...form,sourceUrl:url}));
-export function createReservationForms({places,config=configuredKitesurf(),run=browserSession,now=Date.now,previewConfig=chromiumPreviewConfig(config),websiteSearch=configuredWebsiteSearch(),contextfetch=configuredContextFetchBookingSearch()}={}){
+export function createReservationForms({places,config=configuredKitesurf(),run=browserSession,now=Date.now,previewConfig=chromiumPreviewConfig(config),websiteSearch=configuredWebsiteSearch(),contextfetch=websiteSearch?null:configuredContextFetchBookingSearch()}={}){
  const discoveries=new Map(),destinations=new Map(),leases=new Map();let active=0;
  async function closePreview(id){const lease=leases.get(id);if(!lease)return;leases.delete(id);clearTimeout(lease.timer);await lease.release();}
  async function runBound(job,selected=config,options={}){options.signal?.throwIfAborted();if(active+leases.size+search.size>=2)throw new ReservationFormError('busy');active++;try{return await run({...selected,...options},job);}finally{active--;}}
