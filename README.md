@@ -169,3 +169,8 @@ A starting point is optional: choose a saved or planning area, search another ar
 ## Native mobile preview
 
 `mobile/` contains the first Expo + React Native planning slice, with native chat, area choice, streamed itineraries, preserved-place edits and device draft restore. It reuses this Express API and pure shared planning modules while leaving the live website and browser authentication unchanged. See [mobile setup, checks and current limitations](mobile/README.md). Native account sign-in, signed app builds and store release are separate work.
+
+## Future public APIs and booking route research
+
+- [Open-data alternatives to Qloo](docs/PUBLIC_APIS_FUTURE.md) (deferred; Qloo stays live)
+- [Booking Route Resolver v2](docs/BOOKING-ROUTE-RESOLVER.md) (read-only experimental search, no booking submission)
