@@ -341,3 +341,42 @@ test('loaded account or day with a reset revision does not announce a new comple
  await render({resultScope:'reset-during-request',busy:false,resultRevision:0});
  assert.equal(document.querySelector('.cs-result-toast'),null);
 });
+
+test('mobile send button dismisses keyboard and does not refocus while loading or presenting results',async()=>{
+ compact=true;
+ const sent=[];
+ const plan=props.plan;
+ await render({message:'Dinner this weekend',chat:[],plan:null,onSend:value=>sent.push(value)});
+ const field=document.querySelector('textarea[aria-label="Message Unstressed"]');
+ assert.notEqual(document.activeElement,field,'Mobile load should not open the keyboard');
+ field.focus();
+ assert.equal(document.activeElement,field);
+ await act(async()=>{document.querySelector('form.cs-composer').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));});
+ assert.deepEqual(sent,['Dinner this weekend']);
+ assert.notEqual(document.activeElement,field,'Submission should dismiss the software keyboard');
+ await render({busy:true,message:'',chat:[{id:'user-1',role:'user',text:sent[0]}]});
+ assert.notEqual(document.activeElement,field,'Starting async fetch must not restore composer focus');
+ await render({busy:false,plan,chat:[...props.chat,{id:'assistant-1',role:'assistant',text:'Here are your results.'}]});
+ assert.notEqual(document.activeElement,field,'Returned results must not reopen the keyboard');
+ field.focus();
+ assert.equal(document.activeElement,field,'The user can still deliberately reopen the keyboard');
+});
+
+test('mobile keyboard Enter/send closes focus, but desktop keeps focus for follow-up messages',async()=>{
+ compact=true;
+ const sent=[];
+ await render({message:'Find a place',onSend:value=>sent.push(value)});
+ let field=document.querySelector('textarea[aria-label="Message Unstressed"]');
+ field.focus();
+ await act(async()=>field.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));
+ assert.deepEqual(sent,['Find a place']);
+ assert.notEqual(document.activeElement,field,'Keyboard Enter should dismiss mobile focus');
+ await act(async()=>root.unmount());root=null;
+ compact=false;
+ await render({message:'Another question',onSend:value=>sent.push(value)});
+ field=document.querySelector('textarea[aria-label="Message Unstressed"]');
+ field.focus();
+ await act(async()=>document.querySelector('form.cs-composer').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+ assert.equal(document.activeElement,field,'Desktop composer retains focus after submitting');
+ assert.deepEqual(sent,['Find a place','Another question']);
+});
