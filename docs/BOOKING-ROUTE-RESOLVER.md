@@ -16,12 +16,13 @@ Catalog source: https://github.com/public-apis/public-apis (MCP: ContextFetch, O
 
 ## Environment and provider choice
 
-- CONTEXTFETCH_BOOKING_ENABLED=false (default) leaves existing Serper/Brave behavior unchanged.
-- Set CONTEXTFETCH_BOOKING_ENABLED=true to choose ContextFetch **instead of** Serper/Brave for a booking-website search. There is no cascading spend across providers on failure.
+- CONTEXTFETCH_BOOKING_ENABLED=true (default) enables ContextFetch's keyless public search without extra credentials. An explicit false value disables it. Existing Serper/Brave remain separately selectable for later use.
+- With default ContextFetch enabled, it is chosen **instead of** Serper/Brave for a booking-website search. There is no cascading spend across providers on failure.
 - CONTEXTFETCH_API_KEY is optional; keyless mode uses the provider's published Bearer keyless access. It has a shared externally imposed free allowance (published as 25 requests/day per network). Account keys and quotas require explicit operator review.
 - No key, token, private query, guest details, availability promise or result snapshots should enter Git.
 - ContextFetch may return 402 (free allowance exhausted) or 429; these are reported as search-rate-limit errors, not silently retried or redirected to a paid provider.
 - A prior inspected route can be used before invoking either provider and is revalidated in the actual form browser.
+- Keyless route search is available without new environment keys. If the remote booking browser is disabled, the UI opens the search results as externally reviewable HTTPS booking leads; no form filling is claimed.
 - This feature branch makes no environment changes or paid calls. An enabled flag merely selects a source; it does not guarantee a funded/working external service.
 
 ## Trust boundaries and gaps

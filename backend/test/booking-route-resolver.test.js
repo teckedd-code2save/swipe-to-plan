@@ -6,8 +6,9 @@ import {createBookingWebsiteSearch} from '../src/booking-website-search.js';
 
 const venue={name:'Front Back Accra',address:'Osu, Accra, Ghana'};
 const id='12345678-1234-1234-1234-123456789ABC';
-test('public ContextFetch is disabled by default and has a fixed, bounded, keyless REST contract',async()=>{
-  assert.equal(configuredContextFetchBookingSearch({}),null);
+test('public ContextFetch defaults to keyless, can be disabled and uses a bounded REST contract',async()=>{
+  assert.equal(configuredContextFetchBookingSearch({}).enabled,true);
+  assert.equal(configuredContextFetchBookingSearch({CONTEXTFETCH_BOOKING_ENABLED:'false'}),null);
   let request;
   const search=createContextFetchBookingSearch({fetchImpl:async(url,options)=>{request={url,options};return new Response(JSON.stringify({results:[{title:'Front Back Accra booking',url:'https://tableagent.com/accra/front-back/',prunedContext:'Book a table in Osu'}]}));}});
   const rows=await search.search('Front Back Accra reservations');

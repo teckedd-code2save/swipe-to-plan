@@ -13,6 +13,7 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
   const [capability,setCapability]=useState('loading'),[capabilityAttempt,setCapabilityAttempt]=useState(0),[discovery,setDiscovery]=useState(null),[formId,setFormId]=useState(''),[fields,setFields]=useState({}),[consent,setConsent]=useState(false),[preview,setPreview]=useState(null),[busy,setBusy]=useState(''),[error,setError]=useState('');
   const pending=useRef(null),lease=useRef(null);
   const [browserView,setBrowserView]=useState(null),[open,setOpen]=useState(false),[searchingWeb,setSearchingWeb]=useState(false);
+  const [webSearchEnabled,setWebSearchEnabled]=useState(false),[externalSearchOpen,setExternalSearchOpen]=useState(false);
   const workspace=useRef(null),trigger=useRef(null);
   const [detailsOpen,setDetailsOpen]=useState(false),[zoomed,setZoomed]=useState(false);
   useEffect(()=>{if(error||discovery||preview)setDetailsOpen(true);},[error,discovery,preview]);
@@ -33,7 +34,7 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
 
   useEffect(()=>{
     const abort=new AbortController();
-    api.actionCapabilities(abort.signal).then(value=>{if(!abort.signal.aborted)setCapability(value.reservationFormPreview===true?'available':'disabled');}).catch(()=>{if(!abort.signal.aborted)setCapability('failed');});
+    api.actionCapabilities(abort.signal).then(value=>{if(!abort.signal.aborted)setCapability(value.reservationFormPreview===true?'available':'disabled');setWebSearchEnabled(value.bookingWebsiteSearch===true);}).catch(()=>{if(!abort.signal.aborted)setCapability('failed');});
     return()=>abort.abort();
   },[capabilityAttempt]);
   useEffect(()=>()=>{pending.current?.abort();closeLease();},[]);
@@ -86,7 +87,13 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
   }
   function editVisitTime(){workspace.current?.close();cancel();onTiming?.();}
   function cancel(){setSearchingWeb(false);setOpen(false);setBrowserView(null);pending.current?.abort();pending.current=null;setBusy('');setConsent(false);clearPreview();setDiscovery(null);setFields({});setError('');}
-  if(capability==='disabled')return <p className="pg-note">The in-app booking browser is unavailable. <a href={venueSearchUrl(snapshot)} target="_blank" rel="noopener noreferrer">Open search in your browser</a></p>;
+  if(capability==='disabled')return <section className="pg-form-preview" aria-label="Booking website search">
+    <div className="booking-launch"><div><strong>Find a booking website</strong><span>Check published reservation links for this venue. No booking is submitted.</span></div>
+    <button type="button" className="pl-button" disabled={disabled||!snapshot.entityId} onClick={()=>setExternalSearchOpen(v=>!v)}>{externalSearchOpen?'Close booking search':'Find booking website'}</button></div>
+    {externalSearchOpen&&webSearchEnabled&&<BookingWebsiteSearch snapshot={snapshot} externalOnly onCancel={()=>setExternalSearchOpen(false)}/>}
+    {externalSearchOpen&&!webSearchEnabled&&<p role="status">In-app search is unavailable. <a href={venueSearchUrl(snapshot)} target="_blank" rel="noopener noreferrer">Search in your browser</a></p>}
+    <p className="pg-note">Booking-form preparation is unavailable on this server. A booking website can still be opened directly for the user to reserve.</p>
+  </section>;
   if(capability!=='available')return <section className="pg-form-preview" aria-label="Booking form preview">
     <h4>Find a booking form</h4>
     <button type="button" className="pl-secondary-button" disabled>Find booking form</button>

@@ -44,7 +44,7 @@ function createProviderSearch({provider,apiKey,fetchImpl=fetch}){
 }
 // Search API results remain transient. No venue-ownership claim is made: a person
 // reviews the original title/URL/snippet and explicitly selects a destination.
-export function createBookingWebsiteSearch({places,registerDestination,search,contextfetch=configuredContextFetchBookingSearch(),now=Date.now,routeResolver=createBookingRouteResolver({now}),ErrorType=Error}){
+export function createBookingWebsiteSearch({places,registerDestination,search,contextfetch=null,now=Date.now,routeResolver=createBookingRouteResolver({now}),ErrorType=Error}){
  const candidates=new Map();let timer;
  function prune(){for(const [id,item]of candidates)if(item.expires<=now())candidates.delete(id);if(!candidates.size){clearInterval(timer);timer=undefined;}}
  function typed(error){return new ErrorType(['search_unavailable','search_rate_limited','search_timeout','search_failed','expired'].includes(error?.code)?error.code:'search_failed');}

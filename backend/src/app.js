@@ -85,7 +85,7 @@ export function createApp({ provider, prisma = null, agent = null, dayStore, met
     }
   });
   app.get('/api/actions/execution-capabilities',limit(60,'execution_capabilities'),(_req,res)=>res.json(executionCapabilities()));
-  app.get('/api/actions/capabilities',limit(60,'actions_capabilities'),routeAction(() => ({...routeActions.capabilities(),reservationFormPreview:reservationForms.enabled})));
+  app.get('/api/actions/capabilities',limit(60,'actions_capabilities'),routeAction(() => ({...routeActions.capabilities(),reservationFormPreview:reservationForms.enabled,bookingWebsiteSearch:reservationForms.websiteSearchEnabled===true})));
   app.post('/api/actions/routes/estimate',limit(12,'route_estimates'),routeAction(req => routeActions.estimate(req.body)));
   app.get('/api/locations',limit(60),route(async(req,res)=>{
     const query=req.query.q;if(typeof query!=='string'||query.trim().length<2||query.length>160||/[\x00-\x1f<>]/.test(query))throw new InputError('Type at least two characters of a city, town or neighborhood.');

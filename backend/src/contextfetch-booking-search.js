@@ -1,6 +1,6 @@
 // Exact public-apis listing: https://github.com/lachy3433/contextfetch-mcp
 // REST contract from its MIT-licensed MCP client: POST /v1/search.
-// Disabled by default. Keyless is still externally rate limited and not an SLA.
+// Keyless default for the booking-link search only. An explicit false value disables it.
 const LIMIT = 500000;
 export function createContextFetchBookingSearch({apiKey='keyless',fetchImpl=fetch}={}) {
   return {provider:'contextfetch',enabled:true,async search(query,{signal}={}) {
@@ -37,7 +37,7 @@ export function createContextFetchBookingSearch({apiKey='keyless',fetchImpl=fetc
   }};
 }
 export function configuredContextFetchBookingSearch(env=process.env) {
-  if(env.CONTEXTFETCH_BOOKING_ENABLED!=='true')return null;
+  if(env.CONTEXTFETCH_BOOKING_ENABLED==='false')return null;
   return createContextFetchBookingSearch({apiKey:env.CONTEXTFETCH_API_KEY||'keyless'});
 }
 

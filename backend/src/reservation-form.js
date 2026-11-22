@@ -1,5 +1,6 @@
 import {resolveReservationHost,reservationGuardFailure,recordReservationGuardFailure} from './reservation-dns.js';
 import {createBookingWebsiteSearch,configuredWebsiteSearch} from './booking-website-search.js';
+import {configuredContextFetchBookingSearch} from './contextfetch-booking-search.js';
 import {createReservationSearch} from './reservation-search.js';
 import {inspectWixForms,fillWixForm,installReservationClickGate} from '../../shared/reservation-wix.js';
 import {inspectTableagentForms} from '../../shared/reservation-tableagent.js';
@@ -191,7 +192,7 @@ export function chromiumPreviewConfig(config,enabled=process.env.RESERVATION_FOR
  return {...config,browserWSEndpoint:url.href,liveView:true};
 }
 const cleanForms=(raw,url)=>raw.map(form=>({...form,fields:form.fields.map(field=>({...field,id:field.id||`field-${field.elementIndex}`,semantic:semanticField(field)}))})).filter(form=>form.fields.some(f=>['date','time','dateTime','partySize'].includes(f.semantic))).map(form=>({...form,sourceUrl:url}));
-export function createReservationForms({places,config=configuredKitesurf(),run=browserSession,now=Date.now,previewConfig=chromiumPreviewConfig(config),websiteSearch=configuredWebsiteSearch()}={}){
+export function createReservationForms({places,config=configuredKitesurf(),run=browserSession,now=Date.now,previewConfig=chromiumPreviewConfig(config),websiteSearch=configuredWebsiteSearch(),contextfetch=configuredContextFetchBookingSearch()}={}){
  const discoveries=new Map(),destinations=new Map(),leases=new Map();let active=0;
  async function closePreview(id){const lease=leases.get(id);if(!lease)return;leases.delete(id);clearTimeout(lease.timer);await lease.release();}
  async function runBound(job,selected=config,options={}){options.signal?.throwIfAborted();if(active+leases.size+search.size>=2)throw new ReservationFormError('busy');active++;try{return await run({...selected,...options},job);}finally{active--;}}
@@ -199,7 +200,7 @@ export function createReservationForms({places,config=configuredKitesurf(),run=b
   const candidateId=randomUUID();destinations.set(candidateId,{entityId,url,expires:now()+5*60000});expire();
   return {candidateId,url,label:'Website selected by you',relationship:'user_selected_search',submitted:false};
  }});
- const websites=createBookingWebsiteSearch({places,search:websiteSearch,now,ErrorType:ReservationFormError,registerDestination(entityId,url){const candidateId=randomUUID();destinations.set(candidateId,{entityId,url,expires:now()+5*60000});expire();return {candidateId,url,label:'Website selected by you',relationship:'user_selected_search',submitted:false};}});
+ const websites=createBookingWebsiteSearch({places,search:websiteSearch,contextfetch,now,ErrorType:ReservationFormError,registerDestination(entityId,url){const candidateId=randomUUID();destinations.set(candidateId,{entityId,url,expires:now()+5*60000});expire();return {candidateId,url,label:'Website selected by you',relationship:'user_selected_search',submitted:false};}});
  async function source(entityId){
   const id=locationId(entityId);let place;
   try{place=await places.details(id);}catch{throw new ReservationFormError('provider_unavailable');}

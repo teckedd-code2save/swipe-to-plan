@@ -5,7 +5,7 @@ import {Icon} from './PlannerIcons.jsx';
 import './booking-website-search.css';
 
 function domain(value){try{return new URL(value).hostname.replace(/^www\./,'');}catch{return 'Website';}}
-export default function BookingWebsiteSearch({snapshot,onSelected,onCancel}){
+export default function BookingWebsiteSearch({snapshot,onSelected,onCancel,externalOnly=false}){
  const [results,setResults]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(true),[opening,setOpening]=useState(''),[attempt,setAttempt]=useState(0),[configured,setConfigured]=useState(true);
  const pending=useRef(null),choosing=useRef(false),generation=useRef(0);
  useEffect(()=>{
@@ -28,14 +28,14 @@ export default function BookingWebsiteSearch({snapshot,onSelected,onCancel}){
   finally{if(!controller.signal.aborted&&current===generation.current){choosing.current=false;setOpening('');setBusy(false);}}
  }
  function cancel(){generation.current++;pending.current?.abort();choosing.current=false;onCancel();}
- const provider=results?.provider==='serper'?'Serper':results?.provider==='brave'?'Brave Search':'web search';
+ const provider=results?.provider==='serper'?'Serper':results?.provider==='brave'?'Brave Search':results?.provider==='contextfetch'?'ContextFetch':results?.provider==='inspection_cache'?'Previously inspected route':'web search';
  return <section className="booking-website-search" aria-label="Website search results" aria-busy={busy}>
   <div className="booking-website-heading"><div><h2>{results?.venueName||snapshot.name}</h2><p>{results?.venueAddress||snapshot.address||'Choose a website to open'}</p></div><button type="button" className="booking-website-back" onClick={cancel} aria-label="Back to booking options"><Icon name="arrow" size={17}/></button></div>
   <div className="booking-website-scroll">
    {busy&&!results&&<p className="booking-website-status" role="status">Searching the web…</p>}
-   {results&&<><p className="booking-website-hint">Check the place and location, then tap a result.</p><div className="booking-website-candidates">{results.candidates.map(candidate=><button type="button" className="booking-website-candidate" disabled={busy} onClick={()=>choose(candidate.candidateId)} key={candidate.candidateId} aria-label={`Open ${candidate.title} — ${domain(candidate.url)}`}>
-    <span className="booking-website-copy"><small>{domain(candidate.url)}</small><strong>{candidate.title}</strong>{candidate.snippet&&<span className="booking-website-snippet">{candidate.snippet}</span>}</span><span className="booking-website-open" aria-hidden="true">{opening===candidate.candidateId?<span className="booking-website-spinner"/>:<Icon name="arrowUpRight" size={20}/>}</span>
-   </button>)}</div>{!results.candidates.length&&<p>No website results found. Try the venue’s contact options.</p>}</>}
+   {results&&<><p className="booking-website-hint">Check the place and location, then tap a result.</p><div className="booking-website-candidates">{results.candidates.map(candidate=>externalOnly?<a className="booking-website-candidate" key={candidate.candidateId} href={candidate.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${candidate.title} — ${domain(candidate.url)}`}>
+    <span className="booking-website-copy"><small>{domain(candidate.url)}</small><strong>{candidate.title}</strong>{candidate.snippet&&<span className="booking-website-snippet">{candidate.snippet}</span>}</span><span className="booking-website-open" aria-hidden="true"><Icon name="arrowUpRight" size={20}/></span></a>:<button type="button" className="booking-website-candidate" disabled={busy} onClick={()=>choose(candidate.candidateId)} key={candidate.candidateId} aria-label={`Open ${candidate.title} — ${domain(candidate.url)}`}>
+    <span className="booking-website-copy"><small>{domain(candidate.url)}</small><strong>{candidate.title}</strong>{candidate.snippet&&<span className="booking-website-snippet">{candidate.snippet}</span>}</span><span className="booking-website-open" aria-hidden="true">{opening===candidate.candidateId?<span className="booking-website-spinner"/>:<Icon name="arrowUpRight" size={20}/>}</span></button>)}</div>{!results.candidates.length&&<p>No website results found. Try the venue’s contact options.</p>}</>}
    {opening&&<p className="sr-only" role="status">Opening selected website…</p>}
    {error&&<p className="booking-website-error" role="alert">{error}</p>}
    {!busy&&configured&&<button type="button" className="booking-website-retry" onClick={()=>setAttempt(n=>n+1)}>Search again</button>}
