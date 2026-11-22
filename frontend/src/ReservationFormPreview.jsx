@@ -92,7 +92,7 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
     <button type="button" className="pl-button" disabled={disabled||!snapshot.entityId} onClick={()=>setExternalSearchOpen(v=>!v)}>{externalSearchOpen?'Close booking search':'Find booking website'}</button></div>
     {externalSearchOpen&&webSearchEnabled&&<BookingWebsiteSearch snapshot={snapshot} externalOnly onCancel={()=>setExternalSearchOpen(false)}/>}
     {externalSearchOpen&&!webSearchEnabled&&<p role="status">In-app search is unavailable. <a href={venueSearchUrl(snapshot)} target="_blank" rel="noopener noreferrer">Search in your browser</a></p>}
-    <p className="pg-note">Booking-form preparation is unavailable on this server. A booking website can still be opened directly for the user to reserve.</p>
+    <p className="pg-note">The in-app booking browser is unavailable on this server. A booking website can still be opened directly for you to reserve. Nothing has been submitted.</p>
   </section>;
   if(capability!=='available')return <section className="pg-form-preview" aria-label="Booking form preview">
     <h4>Find a booking form</h4>
