@@ -85,3 +85,29 @@ test('ContextFetch is an explicitly selected provider and does not silently spen
   assert.equal(found.candidates.length,1);
 });
 
+
+test('form discovery follows two same-site booking hops but no additional unknown destinations',async()=>{
+  const {createReservationForms}=await import('../src/reservation-form.js');
+  const origin='https://venue.example/';
+  const first=origin,second=origin+'reservations/',third=origin+'reservations/book/';
+  let current='',visits=[];
+  const form=[{index:0,action:third,method:'post',fields:[
+    {elementIndex:0,name:'date',label:'Date',type:'date',required:true,visible:true,readOnly:false},
+    {elementIndex:1,name:'time',label:'Time',type:'time',required:true,visible:true,readOnly:false}
+  ]}];
+  const page={
+    goto:async target=>{current=target;visits.push(target);return {status:()=>200};},
+    url:()=>current,
+    evaluate:async fn=>{
+      if(fn.name==='inspectForms')return current===third?structuredClone(form):[];
+      if(fn.name==='inspectWixForms')return [];
+      return current===first?[{url:second,label:'Reservations'}]:current===second?[{url:third,label:'Book a table'}]:[];
+    }
+  };
+  const places={details:async()=>({entityId:id,...venue,contact:{website:{url:origin,source:{entityId:id,field:'properties.website'}}}})};
+  const api=createReservationForms({places,config:{},previewConfig:null,run:async(_,job)=>job(page)});
+  const found=await api.discover(id);
+  assert.equal(found.status,'forms_found');
+  assert.deepEqual(visits,[first,second,third]);
+  assert.equal(found.submitted,false);
+});
