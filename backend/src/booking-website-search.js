@@ -2,6 +2,8 @@ import {randomUUID} from 'node:crypto';
 import {load} from 'cheerio';
 import {menuUrl} from './menu-evidence.js';
 import {locationId} from './locations.js';
+import {createBookingRouteResolver} from './booking-route-resolver.js';
+import {configuredContextFetchBookingSearch} from './contextfetch-booking-search.js';
 const ttl=180000;
 const clean=(value,max)=>typeof value==='string'?load(value.slice(0,10000)).text().replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,max):'';
 function failure(code){const error=new Error(code);error.code=code;return error;}
@@ -42,24 +44,27 @@ function createProviderSearch({provider,apiKey,fetchImpl=fetch}){
 }
 // Search API results remain transient. No venue-ownership claim is made: a person
 // reviews the original title/URL/snippet and explicitly selects a destination.
-export function createBookingWebsiteSearch({places,registerDestination,search,now=Date.now,ErrorType=Error}){
+export function createBookingWebsiteSearch({places,registerDestination,search,contextfetch=null,now=Date.now,routeResolver=createBookingRouteResolver({now}),ErrorType=Error}){
  const candidates=new Map();let timer;
  function prune(){for(const [id,item]of candidates)if(item.expires<=now())candidates.delete(id);if(!candidates.size){clearInterval(timer);timer=undefined;}}
  function typed(error){return new ErrorType(['search_unavailable','search_rate_limited','search_timeout','search_failed','expired'].includes(error?.code)?error.code:'search_failed');}
- return {enabled:Boolean(search?.enabled),async find(entityId,body,options={}){
-  strict(body,[]);if(!search?.enabled)throw new ErrorType('search_unavailable');
+ return {enabled:Boolean(contextfetch?.enabled||search?.enabled),async rememberInspected(entityId,url){
+  try {const id=locationId(entityId),place=await places.details(id);return place?.entityId?.toUpperCase()===id && routeResolver.remember(id,place,url);}catch{return false;}
+ },async find(entityId,body,options={}){
+  strict(body,[]);const selected=contextfetch?.enabled?contextfetch:search;if(!selected?.enabled)throw new ErrorType('search_unavailable');
   const id=locationId(entityId);let place;try{place=await places.details(id);}catch{throw new ErrorType('provider_unavailable');}
   if(place?.entityId?.toUpperCase()!==id||!place.name||!place.address)throw new ErrorType('provider_unavailable');
   const venueName=clean(place.name,200),venueAddress=clean(place.address,400);if(!venueName||!venueAddress)throw new ErrorType('provider_unavailable');
-  let results;try{results=await search.search(`${venueName} ${venueAddress} reservations book a table`.slice(0,650),options);}catch(error){throw typed(error);}
+  let results=routeResolver.reuse(id,place),provider=results.length?'inspection_cache':selected.provider;
+  if(!results.length){try{results=await selected.search(`${venueName} ${venueAddress} reservations book a table`.slice(0,650),options);}catch(error){throw typed(error);}}
   if(options.signal?.aborted)throw new ErrorType('expired');prune();const expires=now()+ttl,seen=new Set(),items=[];
-  for(const result of results.slice(0,10)){
+  for(const result of routeResolver.rank(results,{name:venueName,address:venueAddress})){
    let url;try{url=menuUrl(result.url);if(url.protocol!=='https:')continue;}catch{continue;}
    url.hash='';if(seen.has(url.href))continue;seen.add(url.href);const title=clean(result.title,200),snippet=clean(result.description,600);if(!title)continue;
-   const candidateId=randomUUID();while(candidates.size>=120)candidates.delete(candidates.keys().next().value);candidates.set(candidateId,{entityId:id,url:url.href,expires});items.push({candidateId,title,url:url.href,snippet});
+   const candidateId=randomUUID();while(candidates.size>=120)candidates.delete(candidates.keys().next().value);candidates.set(candidateId,{entityId:id,url:url.href,expires});items.push({candidateId,title,url:url.href,snippet,score:result.score,evidence:result.evidence});
   }
   if(candidates.size&&!timer){timer=setInterval(prune,30000);timer.unref?.();}
-  return {provider:search.provider==='serper'?'serper':'brave',venueName,venueAddress,candidates:items,expiresAt:new Date(expires).toISOString(),submitted:false};
+  return {provider,venueName,venueAddress,candidates:items,expiresAt:new Date(expires).toISOString(),submitted:false};
  },async select(entityId,body,options={}){
   strict(body,['candidateId']);prune();const candidate=candidates.get(body.candidateId);
   if(options.signal?.aborted||!candidate||candidate.entityId!==locationId(entityId))throw new ErrorType('expired');

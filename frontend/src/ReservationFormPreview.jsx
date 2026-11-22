@@ -13,6 +13,7 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
   const [capability,setCapability]=useState('loading'),[capabilityAttempt,setCapabilityAttempt]=useState(0),[discovery,setDiscovery]=useState(null),[formId,setFormId]=useState(''),[fields,setFields]=useState({}),[consent,setConsent]=useState(false),[preview,setPreview]=useState(null),[busy,setBusy]=useState(''),[error,setError]=useState('');
   const pending=useRef(null),lease=useRef(null);
   const [browserView,setBrowserView]=useState(null),[open,setOpen]=useState(false),[searchingWeb,setSearchingWeb]=useState(false);
+  const [webSearchEnabled,setWebSearchEnabled]=useState(false),[externalSearchOpen,setExternalSearchOpen]=useState(false);
   const workspace=useRef(null),trigger=useRef(null);
   const [detailsOpen,setDetailsOpen]=useState(false),[zoomed,setZoomed]=useState(false);
   useEffect(()=>{if(error||discovery||preview)setDetailsOpen(true);},[error,discovery,preview]);
@@ -33,7 +34,7 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
 
   useEffect(()=>{
     const abort=new AbortController();
-    api.actionCapabilities(abort.signal).then(value=>{if(!abort.signal.aborted)setCapability(value.reservationFormPreview===true?'available':'disabled');}).catch(()=>{if(!abort.signal.aborted)setCapability('failed');});
+    api.actionCapabilities(abort.signal).then(value=>{if(!abort.signal.aborted)setCapability(value.reservationFormPreview===true?'available':'disabled');setWebSearchEnabled(value.bookingWebsiteSearch===true);}).catch(()=>{if(!abort.signal.aborted)setCapability('failed');});
     return()=>abort.abort();
   },[capabilityAttempt]);
   useEffect(()=>()=>{pending.current?.abort();closeLease();},[]);
@@ -86,14 +87,20 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
   }
   function editVisitTime(){workspace.current?.close();cancel();onTiming?.();}
   function cancel(){setSearchingWeb(false);setOpen(false);setBrowserView(null);pending.current?.abort();pending.current=null;setBusy('');setConsent(false);clearPreview();setDiscovery(null);setFields({});setError('');}
-  if(capability==='disabled')return <p className="pg-note">The in-app booking browser is unavailable. <a href={venueSearchUrl(snapshot)} target="_blank" rel="noopener noreferrer">Open search in your browser</a></p>;
+  if(capability==='disabled')return <section className="pg-form-preview" aria-label="Booking website search">
+    <div className="booking-launch"><div><strong>Find a booking website</strong><span>Check published reservation links for this venue. No booking is submitted.</span></div>
+    <button type="button" className="pl-button" disabled={disabled||!snapshot.entityId} onClick={()=>setExternalSearchOpen(v=>!v)}>{externalSearchOpen?'Close booking search':'Find booking website'}</button></div>
+    {externalSearchOpen&&webSearchEnabled&&<BookingWebsiteSearch snapshot={snapshot} externalOnly onCancel={()=>setExternalSearchOpen(false)}/>}
+    {externalSearchOpen&&!webSearchEnabled&&<p role="status">In-app search is unavailable. <a href={venueSearchUrl(snapshot)} target="_blank" rel="noopener noreferrer">Search in your browser</a></p>}
+    <p className="pg-note">The in-app booking browser is unavailable on this server. A booking website can still be opened directly for you to reserve. Nothing has been submitted.</p>
+  </section>;
   if(capability!=='available')return <section className="pg-form-preview" aria-label="Booking form preview">
     <h4>Find a booking form</h4>
     <button type="button" className="pl-secondary-button" disabled>Find booking form</button>
     {capability==='loading'?<p role="status">Checking whether booking form preview is available…</p>:<><p role="status">Could not check booking form preview availability. Try again to check before opening a venue page.</p><button type="button" className="pl-secondary-button" disabled={disabled} onClick={()=>{setCapability('loading');setCapabilityAttempt(value=>value+1);}}>Retry availability check</button><a className="pg-link" href={venueSearchUrl(snapshot)} target="_blank" rel="noopener noreferrer">Open search in your browser</a></>}
   </section>;
   return <>
-    <div className="booking-launch"><div><strong>Book online</strong><span>{snapshot.contacts?.website?"Find and prepare the venue’s booking form.":"Find the venue’s website without leaving Unstressed."}</span></div><button ref={trigger} type="button" className="pl-button" onClick={discover} disabled={locked||!snapshot.entityId}><Icon name={snapshot.contacts?.website?"arrowUpRight":"search"} size={18}/>{snapshot.contacts?.website?"Find booking form":"Search web for booking"}</button></div>
+    <div className="booking-launch"><div><strong>Book online</strong><span>{snapshot.contacts?.website?"Find and prepare the venue’s booking form.":"Find the venue’s website without leaving Unstressed."}</span></div><button ref={trigger} type="button" className="pl-button" onClick={snapshot.contacts?.website?discover:startWebSearch} disabled={locked||!snapshot.entityId}><Icon name={snapshot.contacts?.website?"arrowUpRight":"search"} size={18}/>{snapshot.contacts?.website?"Find booking form":"Search web for booking"}</button></div>
     {!open&&!fillAllowed&&onTiming&&<button type="button" className="pg-link" onClick={onTiming}>Set visit time</button>}
     {open&&createPortal(<dialog ref={workspace} className="booking-workspace" aria-label={`Booking browser for ${snapshot.name}`} onCancel={e=>{e.preventDefault();e.stopPropagation();cancel();}} onKeyDown={e=>e.stopPropagation()}>
       <header className="booking-browser-bar"><Icon name="lock" size={18}/><div><strong>{snapshot.name}</strong><span>{discovery?.sourceUrl?new URL(discovery.sourceUrl).hostname:'Booking browser'} · No booking submitted</span></div>{discovery&&!searchingWeb&&<><button type="button" className="booking-icon" disabled={locked} onClick={startWebSearch} aria-label="Search another booking website" title="Search another booking website"><Icon name="search"/></button>{discovery.sourceUrl&&<a className="booking-icon" href={discovery.sourceUrl} target="_blank" rel="noopener noreferrer" aria-label="Open venue website in a new tab" title="Open venue website"><Icon name="arrowUpRight"/></a>}</>}{!discovery&&<button type="button" className="booking-icon" onClick={discover} disabled={locked} aria-label="Find booking form" title="Retry search"><Icon name="undo"/></button>}<button type="button" className="booking-icon" onClick={cancel} aria-label="Close form preview" title="Close"><Icon name="close"/></button></header>
