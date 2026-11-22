@@ -12,6 +12,11 @@ import {planTitle} from '../../shared/plan-title.js';
 import './budget-choices.css';
 import {formatMoney} from './money.js';
 import {useEffect,useLayoutEffect,useRef,useState} from 'react';
+
+// Avoid reopening the software keyboard on touch devices when async chat updates render.
+function usesTouchKeyboard(){
+  return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(max-width: 767px)').matches;
+}
 import {Icon,Sun,dateLabel,money,ACTIVITY_NAMES} from './PlannerIcons.jsx';
 import {CircleFaces} from './Circles.jsx';
 import NextSteps from './NextSteps.jsx';
@@ -46,13 +51,13 @@ export default function ChatStudio({onNamedVenue,brief,plan,chat,tool,renderTool
   const peopleLabel=circleName||(partySize===1?'Add someone':`${partySize} people`);
   useEffect(()=>{const media=window.matchMedia('(max-width: 1000px)'),change=()=>setCompact(media.matches);media.addEventListener('change',change);return()=>media.removeEventListener('change',change);},[]);
   useEffect(()=>{const root=scroll.current;if(!root)return;if(!chat.length&&!tool){root.scrollTo({top:0,behavior:'instant'});return;}if(readingHistoryRef.current&&!tool&&chat.at(-1)?.role!=='user')return;const active=tool?root.querySelector('[data-active-tool]'):null;const top=active&&active.offsetHeight>root.clientHeight-32?root.scrollTop+(active.querySelector('.cs-tool')||active).getBoundingClientRect().top-root.getBoundingClientRect().top-12:root.scrollHeight;root.scrollTo({top,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});},[chat.length,tool?.id]);
-  useEffect(()=>{if(!planOpen)return;const previous=document.activeElement;const target=panel.current?.querySelector('.cs-close-day')||panel.current?.querySelector('button');target?.focus({preventScroll:true});return()=>{if(previous?.isConnected)previous.focus({preventScroll:true});};},[planOpen]);
+  useEffect(()=>{if(!planOpen)return;const previous=document.activeElement;const target=panel.current?.querySelector('.cs-close-day')||panel.current?.querySelector('button');target?.focus({preventScroll:true});return()=>{if(previous?.isConnected&&!(usesTouchKeyboard()&&previous.matches('input,textarea,[contenteditable="true"]')))previous.focus({preventScroll:true});};},[planOpen]);
   // A desktop pane can become a modal when the viewport narrows. Keep its
   // original return target, but move focus out of the newly inert conversation.
   useEffect(()=>{if(modal){const target=panel.current?.querySelector('.cs-close-day')||panel.current?.querySelector('button');target?.focus({preventScroll:true});}},[modal]);
   useEffect(()=>{if(!menu)return;function close(e){if(e.key==='Escape'||e.type==='pointerdown'&&!menuRoot.current?.contains(e.target))setMenu(false);}document.addEventListener('pointerdown',close);document.addEventListener('keydown',close);return()=>{document.removeEventListener('pointerdown',close);document.removeEventListener('keydown',close);};},[menu]);
 
-  useLayoutEffect(()=>{if(tool||modal||guest||planOpen||readingHistoryRef.current)return;const field=input.current;if(!field)return;if(document.activeElement!==field&&!document.activeElement?.closest('button,a,summary,input,textarea,select,[tabindex]')){field.focus({preventScroll:true});field.setSelectionRange(field.value.length,field.value.length);}},[tool,modal,busy,guest,planOpen,chat.length]);
+  useLayoutEffect(()=>{const field=input.current;if(!field)return;if(usesTouchKeyboard()){if(busy&&document.activeElement===field)field.blur();return;}if(tool||modal||guest||planOpen||readingHistoryRef.current)return;if(document.activeElement!==field&&!document.activeElement?.closest('button,a,summary,input,textarea,select,[tabindex]')){field.focus({preventScroll:true});field.setSelectionRange(field.value.length,field.value.length);}},[tool,modal,busy,guest,planOpen,chat.length]);
   useLayoutEffect(()=>{setHeaderSmall(false);const content=panel.current?.querySelector('.cs-day-content');content?.scrollTo({top:0,left:0,behavior:'instant'});},[planView,planOpen]);
   useEffect(()=>{
     const el=panel.current;if(!modal||!el)return;
@@ -66,7 +71,7 @@ export default function ChatStudio({onNamedVenue,brief,plan,chat,tool,renderTool
   function action(kind){beginConversation();setMenu(false);setActionsScope(null);onTool(kind);}
   function openResults(){onPlanView('itinerary');onOpenPlan();}
   function actionKeys(e){if(e.key==='Escape'&&actionsOpen){e.preventDefault();setActionsScope(null);actionsToggle.current?.focus();}}
-  function submit(e){e?.preventDefault();if(message.trim()){beginConversation();onSend(message);input.current?.focus();}}
+  function submit(e){e?.preventDefault();if(message.trim()){beginConversation();if(usesTouchKeyboard())input.current?.blur();onSend(message);if(!usesTouchKeyboard())input.current?.focus({preventScroll:true});}}
   function panelKeys(e){if(!planOpen)return;if(e.key==='Escape'){e.preventDefault();onClosePlan();}if(modal&&e.key==='Tab'){const items=[...panel.current.querySelectorAll('button:not(:disabled),a[href],input:not(:disabled),summary,[tabindex="0"]')].filter(el=>el.getClientRects().length&&!['hidden','collapse'].includes(window.getComputedStyle(el).visibility));if(e.shiftKey&&document.activeElement===items[0]){e.preventDefault();items.at(-1)?.focus();}else if(!e.shiftKey&&document.activeElement===items.at(-1)){e.preventDefault();items[0]?.focus();}}}
   function viewKeys(e){
     if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;
