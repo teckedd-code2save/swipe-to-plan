@@ -49,9 +49,28 @@ In a controlled environment, test Republic Bar & Grill (missing site), Capitol C
 
 Record the exact commit tested, test failures and real provider observations separately. Fixture success is not a production quality pass. Review and merge PR only after acceptance; the main branch deploys automatically, so do not fast-forward this experimental branch into main on assumption alone.
 
+## Octocrawl venue-site maps
+
+Website search uses the existing ContextFetch default (or the explicitly configured
+Serper/Brave adapter) to find broader leads. It now also checks the public origin
+of the Qloo-linked venue site, when available over HTTPS, using [Octocrawl’s hosted map API](https://octocrawl.dev/docs/reference/).
+Only an origin is sent: no guest data, query strings, cookies, tokens, or search-derived
+hosts. The app accepts only booking-looking, queryless same-origin leads from a successful
+same-origin map. A lead is not proof of venue ownership or availability.
+
+The keyless map runs once per uncached origin/venue pair with a 5-second wait, two
+concurrent calls across the app and at most 12 map calls per UTC day. Positive maps are
+cached for one hour and empty or failed maps for 15 minutes. The existing search provider
+has no new cap. Search continues if mapping is unavailable, and mapped leads can still
+appear if the search provider is rate-limited. Set `OCTOCRAWL_BOOKING_ENABLED=false` to
+turn off only the map. No credentials or paid plan are required.
+
+A user-selected search lead can now follow up to two booking links on the same
+origin using the existing read-only browser. Cross-origin navigation still needs review,
+and input filling still happens offline. No form submission is enabled.
+
 ## Deferred related options
 
-- Octocrawl, https://octocrawl.dev/docs/connect-mcp/ : map / scrape and source evidence for a later staged fallback; not called by this PR.
 - Scrape.ly, https://scrape.ly/docs/mcp : actor-specific extraction, not a general-purpose approved booking robot; not called by this PR.
 - Product-wide transactional mail: consider Unitpost (https://www.unitpost.com/docs/email) and SendRaven (https://sendraven.ai/docs/api), separately scoped. This PR does not alter Resend or email delivery.
 - Public-information/Qloo alternatives: see docs/PUBLIC_APIS_FUTURE.md.
