@@ -75,3 +75,13 @@ and input filling still happens offline. No form submission is enabled.
 - Product-wide transactional mail: consider Unitpost (https://www.unitpost.com/docs/email) and SendRaven (https://sendraven.ai/docs/api), separately scoped. This PR does not alter Resend or email delivery.
 - Public-information/Qloo alternatives: see docs/PUBLIC_APIS_FUTURE.md.
 
+
+## Public form handoff
+
+After offline preparation, the user can continue to the exact HTTPS form page
+from the preview in their own browser. We do not transfer fields automatically,
+reuse the remote browser, append guest data to the URL, or send the request.
+Individual prepared values can be explicitly copied for the user to paste.
+Opening the page does not record a send. If the user says they sent it, the
+current view labels that as their report, not as proof of delivery or a table
+reservation. The venue can respond directly to the contact details the user enters.

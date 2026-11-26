@@ -65,3 +65,11 @@ export function unsupportedFormMessage(discovery) {
   if(codes.includes('embedded_forms'))return 'The booking form is embedded. Inspect its published booking page below, if available.';
   return discovery.candidates?.length?'Choose a published booking page below to look for the form.':'No fillable booking form found. Use the venue website to continue.';
 }
+
+// Only the exact page that produced the offline preview can be used for this
+// handoff. Never use the private browser session URL or add form values to a URL.
+export function reservationHandoffUrl(preview,discovery) {
+  const from=safeContactWebsite(preview?.sourceUrl),expected=safeContactWebsite(discovery?.sourceUrl);
+  if(!from||from!==expected||new URL(from).protocol!=='https:')return null;
+  return from;
+}

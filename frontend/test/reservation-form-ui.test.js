@@ -169,3 +169,47 @@ test('public booking website search is available without an in-app booking brows
  assert.equal(requests.some(r=>r.url.includes('/select')),false);
  assert.match(document.body.textContent,/Nothing booked/);
 });
+
+test('prepared public form hands the exact live page to the user, never sends or auto-confirms',async()=>{
+ await render();await click('Find booking form');
+ await act(async()=>document.querySelector('input[type=checkbox]').click());
+ await click('Fill form without submitting');
+ const link=[...document.querySelectorAll('a')].find(a=>a.textContent.includes('Continue to booking website'));
+ assert.equal(link.href,'https://example.com/book');
+ assert.equal(link.target,'_blank');
+ assert.equal(link.rel,'noopener noreferrer');
+ assert.equal(button('I sent the request'),undefined);
+ const calls=requests.length;
+ await act(async()=>{link.addEventListener('click',event=>event.preventDefault(),{once:true});link.click();});
+ assert.doesNotMatch(document.body.textContent,/You reported sending/);
+ await click('I sent the request');
+ assert.match(document.body.textContent,/Unstressed has not confirmed a booking/);
+ assert.equal(requests.length,calls);
+ assert.equal(localStorage.length,0);
+});
+
+test('a mismatched preview URL cannot be used for the public handoff',async()=>{
+ const fetchDefault=globalThis.fetch;
+ globalThis.fetch=async(...args)=>{
+  const response=await fetchDefault(...args);
+  if(!args[0].endsWith('/preview'))return response;
+  return new Response(JSON.stringify({...await response.json(),sourceUrl:'https://other.example/booking'}));
+ };
+ await render();await click('Find booking form');
+ await act(async()=>document.querySelector('input[type=checkbox]').click());
+ await click('Fill form without submitting');
+ assert.match(document.body.textContent,/Prepared for review/);
+ assert.doesNotMatch(document.body.textContent,/Continue to booking website/);
+});
+
+test('handoff copies a selected filled value only on request',async()=>{
+ const copied=[];
+ Object.defineProperty(navigator,'clipboard',{value:{writeText:async value=>copied.push(value)},configurable:true});
+ await render();await click('Find booking form');
+ await act(async()=>document.querySelector('input[type=checkbox]').click());await click('Fill form without submitting');
+ assert.deepEqual(copied,[]);
+ await click('Copy Visit date');
+ assert.deepEqual(copied,['2026-12-01']);
+ assert.match(document.body.textContent,/Copied for you to paste. Nothing sent/);
+ assert.equal(sessionStorage.length,0);
+});

@@ -4,7 +4,7 @@ import {useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {Icon} from './PlannerIcons.jsx';
 import {api} from './api.js';
-import {secureBookingWebsite,normalizeReservationForms,normalizeReservationPreview,seedReservationFields,reservationPreviewId,unsupportedFormMessage} from './reservation-form-preview.js';
+import {secureBookingWebsite,normalizeReservationForms,normalizeReservationPreview,seedReservationFields,reservationPreviewId,reservationHandoffUrl,unsupportedFormMessage} from './reservation-form-preview.js';
 
 export default function ReservationFormPreview({snapshot,message,disabled=false,fillAllowed=true,onTiming,enabled=import.meta.env?.VITE_RESERVATION_FORM_PREVIEW==='true'}) {
   return enabled?<PreviewSession key={JSON.stringify([snapshot,message])} snapshot={snapshot} message={message} disabled={disabled} fillAllowed={fillAllowed} onTiming={onTiming}/>:null;
@@ -103,7 +103,7 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
     <div className="booking-launch"><div><strong>Book online</strong><span>{snapshot.contacts?.website?"Find and prepare the venue’s booking form.":"Find the venue’s website without leaving Unstressed."}</span></div><button ref={trigger} type="button" className="pl-button" onClick={snapshot.contacts?.website?discover:startWebSearch} disabled={locked||!snapshot.entityId}><Icon name={snapshot.contacts?.website?"arrowUpRight":"search"} size={18}/>{snapshot.contacts?.website?"Find booking form":"Search web for booking"}</button></div>
     {!open&&!fillAllowed&&onTiming&&<button type="button" className="pg-link" onClick={onTiming}>Set visit time</button>}
     {open&&createPortal(<dialog ref={workspace} className="booking-workspace" aria-label={`Booking browser for ${snapshot.name}`} onCancel={e=>{e.preventDefault();e.stopPropagation();cancel();}} onKeyDown={e=>e.stopPropagation()}>
-      <header className="booking-browser-bar"><Icon name="lock" size={18}/><div><strong>{snapshot.name}</strong><span>{discovery?.sourceUrl?new URL(discovery.sourceUrl).hostname:'Booking browser'} · No booking submitted</span></div>{discovery&&!searchingWeb&&<><button type="button" className="booking-icon" disabled={locked} onClick={startWebSearch} aria-label="Search another booking website" title="Search another booking website"><Icon name="search"/></button>{discovery.sourceUrl&&<a className="booking-icon" href={discovery.sourceUrl} target="_blank" rel="noopener noreferrer" aria-label="Open venue website in a new tab" title="Open venue website"><Icon name="arrowUpRight"/></a>}</>}{!discovery&&<button type="button" className="booking-icon" onClick={discover} disabled={locked} aria-label="Find booking form" title="Retry search"><Icon name="undo"/></button>}<button type="button" className="booking-icon" onClick={cancel} aria-label="Close form preview" title="Close"><Icon name="close"/></button></header>
+      <header className="booking-browser-bar"><Icon name="lock" size={18}/><div><strong>{snapshot.name}</strong><span>{discovery?.sourceUrl?new URL(discovery.sourceUrl).hostname:'Booking browser'} · Offline preview</span></div>{discovery&&!searchingWeb&&<><button type="button" className="booking-icon" disabled={locked} onClick={startWebSearch} aria-label="Search another booking website" title="Search another booking website"><Icon name="search"/></button>{discovery.sourceUrl&&<a className="booking-icon" href={discovery.sourceUrl} target="_blank" rel="noopener noreferrer" aria-label="Open venue website in a new tab" title="Open venue website"><Icon name="arrowUpRight"/></a>}</>}{!discovery&&<button type="button" className="booking-icon" onClick={discover} disabled={locked} aria-label="Find booking form" title="Retry search"><Icon name="undo"/></button>}<button type="button" className="booking-icon" onClick={cancel} aria-label="Close form preview" title="Close"><Icon name="close"/></button></header>
       <div className={`booking-workspace-body ${hasDetails?'has-booking-stage':''} ${detailsOpen?'booking-details-open':''}`}>{searchingWeb?<BookingWebsiteSearch snapshot={snapshot} onSelected={useSearchDestination} onCancel={cancel}/>:<>
       <section className={`booking-browser-canvas ${zoomed?'booking-canvas-zoomed':''}`} aria-label="Read-only browser view">
         {busy&&<div className="booking-browser-status" role="status">{({waiting:'Waiting briefly for a booking browser…',connecting:'Connecting to the browser…',loading:'Opening the venue website…',inspecting:'Looking for booking fields…',freezing:'Disconnecting the form before filling…',filling:'Filling your reviewed details…'}[browserView?.stage]||'Opening booking page…')}</div>}
@@ -132,8 +132,29 @@ function PreviewSession({snapshot,message,disabled,fillAllowed,onTiming}) {
         {discovery.previewAvailable?<><label><input type="checkbox" checked={consent} disabled={locked||!fillAllowed} onChange={e=>setConsent(e.target.checked)}/> {form?.availabilityProvider==='tableagent'?'Send this date to Tableagent to check services and times, then fill the reviewed date, time and party size offline. Do not submit a booking.':'Use the details shown above in Cloudflare’s browser to fill this form for review. Do not submit it to the venue.'}</label><button type="button" className="pl-button" disabled={locked||!fillAllowed||!consent} onClick={fill}>{busy==='filling'?'Filling for review…':'Fill form without submitting'}</button></>:<p>Form found. Browser preview is not configured on this instance yet.</p>}
       </>}
     </div>}
-    {preview&&<div className="booking-prepared" role="status"><h4>Prepared for review · not submitted</h4><p>Review the filled form in its browser tab. It is disconnected from the venue, so no booking can be sent.</p>{preview.status!=='filled'&&<p>Some fields need your review.</p>}<details><summary>Filled details</summary><dl>{preview.fields.map((field,index)=><div key={index}><dt>{field.label}</dt><dd>{field.status==='filled'?field.value||'Filled':'Needs review'}</dd></div>)}</dl></details>{preview.expiresAt&&<small>Available until {new Date(preview.expiresAt).toLocaleTimeString()}.</small>}</div>}
+    {preview&&<div className="booking-prepared" role="status"><h4>Prepared for review · not submitted</h4><p>This preview is offline. It has not sent your details to the venue.</p>{preview.status!=='filled'&&<p>Some fields need your review.</p>}<details><summary>Filled details</summary><dl>{preview.fields.map((field,index)=><div key={index}><dt>{field.label}</dt><dd>{field.status==='filled'?field.value||'Filled':'Needs review'}</dd></div>)}</dl></details>{!locked&&<PublicFormHandoff key={formId} preview={preview} discovery={discovery}/>}
+    {preview.expiresAt&&<small>Available until {new Date(preview.expiresAt).toLocaleTimeString()}.</small>}</div>}
       </aside></>}</>}</div>
     </dialog>,document.body)}
   </>;
+}
+
+function PublicFormHandoff({preview,discovery}) {
+  const [opened,setOpened]=useState(false),[reported,setReported]=useState(false),[copyStatus,setCopyStatus]=useState('');
+  const url=reservationHandoffUrl(preview,discovery);
+  if(!url)return null;
+  async function copy(value){
+    try{await navigator.clipboard.writeText(value);setCopyStatus('Copied for you to paste. Nothing sent.');}
+    catch{setCopyStatus('Could not copy automatically. You can select the value under Filled details.');}
+  }
+  const filled=preview.fields.filter(field=>field.status==='filled'&&field.value);
+  return <section className="booking-public-handoff" aria-label="Send on the booking website">
+    <h4>Send on the booking website</h4>
+    <p>The live form opens in a new tab. Enter your details there and send it yourself. Any reply goes to the contact details you give the venue.</p>
+    <a className="pl-button" href={url} target="_blank" rel="noopener noreferrer" onClick={()=>setOpened(true)}>Continue to booking website <Icon name="arrowUpRight" size={16}/></a>
+    {filled.length>0&&<details><summary>Copy a filled detail</summary><ul>{filled.map(({label,value},i)=><li key={i}><button type="button" className="pg-link" onClick={()=>copy(value)}>Copy {label}</button></li>)}</ul></details>}
+    {copyStatus&&<p role="status">{copyStatus}</p>}
+    {opened&&!reported&&<button type="button" className="pg-link" onClick={()=>setReported(true)}>I sent the request</button>}
+    {reported&&<p role="status">You reported sending the request. Check the booking website or wait for the venue’s reply. Unstressed has not confirmed a booking. This note is only shown here.</p>}
+  </section>;
 }
