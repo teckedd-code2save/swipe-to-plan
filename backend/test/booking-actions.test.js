@@ -161,3 +161,44 @@ test('persisted legacy booking records without roles remain readable and stale c
   await restarted.editSavedPlan('a','p',{revision:2,restoreRevision:1});assert.equal((await restarted.bookings('a','p')).bookings[0].stale,true);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test('booking email is account-only, freshly Cloudflare verified, after commit and not sent on replay',async t=>{
+  const {createApp}=await import('../src/app.js');const {createDemoProvider}=await import('../src/demo-provider.js');const {once}=await import('node:events');
+  const {createBookingEmail}=await import('../src/booking-email.js');
+  const {store}=await accountFixture();
+  let verified=null,deliveries=[];
+  const bookingEmail=createBookingEmail({enabled:true,accountId:'a'.repeat(32),routingToken:'fake-routing',sendingToken:'fake-sending',from:'updates@example.test',fetchImpl:async(url,init)=>{
+    if(url.endsWith('/destination1')){
+      assert.equal(init.headers.Authorization,'Bearer fake-routing');
+      return Response.json({success:true,result:{id:'destination1',email:'owner@example.test',verified}});
+    }
+    assert.ok(url.endsWith('/email/sending/send'));assert.equal(init.headers.Authorization,'Bearer fake-sending');
+    const payload=JSON.parse(init.body);
+    const committed=await store.read(data=>data.users.a.savedPlans.p.bookingActions.records[0]);
+    assert.equal(committed.status,'user_reported_confirmed');
+    deliveries.push(payload);
+    return Response.json({success:true,result:{message_id:'fixture-id'}});
+  }});
+  await store.transact(data=>{Object.assign(data.users.a,{email:'owner@example.test',bookingEmail:{email:'owner@example.test',destinationId:'destination1',attemptedAt:now()}});});
+  const accounts=createAccounts({store,now,bookingEmail});
+  const server=createApp({accounts,now,provider:createDemoProvider(),rateLimit:false}).listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>server.close());
+  const base='http://127.0.0.1:'+server.address().port+'/api/account/plans/p/bookings';
+  const send=async(path,data)=>{
+    const response=await fetch(base+path,{method:'POST',headers:{origin:'http://127.0.0.1:5173',cookie:'outing-session=a','content-type':'application/json'},body:JSON.stringify(data)});
+    assert.equal(response.status,200);
+    return await response.json();
+  };
+  let {booking}=await send('',body());assert.deepEqual(deliveries,[]);
+  const path='/'+booking.id+'/report';
+  ({booking}=await send(path,update(booking,'pending',{outcome:'awaiting_reply'})));
+  await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(deliveries,[]);
+  verified='2026-11-26T10:00:00Z';
+  const reported=update(booking,'confirmed',{outcome:'confirmed',reference:'PRIVATE'});
+  ({booking}=await send(path,reported));
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(deliveries.length,1);assert.deepEqual(deliveries[0].to,['owner@example.test']);
+  assert.match(deliveries[0].text,/Marked confirmed by you/);assert.doesNotMatch(deliveries[0].text,/PRIVATE|Venue A/);
+  assert.equal(booking.verifiedByService,false);assert.equal(booking.submission.status,'not_submitted');
+  assert.deepEqual((await send(path,reported)).booking,booking);
+  await send(path,update(booking,'repeat-status',{outcome:'confirmed'}));
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(deliveries.length,1);
+});

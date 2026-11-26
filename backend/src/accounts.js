@@ -1,3 +1,4 @@
+import {createBookingEmail,bookingEmailAddress,verificationCooldown} from './booking-email.js';
 import {createNativeAuth} from './native-auth.js';
 import {createExecutionProtocol,invalidateExecution,executionCapabilities} from './execution-ledger.js';
 import {bookingOperation,invalidateBookings} from './booking-actions.js';
@@ -18,7 +19,7 @@ const profile=(value,id)=>({...parseItinerary({party:{adults:1},people:[value]})
 const safeUser=user=>({id:user.id,email:user.email,profile:user.profile,planningLocation:user.planningLocation||null,planningLocations:user.planningLocations||[user.planningLocation].filter(Boolean)});
 const cookie=(req,name)=>(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith(`${name}=`))?.slice(name.length+1);
 
-export function createAccounts({store=createAccountStore(),now=Date.now,invitationEpoch=null,origin=process.env.APP_ORIGIN||'http://127.0.0.1:5173',clientId=process.env.GOOGLE_OAUTH_CLIENT_ID,clientSecret=process.env.GOOGLE_OAUTH_CLIENT_SECRET,adminEmails=(process.env.ADMIN_EMAILS||'').split(',').map(e=>e.trim().toLowerCase()).filter(Boolean),oauthFactory,nativeAuthEnabled=process.env.NATIVE_AUTH_ENABLED==='true',readNativePilotPolicy}={}){
+export function createAccounts({store=createAccountStore(),now=Date.now,invitationEpoch=null,origin=process.env.APP_ORIGIN||'http://127.0.0.1:5173',clientId=process.env.GOOGLE_OAUTH_CLIENT_ID,clientSecret=process.env.GOOGLE_OAUTH_CLIENT_SECRET,adminEmails=(process.env.ADMIN_EMAILS||'').split(',').map(e=>e.trim().toLowerCase()).filter(Boolean),oauthFactory,nativeAuthEnabled=process.env.NATIVE_AUTH_ENABLED==='true',readNativePilotPolicy,bookingEmail=createBookingEmail()}={}){
   const executionProtocol=createExecutionProtocol({now});
   const planInvitations=createPlanInvitations({now,epoch:invitationEpoch});
   origin=new URL(origin).origin;
@@ -38,6 +39,44 @@ export function createAccounts({store=createAccountStore(),now=Date.now,invitati
   const bindingName=secure?'__Host-outing-signin':'outing-signin';
   const resolve=(data,session)=>{if(session&&typeof session==='object')return native.resolve(data,session);const record=data.sessions[hash(session)];return record&&record.expiresAt>now()?data.users[record.userId]:null;};
   const requireUser=(data,session)=>{const user=resolve(data,session);if(!user)throw fail('Sign in to keep your tastes and circles.',401);return user;};
+  const verificationUser=(data,session)=>requireUser(data,session);
+  const emailRecord=(user,email)=>user.bookingEmail?.email===email?user.bookingEmail:null;
+  const emailView=(user,live)=> {
+    const email=bookingEmailAddress(user.email), record=emailRecord(user,email);
+    if(!bookingEmail.available||!email)return {status:'unavailable'};
+    if(live?.verified)return {status:'verified'};
+    if(live===undefined&&record?.destinationId)return {status:'check_unavailable'};
+    const next=(record?.attemptedAt??-verificationCooldown)+verificationCooldown;
+    const retryAfter=next>now()?next:null;
+    if(live)return {status:'pending',resendRequestedAt:record?.resendRequestedAt||null,retryAfter};
+    return {status:'not_verified',retryAfter};
+  };
+  async function deliverVerification(target,reconcile=false){
+    try{
+      const remote=await bookingEmail.register(target.email,{reconcile});
+      await store.transact(data=>{
+        const user=data.users[target.userId], record=user&&emailRecord(user,target.email);
+        if(record?.attemptedAt===target.attemptedAt&&bookingEmailAddress(user.email)===target.email)record.destinationId=remote.id;
+      });
+    }catch{/* Delivery is optional; sign-in and in-app updates must still work. */}
+  }
+  async function bookingEmailStatus(user){
+    const email=bookingEmailAddress(user.email), record=emailRecord(user,email);
+    if(!bookingEmail.available||!email||!record?.destinationId)return emailView(user,null);
+    try{return emailView(user,await bookingEmail.status(email,record.destinationId));}
+    catch{return emailView(user,undefined);}
+  }
+  async function notifyBookingUpdate(target){
+    try{
+      // Never trust the OAuth email_verified claim or a cached Cloudflare check to authorize sending.
+      if(!(await bookingEmail.status(target.email,target.destinationId))?.verified)return;
+      if(!await store.read(data=>{
+        const user=data.users[target.userId];
+        return !!user&&bookingEmailAddress(user.email)===target.email&&emailRecord(user,target.email)?.destinationId===target.destinationId;
+      }))return;
+      await bookingEmail.sendUpdate(target.email,target.outcome,origin);
+    }catch{/* Unstressed has already recorded the outcome, and sends are never blindly retried. */}
+  }
   const invitationUser=(data,session)=>{const user=requireUser(data,session);planInvitations.assertEnabled();return user;};
   const circleView=(data,circle,user)=>({id:circle.id,name:circle.name,owner:circle.ownerId===user.id,people:circle.members.map(m=>m.userId?data.users[m.userId].profile:m.profile),accountIds:circle.members.flatMap(m=>m.userId?[m.userId]:[]),...(circle.ownerId===user.id?{inviteToken:circle.inviteToken}:{})});
   const myCircles=(data,user)=>Object.values(data.circles).filter(c=>c.members.some(m=>m.userId===user.id)).map(c=>circleView(data,c,user));
@@ -93,8 +132,21 @@ export function createAccounts({store=createAccountStore(),now=Date.now,invitati
       return operation==='list'?store.read(apply):store.transact(apply);
     },
     async bookings(session,id,operation='list',body={},bookingId=null){
-      const apply=data=>{const user=resolve(data,session);if(!user||!Object.hasOwn(user.savedPlans||{},id))throw Object.assign(new Error('Booking not found.'),{status:404,code:'booking_conflict'});return bookingOperation(user.savedPlans[id],operation,body,bookingId,{now});};
-      return operation==='list'?store.read(apply):store.transact(apply);
+      const apply=data=>{
+        const user=resolve(data,session);
+        if(!user||!Object.hasOwn(user.savedPlans||{},id))throw Object.assign(new Error('Booking not found.'),{status:404,code:'booking_conflict'});
+        const entry=user.savedPlans[id], prior=entry.bookingActions?.records.find(b=>b.id===bookingId);
+        const repeated=typeof body?.idempotencyKey==='string'&&entry.bookingActions?.requests.some(r=>r.key===body.idempotencyKey.trim());
+        const sameOutcome=!!prior?.userReport&&prior.userReport.outcome===body?.outcome&&!prior.userReport.stale;
+        const result=bookingOperation(entry,operation,body,bookingId,{now});
+        const email=bookingEmailAddress(user.email), destinationId=emailRecord(user,email)?.destinationId;
+        const delivery=bookingEmail.available&&operation==='report'&&!entry.sourceDayId&&!repeated&&!sameOutcome&&!result.booking.stale&&destinationId
+          ? {userId:user.id,email,destinationId,outcome:result.booking.userReport.outcome} : null;
+        return {result,delivery};
+      };
+      const {result,delivery}=await (operation==='list'?store.read(apply):store.transact(apply));
+      if(delivery)void notifyBookingUpdate(delivery);
+      return result;
     },
     async listPlanInvitations(session,id){return store.read(data=>planInvitations.list(data,invitationUser(data,session),id));},
     async inviteToPlan(session,id,body){return store.transact(data=>planInvitations.invite(data,invitationUser(data,session),id,body));},
@@ -126,6 +178,53 @@ export function createAccounts({store=createAccountStore(),now=Date.now,invitati
       });
     },
     async removePlan(session,id){await store.transact(data=>{const user=requireUser(data,session);const entry=savedPlan(user,id);if(entry.executionLedger?.records.some(r=>['submission_pending','submission_unknown','submitted_awaiting_response','provider_confirmed'].includes(r.status)))throw fail('Reconcile pending venue submissions before deleting this day.',409);delete user.savedPlans[id];planInvitations.remove(data,user,id);});},
+    async bookingEmailSettings(session, body) {
+      const user=await store.read(data=>verificationUser(data,session));
+      if(body===undefined)return bookingEmailStatus(user);
+      fields(body,[]);
+      const email=bookingEmailAddress(user.email);
+      if(!bookingEmail.available||!email)return {status:'unavailable'};
+      const status=await bookingEmailStatus(user);
+      if(status.status==='verified'||status.status==='check_unavailable')return status;
+      const result=await store.transact(data=>{
+        const current=verificationUser(data,session), attemptedAt=now();
+        if(current.id!==user.id||bookingEmailAddress(current.email)!==email)throw fail('Your account changed. Refresh and try again.',409);
+        const record=emailRecord(current,email);
+        if(record&&attemptedAt-record.attemptedAt<verificationCooldown)return {cooldown:true};
+        if(record?.destinationId&&status.status==='pending'){
+          // Public API has no documented resend. Do not PATCH verification state or delete a destination.
+          if(!record.resendRequestedAt)record.resendRequestedAt=attemptedAt;
+          return {queued:true};
+        }
+        current.bookingEmail={email,attemptedAt};
+        return {target:{userId:current.id,email,attemptedAt}};
+      });
+      if(result.target)await deliverVerification(result.target,true);
+      const latest=await store.read(data=>verificationUser(data,session));
+      return bookingEmailStatus(latest);
+    },
+    async bookingEmailResendQueue(req) {
+      return store.read(data=>{
+        if(!isAdmin(verificationUser(data,cookie(req,sessionName))))throw fail('This dashboard is private.');
+        return Object.values(data.users).flatMap(user=>{
+          const record=emailRecord(user,bookingEmailAddress(user.email));
+          return bookingEmail.available&&record?.destinationId&&record.resendRequestedAt?[{userId:user.id,email:record.email,requestedAt:record.resendRequestedAt}]:[];
+        }).sort((a,b)=>a.requestedAt-b.requestedAt);
+      });
+    },
+    async acknowledgeBookingEmailResend(req,body){
+      fields(body,['userId','requestedAt']);
+      return store.transact(data=>{
+        if(!isAdmin(verificationUser(data,cookie(req,sessionName))))throw fail('This dashboard is private.');
+        if(!bookingEmail.available)throw fail('Booking email is not enabled.',409);
+        if(typeof body.userId!=='string'||!Object.hasOwn(data.users,body.userId)||!Number.isSafeInteger(body.requestedAt))throw fail('Verification request not found.',404);
+        const user=data.users[body.userId],record=emailRecord(user,bookingEmailAddress(user.email));
+        if(!record?.resendRequestedAt||record.resendRequestedAt!==body.requestedAt)throw fail('Verification request changed. Refresh before continuing.',409);
+        record.attemptedAt=now();
+        delete record.resendRequestedAt;
+        return {ok:true};
+      });
+    },
     async current(session){return store.read(data=>{const user=resolve(data,session);return {configured:enabled,user:user?{...safeUser(user),admin:isAdmin(user)}:null,circles:user?myCircles(data,user):[],invitationAvailable:planInvitations.available,invitationUnreadCount:user?planInvitations.unreadCount(data,user):0};});},
     async identity(req){if(nativePlanning(req))await native.assertPlanning();return store.read(data=>{const user=resolve(data,requestSession(req));return user?{id:user.id,admin:isAdmin(user)}:null;});},
     async adminUsers(req){return store.read(data=>{const user=requireUser(data,cookie(req,sessionName));if(!isAdmin(user))throw fail('This dashboard is private.');return Object.values(data.users).map(u=>({id:u.id,name:u.profile.name,email:u.email,createdAt:u.createdAt,lastSignedInAt:u.lastSignedInAt||null,circles:Object.values(data.circles).filter(c=>c.members.some(m=>m.userId===u.id)).length,hasTastes:!!(u.profile.artists.length||u.profile.vibes.length)}));});},
@@ -147,16 +246,24 @@ export function createAccounts({store=createAccountStore(),now=Date.now,invitati
       try{if(typeof query.code!=='string'||!query.code||query.code.length>4096)throw Error();const client=oauth(),{tokens}=await client.getToken({code:query.code,codeVerifier:flow.verifier});if(!tokens.id_token)throw Error();identity=(await client.verifyIdToken({idToken:tokens.id_token,audience:clientId})).getPayload();if(!identity?.sub||identity.email_verified!==true||identity.nonce!==flow.nonce)throw Error();}catch{throw fail('Google sign-in could not be verified. Please try again.',401);}
       if(flow.returnTo.startsWith('/api/auth/native/browser?'))await native.observe();
       const session=opaque();
-      await store.transact(data=>{
+      const verificationTarget=await store.transact(data=>{
         let user=Object.values(data.users).find(u=>u.googleSubject===identity.sub);
+        const firstSignIn=!user;
         if(flow.returnTo.startsWith('/api/auth/native/browser?'))native.authorizeGoogle(data,user,flow.nativePilot);
         if(!user){const id=randomUUID();user={id,googleSubject:identity.sub,email:identity.email||'',profile:{id,name:(identity.name?.trim()||'You').slice(0,24),artists:[],vibes:[]},createdAt:new Date(now()).toISOString()};data.users[id]=user;}
+        if(bookingEmailAddress(user.email)!==bookingEmailAddress(identity.email||user.email))delete user.bookingEmail;
         user.email=identity.email||user.email;
         user.lastSignedInAt=new Date(now()).toISOString();
         // Stable Google subject is the identity. Never merge accounts by email.
         delete data.sessions[hash(previousSession)];
         data.sessions[hash(session)]={userId:user.id,expiresAt:now()+30*86400000};
+        const email=bookingEmailAddress(user.email);
+        if(!firstSignIn||!bookingEmail.available||!email)return null;
+        const attemptedAt=now();
+        user.bookingEmail={email,attemptedAt};
+        return {userId:user.id,email,attemptedAt};
       });
+      if(verificationTarget)void deliverVerification(verificationTarget);
       return {session,returnTo:flow.returnTo};
     },
     async logout(session){await store.transact(data=>{delete data.sessions[hash(session)];});},
@@ -242,6 +349,8 @@ export function createAccounts({store=createAccountStore(),now=Date.now,invitati
         res.set('Cache-Control','no-store');res.json(await fn(session,req));
       }));
       register('get','',s=>this.current(s));
+      register('get','/booking-email',s=>this.bookingEmailSettings(s));
+      register('post','/booking-email',(s,r)=>this.bookingEmailSettings(s,r.body));
       register('patch','/profile',async(s,r)=>({user:await this.updateProfile(s,r.body)}));
       register('patch','/planning-location',async(s,r)=>({user:await this.updatePlanningLocation(s,r.body,resolveLocation)}));
       register('get','/plans',async s=>({plans:await this.listPlans(s)}));
@@ -273,6 +382,10 @@ export function createAccounts({store=createAccountStore(),now=Date.now,invitati
       app.get('/api/account',route(async(req,res)=>res.json(await this.current(session(req)))));
       const invitationRead=fn=>route(async(req,res)=>{res.set('Cache-Control','no-store');res.json(await fn(req));});
       const invitationChange=fn=>mutation(async(req,res)=>{res.set('Cache-Control','no-store');res.json(await fn(req));});
+      app.get('/api/account/booking-email',limit(10,'booking-email-read'),invitationRead(req=>this.bookingEmailSettings(session(req))));
+      app.post('/api/account/booking-email',limit(5,'booking-email-change'),invitationChange(req=>this.bookingEmailSettings(session(req),req.body)));
+      app.get('/api/admin/booking-email/resends',limit(20,'booking-email-admin'),invitationRead(req=>this.bookingEmailResendQueue(req)));
+      app.post('/api/admin/booking-email/resends/acknowledge',limit(20,'booking-email-admin'),invitationChange(req=>this.acknowledgeBookingEmailResend(req,req.body)));
       app.get('/api/account/invitations',limit(60,'invitation-read'),invitationRead(req=>this.invitationInbox(session(req))));
       app.get('/api/account/invitations/:id/plan',limit(60,'invitation-read'),invitationRead(req=>this.invitedPlan(session(req),req.params.id)));
       app.patch('/api/account/invitations/:id',limit(45,'invitation-change'),invitationChange(req=>this.updateInvitation(session(req),req.params.id,req.body)));

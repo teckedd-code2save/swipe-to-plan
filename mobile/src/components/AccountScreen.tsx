@@ -27,13 +27,19 @@ export function NativeAccountScreen({ session, onOpenPlan, onImportCircle, onNav
   const [auth, setAuth] = useState(session.getSnapshot()), [enabled, setEnabled] = useState<boolean | null>(null);
   const readOnly = isReadOnlySession(auth);
   const [checkingAvailability, setCheckingAvailability] = useState(true);
+  const [bookingEmail, setBookingEmail] = useState<any>(null), [, tickBookingEmail] = useState(0);
+  useEffect(() => {
+    if (!bookingEmail?.retryAfter) return;
+    const timer = setTimeout(() => tickBookingEmail(n => n + 1), Math.max(0, bookingEmail.retryAfter - Date.now()));
+    return () => clearTimeout(timer);
+  }, [bookingEmail?.retryAfter]);
   const [account, setAccount] = useState<any>(null), [plans, setPlans] = useState<any[]>([]), [inbox, setInbox] = useState<any[]>([]);
   const [circlePlans, setCirclePlans] = useState<any[]>([]), [profileEdit, setProfileEdit] = useState<{ name: string; artists: string; vibes: string } | null>(null);
   const [invitationError, setInvitationError] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false), [invited, setInvited] = useState<any>(null), [manager, setManager] = useState<any>(null);
   const previousAuth = useRef(auth.signedIn);
   const control = useRef(new AbortController()), locked = useRef(false), alive = useRef(true), generation = useRef(0);
-  const clear = () => { setAccount(null); setPlans([]); setCirclePlans([]); setProfileEdit(null); setInbox([]); setInvited(null); setManager(null); setNotice(''); setInvitationError(''); };
+  const clear = () => { setBookingEmail(null); setAccount(null); setPlans([]); setCirclePlans([]); setProfileEdit(null); setInbox([]); setInvited(null); setManager(null); setNotice(''); setInvitationError(''); };
   const run = async (fn: (signal: AbortSignal) => Promise<void>) => {
     if (locked.current) return; locked.current = true; setBusy(true); setError('');
     const version = generation.current;
@@ -124,6 +130,11 @@ export function NativeAccountScreen({ session, onOpenPlan, onImportCircle, onNav
       })) },
     ]);
   };
+  const checkBookingEmail = (request = false) => void run(async signal => {
+    const result = await session.account('/booking-email', { ...(request ? { method: 'POST', body: {} } : {}), signal });
+    if (!signal.aborted) setBookingEmail(result);
+  });
+  const bookingEmailStatus = bookingEmail?.status;
   const saveProfile = () => {
     if (!profileEdit || !account?.user) return;
     const values = profileEdit, original = account.user.profile;
@@ -160,6 +171,11 @@ export function NativeAccountScreen({ session, onOpenPlan, onImportCircle, onNav
           {(['name', 'artists', 'vibes'] as const).map(field => <View key={field} style={s.section}><Text style={s.body}>{field === 'name' ? 'Your name' : field === 'artists' ? 'Artists' : 'Vibes'}</Text><TextInput accessibilityLabel={`Account ${field}`} editable={!busy} value={profileEdit[field]} maxLength={field === 'name' ? 80 : 600} style={s.input} onChangeText={value => setProfileEdit({ ...profileEdit, [field]: value })} /></View>)}
           <Button label="Save account profile" disabled={busy || readOnly || !profileEdit.name.trim()} onPress={saveProfile} /><Button label="Cancel profile edit" quiet disabled={busy} onPress={() => setProfileEdit(null)} />
         </View>}
+        <View style={s.section}><Text style={s.heading}>Booking emails</Text>
+          {bookingEmailStatus && <Text style={s.caption} accessibilityLiveRegion="polite">{bookingEmailStatus === 'verified' ? 'On. Updates also stay in Unstressed.' : bookingEmailStatus === 'pending' ? bookingEmail.resendRequestedAt ? 'Resend requested. It won’t arrive until our team sends it.' : 'Check your inbox for Cloudflare’s verification email.' : bookingEmailStatus === 'not_verified' ? 'Off. Verify your address to receive booking emails.' : 'Could not check email verification. Your updates still appear in Unstressed.'}</Text>}
+          {bookingEmailStatus !== 'verified' && <Button label="Check email verification" quiet disabled={busy} onPress={() => checkBookingEmail()} />}
+          {!readOnly && (bookingEmailStatus === 'not_verified' || bookingEmailStatus === 'pending') && !bookingEmail?.resendRequestedAt && <Button label={bookingEmail.retryAfter > Date.now() ? 'Try again in a few minutes' : bookingEmailStatus === 'pending' ? 'Request another verification email' : 'Send verification email'} quiet disabled={busy || bookingEmail.retryAfter > Date.now()} onPress={() => checkBookingEmail(true)} />}
+        </View>
         <Button label="Refresh account" quiet disabled={busy} onPress={() => void run(refresh)} />
         <Button label="Sign out of this app" quiet onPress={() => { void session.logout().catch(e => setError(message(e))); }} />
       </View>

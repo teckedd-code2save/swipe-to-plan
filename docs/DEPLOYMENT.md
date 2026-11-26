@@ -103,3 +103,32 @@ The guarded release now tests file fsync, same-directory rename and directory fs
 Production `compose.yml` explicitly sets `NATIVE_AUTH_ENABLED: "false"`, taking precedence over the runtime `.env` file. The direct loopback candidate invocation in `deploy/release.sh` also sets `NATIVE_AUTH_ENABLED=false`. This makes the initial source integration safe even when the old runtime environment contains an unknown flag value. Existing Google web sign-in and its callback are unchanged.
 
 After the approved flag-off release, verify `/api/auth/native/config` returns `enabled:false` and normal web account/guest planning still works. Native enablement is a separate reviewed deployment change to these explicit controls, not a secret-file edit or automatic follow-up. Do not turn it on before the independent security review and coordinated device/browser acceptance plan. The same existing Google web credentials and callback are reused; no new credential, scope or public port is required. See [native account operations](../backend/docs/native-accounts.md).
+
+### Optional Cloudflare booking email pilot
+
+Set BOOKING_EMAIL_ENABLED=true only after onboarding a sending domain for Email Sending
+and testing with a controlled inbox. Set BOOKING_EMAIL_CF_ACCOUNT_ID, a dedicated
+BOOKING_EMAIL_CF_ROUTING_TOKEN with Email Routing Addresses Write and read access,
+a separate BOOKING_EMAIL_CF_SENDING_TOKEN with Email Sending Write, and BOOKING_EMAIL_FROM
+to an address on the onboarded domain. Keep these in /opt/unstressed/.env, not the build
+or browser. Keep the existing Resend circle-invitation configuration separate.
+Cloudflare's verified destinations are account-wide and limited to 200 by default.
+Do not enable this on a broadly shared Cloudflare account without reviewing that scope.
+
+A new account's Google sign-in registers its own address with Cloudflare once after
+the session is saved; it works even if email fails. Existing accounts can enable
+booking email from Account. Only a matching currently verified Cloudflare destination
+can receive booking updates, never just a Google-verified address. The app sends a
+generic private-plan status note after a newly saved, non-stale, user-reported outcome;
+it does not send reservations to venues, imply venue confirmation, or email guests
+and shared-day participants. In-app outcomes remain authoritative. If Cloudflare
+fails or delivery is uncertain, the app does not retry booking email blindly.
+
+The public destination API does not document a resend operation. Account can retry a
+missing registration with a cooldown and check status; a request for an already pending
+address queues for the operator. In **Usage & people → Booking email verification
+requests**, find the exact address, then check **Cloudflare → Email Service → Email
+Routing → Destination Addresses**. Resend only if still pending. Close the app request
+after the dashboard confirms the resend or shows the address is already verified.
+Never delete or unverify to force a resend. Closing a request is an operator action
+and does not attest delivery or turn booking email on by itself.

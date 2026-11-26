@@ -345,3 +345,59 @@ test('saved repeated slots keep and release their own place without conflating t
   await assert.rejects(f.accounts.editSavedPlan(a.session,libraryId,{revision:2,pins:{coffee:plan.stops[1].item.id}}),e=>e.status===400);
   const released=await f.accounts.editSavedPlan(a.session,libraryId,{revision:2,pins:{}});assert.deepEqual(released.request.pins,{});assert.deepEqual(released.request.stopIntents,['coffee','coffee']);
 });
+
+test('Cloudflare verification starts once at first HTTP sign-in and Profile checks, retries and queues honestly',async t=>{
+  const {createBookingEmail,verificationCooldown}=await import('../src/booking-email.js');
+  let now=Date.parse('2026-11-26T10:00:00Z'),remote=null,loseFirstAck=true,posts=0;
+  const calls=[];
+  const bookingEmail=createBookingEmail({enabled:true,accountId:'a'.repeat(32),routingToken:'test-route',sendingToken:'test-send',from:'updates@example.test',fetchImpl:async(url,init)=>{
+    const path=new URL(url).pathname;calls.push(path);
+    assert.equal(init.headers.Authorization,'Bearer test-route');
+    if(init.method==='POST'){
+      posts++;assert.deepEqual(JSON.parse(init.body),{email:'same@example.test'});
+      remote={id:'destination123',email:'same@example.test',verified:null};
+      if(loseFirstAck){loseFirstAck=false;throw new Error('lost provider acknowledgement');}
+      return Response.json({success:true,result:remote});
+    }
+    if(path.endsWith('/addresses'))return Response.json({success:true,result:remote?[remote]:[]});
+    assert.ok(path.endsWith('/destination123'));
+    return Response.json({success:true,result:remote});
+  }});
+  const f=fixture({now:()=>now,store:createAccountStore({now:()=>now}),bookingEmail,adminEmails:['same@example.test']});
+  const server=createApp({provider:{name:'demo'},accounts:f.accounts,rateLimit:false}).listen(0,'127.0.0.1');
+  await new Promise(resolve=>server.once('listening',resolve));t.after(()=>server.close());
+  const base='http://127.0.0.1:'+server.address().port, origin='http://localhost:5173';
+  const post=(path,cookie,body={},source=origin)=>fetch(base+path,{method:'POST',headers:{cookie,origin:source,'content-type':'application/json'},body:JSON.stringify(body)});
+  async function signIn(){
+    const start=await post('/api/auth/google/start','');
+    const state=new URL((await start.json()).url).searchParams.get('state');
+    const callback=await fetch(base+'/api/auth/google/callback?state='+state+'&code=Alex',{redirect:'manual',headers:{cookie:start.headers.getSetCookie()[0].split(';')[0]}});
+    assert.equal(callback.status,303);assert.match(callback.headers.get('location'),/signin=success/);
+    return callback.headers.getSetCookie().find(line=>line.startsWith('outing-session=')).split(';')[0];
+  }
+  let cookie=await signIn();assert.equal(posts,1);cookie=await signIn();assert.equal(posts,1);
+  const settings='/api/account/booking-email';
+  const status=async()=>await (await fetch(base+settings,{headers:{cookie}})).json();
+  const statusOnPost=async()=>await (await post(settings,cookie)).json();
+  assert.equal((await fetch(base+settings)).status,401);
+  assert.equal((await post(settings,cookie,{},'https://elsewhere.test')).status,403);
+  assert.equal((await post(settings,cookie,{email:'victim@example.test'})).status,400);
+  assert.equal((await status()).status,'not_verified');
+  assert.ok((await statusOnPost()).retryAfter>now);
+  now+=verificationCooldown+1;
+  assert.equal((await statusOnPost()).status,'pending');
+  assert.equal(posts,1,'reconciliation discovered destination without resending');
+  now+=verificationCooldown+1;
+  const pending=await statusOnPost();assert.equal(pending.resendRequestedAt,now);
+  assert.equal((await statusOnPost()).resendRequestedAt,now);assert.equal(posts,1);
+  const queue='/api/admin/booking-email/resends';
+  const getQueue=async()=>await (await fetch(base+queue,{headers:{cookie}})).json();
+  const [entry]=await getQueue();assert.equal(entry.email,'same@example.test');
+  assert.equal((await post(queue+'/acknowledge',cookie,{userId:entry.userId,requestedAt:entry.requestedAt})).status,200);
+  assert.deepEqual(await getQueue(),[]);
+  assert.ok((await statusOnPost()).retryAfter>now);
+  remote.verified='2026-11-26T10:00:00Z';
+  assert.deepEqual(await status(),{status:'verified'});
+  assert.deepEqual(await statusOnPost(),{status:'verified'});
+  assert.ok(calls.every(path=>path.includes('/email/routing/addresses')));
+});

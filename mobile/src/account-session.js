@@ -66,7 +66,7 @@ export function createAccountSession({ origin, development = false, fetch, rando
     } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
   }
   const account = async (path = '', options = {}) => {
-    if (!/^\/(?:plans|circles|invitations|invitation-settings|profile|circle-plans)(?:\/[A-Za-z0-9_-]+)*$/.test(path) && path !== '') throw new Error('Unsupported account request.');
+    if (!/^\/(?:plans|circles|invitations|invitation-settings|profile|circle-plans|booking-email)(?:\/[A-Za-z0-9_-]+)*$/.test(path) && path !== '') throw new Error('Unsupported account request.');
     if (String(options.method || 'GET').toUpperCase() !== 'GET' && accessMode !== 'account-sync') throw new Error(READ_ONLY_PILOT_MESSAGE);
     return (await request(`/api/native/account${path}`, { ...options, authenticated: true })).data;
   };
