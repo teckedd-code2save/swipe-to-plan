@@ -29,7 +29,7 @@ export function rankBookingCandidates(results, venue, {limit = 10} = {}) {
     const bookingPath = routeTerms.test(parsed.pathname.replace(/[-_]/g, ' '));
     const bookingText = routeTerms.test(title + ' ' + description);
     const score = (nameMatch ? 5 : 0) + (areaMatch ? 2 : 0) + (bookingPath ? 4 : 0) + (bookingText ? 2 : 0);
-    candidates.push({title, url, description, score, evidence: {
+    candidates.push({title, url, description, score, ...(result.source==='octocrawl'?{source:'octocrawl'}:{}), evidence: {
       nameInSearchResult: nameMatch,
       areaInSearchResult: areaMatch,
       bookingWords: bookingPath || bookingText,

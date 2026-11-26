@@ -44,7 +44,7 @@ function createProviderSearch({provider,apiKey,fetchImpl=fetch}){
 }
 // Search API results remain transient. No venue-ownership claim is made: a person
 // reviews the original title/URL/snippet and explicitly selects a destination.
-export function createBookingWebsiteSearch({places,registerDestination,search,contextfetch=null,now=Date.now,routeResolver=createBookingRouteResolver({now}),ErrorType=Error}){
+export function createBookingWebsiteSearch({places,registerDestination,search,contextfetch=null,siteMap=null,now=Date.now,routeResolver=createBookingRouteResolver({now}),ErrorType=Error}){
  const candidates=new Map();let timer;
  function prune(){for(const [id,item]of candidates)if(item.expires<=now())candidates.delete(id);if(!candidates.size){clearInterval(timer);timer=undefined;}}
  function typed(error){return new ErrorType(['search_unavailable','search_rate_limited','search_timeout','search_failed','expired'].includes(error?.code)?error.code:'search_failed');}
@@ -56,12 +56,21 @@ export function createBookingWebsiteSearch({places,registerDestination,search,co
   if(place?.entityId?.toUpperCase()!==id||!place.name||!place.address)throw new ErrorType('provider_unavailable');
   const venueName=clean(place.name,200),venueAddress=clean(place.address,400);if(!venueName||!venueAddress)throw new ErrorType('provider_unavailable');
   let results=routeResolver.reuse(id,place),provider=results.length?'inspection_cache':selected.provider;
-  if(!results.length){try{results=await selected.search(`${venueName} ${venueAddress} reservations book a table`.slice(0,650),options);}catch(error){throw typed(error);}}
+  if(!results.length){
+   const [discovered,mapped]=await Promise.allSettled([
+    selected.search(`${venueName} ${venueAddress} reservations book a table`.slice(0,650),options),
+    siteMap?.find(place,id,options)??[]
+   ]);
+   const mappedRows=mapped.status==='fulfilled'?mapped.value:[];
+   if(discovered.status==='rejected'&&!mappedRows.length)throw typed(discovered.reason);
+   results=[...mappedRows,...(discovered.status==='fulfilled'?discovered.value:[])];
+   if(mappedRows.length&&discovered.status!=='fulfilled')provider='octocrawl';
+  }
   if(options.signal?.aborted)throw new ErrorType('expired');prune();const expires=now()+ttl,seen=new Set(),items=[];
   for(const result of routeResolver.rank(results,{name:venueName,address:venueAddress})){
    let url;try{url=menuUrl(result.url);if(url.protocol!=='https:')continue;}catch{continue;}
    url.hash='';if(seen.has(url.href))continue;seen.add(url.href);const title=clean(result.title,200),snippet=clean(result.description,600);if(!title)continue;
-   const candidateId=randomUUID();while(candidates.size>=120)candidates.delete(candidates.keys().next().value);candidates.set(candidateId,{entityId:id,url:url.href,expires});items.push({candidateId,title,url:url.href,snippet,score:result.score,evidence:result.evidence});
+   const candidateId=randomUUID();while(candidates.size>=120)candidates.delete(candidates.keys().next().value);candidates.set(candidateId,{entityId:id,url:url.href,expires});items.push({candidateId,title,url:url.href,snippet,score:result.score,evidence:result.evidence,...(result.source?{source:result.source}:{})});
   }
   if(candidates.size&&!timer){timer=setInterval(prune,30000);timer.unref?.();}
   return {provider,venueName,venueAddress,candidates:items,expiresAt:new Date(expires).toISOString(),submitted:false};
