@@ -96,6 +96,12 @@ export function createExecutionProtocol({now=Date.now,simulation=false,verifyEvi
     if(r.status==='cancelled')throw fail('This action is already cancelled.');
     if(pending.has(r.status))throw fail('Submission may already have occurred. Reconcile before cancellation.');
     r.approval=null;r.status='cancelled';r.stale=true;
+   }else if(operation==='claim'){
+    // A replayed reserve is a receipt, not fresh authority to send. A claim can
+    // only be recorded once, inside the durable account transaction.
+    if(!simulation||r.authorityScope!=='simulation_only'||r.outbox?.scope!=='simulation_only'||r.status!=='submission_pending'||r.outbox.claim)throw fail('No unclaimed simulated submission is available.');
+    current(entry,r,now());
+    r.outbox.claim={id:randomUUID(),claimedAt:now()};
    }else if(operation==='recover'){
     if(r.status!=='submission_pending')throw fail('Only an interrupted submission can be marked unknown.');r.status='submission_unknown';r.approval=null;
    }else if(operation==='reconcile'){
@@ -131,7 +137,7 @@ export function createExecutionProtocol({now=Date.now,simulation=false,verifyEvi
     else if(operation==='reserve'&&r.status==='approved'){
      if(!r.approval||r.approval.ownerId!==ownerId||r.approval.hash!==r.hash||r.approval.version!==r.version||r.approval.expiresAt<=now())throw fail('Approval no longer authorizes this action.');
      if(state.records.some(x=>x.id!==r.id&&(x.snapshot.venue.stopId===r.snapshot.venue.stopId||x.snapshot.venue.entityId===r.snapshot.venue.entityId)&&pending.has(x.status)))throw fail('Another action for this venue needs reconciliation.');
-     r.outbox={key:executionHash({ownerId,planId:entry.id,actionId:r.id,hash:r.hash}),actionId:r.id,snapshotHash:r.hash,createdAt:now(),payload:clone(r.snapshot),scope:'simulation_only'};r.status='submission_pending';
+     r.outbox={key:executionHash({ownerId,planId:entry.id,actionId:r.id,hash:r.hash}),actionId:r.id,snapshotHash:r.hash,createdAt:now(),payload:clone(r.snapshot),scope:'simulation_only'};r.status='submission_pending';r.approval=null;
     }else throw fail('Unsupported execution transition.');
    }
    r.version++;
